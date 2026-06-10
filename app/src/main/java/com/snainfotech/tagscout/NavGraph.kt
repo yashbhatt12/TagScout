@@ -1,5 +1,7 @@
 package com.snainfotech.tagscout
 
+import androidx.compose.ui.platform.LocalContext
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.padding
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
@@ -8,12 +10,17 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
+import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.unit.dp
 import androidx.lifecycle.viewmodel.compose.viewModel
 import androidx.navigation.NavHostController
 import androidx.navigation.compose.NavHost
 import androidx.navigation.compose.composable
 import androidx.navigation.compose.rememberNavController
+import com.snainfotech.tagscout.ui.components.AppMenu
+import com.snainfotech.tagscout.ui.components.ExitConfirmationDialog
+import com.snainfotech.tagscout.ui.screens.about.AboutScreen
 import com.snainfotech.tagscout.ui.screens.home.HomeScreen
 import com.snainfotech.tagscout.ui.screens.home.HomeViewModel
 import com.snainfotech.tagscout.ui.screens.quickscan.ClearConfirmationDialog
@@ -26,11 +33,11 @@ import com.snainfotech.tagscout.ui.screens.quickscan.TimeWarningDialog
 object Routes {
     const val HOME = "home"
     const val QUICK_SCAN = "quick_scan"
+    const val ABOUT = "about"
     // Future routes (we'll add these later):
     // const val INVENTORY = "inventory"
     // const val DEVICE_CONFIG = "device_config"
     // const val CONNECT_DEVICE = "connect_device"
-    // const val ABOUT = "about"
 }
 
 @Composable
@@ -67,21 +74,49 @@ fun TagScoutNavGraph(
                 )
             }
 
-            HomeScreen(
-                deviceState = deviceState,
-                onMenuClick = {
-                    // TODO: Show menu dropdown
-                },
-                onQuickScanClick = {
-                    navController.navigate(Routes.QUICK_SCAN)
-                },
-                onInventoryClick = {
-                    // TODO: Navigate to Inventory
-                },
-                onDeviceConfigClick = {
-                    // TODO: Navigate to Device Config
+            // Menu state
+            var menuExpanded by remember { mutableStateOf(false) }
+            var showExitDialog by remember { mutableStateOf(false) }
+            val context = LocalContext.current
+            val activity = context as? android.app.Activity
+
+            // Wrap HomeScreen + menu in a Box so menu appears on top
+            Box {
+                HomeScreen(
+                    deviceState = deviceState,
+                    onMenuClick = { menuExpanded = true },
+                    onQuickScanClick = { navController.navigate(Routes.QUICK_SCAN) },
+                    onInventoryClick = { /* TODO: Inventory navigation */ },
+                    onDeviceConfigClick = { /* TODO: Device Config navigation */ }
+                )
+
+                // Menu dropdown — anchored to top-right
+                Box(
+                    modifier = Modifier
+                        .align(Alignment.TopEnd)
+                        .padding(top = 50.dp, end = 10.dp)
+                ) {
+                    AppMenu(
+                        expanded = menuExpanded,
+                        showConnectHighlighted = !deviceState.isConnected,
+                        onDismiss = { menuExpanded = false },
+                        onConnectClick = { /* TODO: Connect device */ },
+                        onAboutClick = { navController.navigate(Routes.ABOUT) },
+                        onExitClick = { showExitDialog = true }
+                    )
                 }
-            )
+            }
+
+            // Exit confirmation
+            if (showExitDialog) {
+                ExitConfirmationDialog(
+                    onDismiss = { showExitDialog = false },
+                    onConfirm = {
+                        showExitDialog = false
+                        activity?.finish()
+                    }
+                )
+            }
         }
 
         // ============================================
@@ -162,6 +197,16 @@ fun TagScoutNavGraph(
                     }
                 )
             }
+        }
+
+        // ============================================
+        // ABOUT SCREEN
+        // ============================================
+        composable(Routes.ABOUT) {
+            AboutScreen(
+                onBackClick = { navController.popBackStack() },
+                onMenuClick = { /* Menu not needed on about screen */ }
+            )
         }
     }
 }

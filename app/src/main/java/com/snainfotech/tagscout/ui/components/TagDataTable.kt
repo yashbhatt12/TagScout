@@ -5,6 +5,7 @@ import androidx.compose.foundation.border
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.RowScope
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
@@ -19,7 +20,6 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
-import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
@@ -49,10 +49,10 @@ fun TagDataTable(
                 .background(Color(0xFFF8F9FA))
                 .padding(horizontal = 12.dp, vertical = 10.dp)
         ) {
-            TableHeaderCell("Scan", weight = 0.15f)
-            TableHeaderCell("EPC", weight = 0.45f)
-            TableHeaderCell("Signal", weight = 0.2f)
-            TableHeaderCell("Count", weight = 0.2f)
+            TableHeaderCell("Scan", weight = 0.12f)
+            TableHeaderCell("EPC", weight = 0.38f)
+            TableHeaderCell("Signal", weight = 0.28f)
+            TableHeaderCell("Count", weight = 0.22f)
         }
 
         // Body
@@ -81,9 +81,10 @@ fun TagDataTable(
     }
 }
 
+// Header cell — uses weight inside Row
 @Composable
-private fun TableHeaderCell(text: String, weight: Float) {
-    Box(modifier = Modifier.fillMaxWidth(weight)) {
+private fun RowScope.TableHeaderCell(text: String, weight: Float) {
+    Box(modifier = Modifier.weight(weight)) {
         Text(
             text = text,
             fontSize = 10.sp,
@@ -102,7 +103,7 @@ private fun TagRow(tag: DetectedTag) {
             .padding(horizontal = 12.dp, vertical = 10.dp),
         verticalAlignment = Alignment.CenterVertically
     ) {
-        Box(modifier = Modifier.fillMaxWidth(0.15f)) {
+        Box(modifier = Modifier.weight(0.12f)) {
             Text(
                 text = "✓",
                 color = SuccessGreen,
@@ -110,7 +111,7 @@ private fun TagRow(tag: DetectedTag) {
                 fontWeight = FontWeight.Bold
             )
         }
-        Box(modifier = Modifier.fillMaxWidth(0.45f)) {
+        Box(modifier = Modifier.weight(0.38f)) {
             Text(
                 text = tag.epc.take(12),
                 fontSize = 10.sp,
@@ -118,14 +119,14 @@ private fun TagRow(tag: DetectedTag) {
                 color = DarkText
             )
         }
-        Box(modifier = Modifier.fillMaxWidth(0.2f)) {
+        Box(modifier = Modifier.weight(0.28f)) {
             Text(
                 text = "${tag.signalStrength}dB",
                 fontSize = 11.sp,
                 color = DarkText
             )
         }
-        Box(modifier = Modifier.fillMaxWidth(0.2f)) {
+        Box(modifier = Modifier.weight(0.22f)) {
             Text(
                 text = "${tag.count}",
                 fontSize = 11.sp,

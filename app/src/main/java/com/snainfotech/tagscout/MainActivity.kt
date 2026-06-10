@@ -48,12 +48,13 @@ class HomeViewModelFactory(
 
 // Factory: Creates the QuickScanViewModel with its required parameters
 class QuickScanViewModelFactory(
-    private val repository: QuickScanRepository
+    private val repository: QuickScanRepository,
+    private val scanner: com.snainfotech.tagscout.sdk.RfidScanner
 ) : ViewModelProvider.Factory {
     override fun <T : ViewModel> create(modelClass: Class<T>): T {
         if (modelClass.isAssignableFrom(QuickScanViewModel::class.java)) {
             @Suppress("UNCHECKED_CAST")
-            return QuickScanViewModel(repository) as T
+            return QuickScanViewModel(repository, scanner) as T
         }
         throw IllegalArgumentException("Unknown ViewModel class")
     }

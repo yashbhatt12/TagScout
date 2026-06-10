@@ -89,7 +89,7 @@ fun TagScoutNavGraph(
         // ============================================
         composable(Routes.QUICK_SCAN) {
             val quickScanViewModel: QuickScanViewModel = viewModel(
-                factory = QuickScanViewModelFactory(app.quickScanRepository)
+                factory = QuickScanViewModelFactory(app.quickScanRepository, app.rfidScanner)
             )
 
             val scanState by quickScanViewModel.state.collectAsState()

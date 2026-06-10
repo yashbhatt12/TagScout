@@ -1,5 +1,7 @@
 package com.snainfotech.tagscout.ui.screens.quickscan
 
+import kotlinx.coroutines.flow.collect
+import com.snainfotech.tagscout.sdk.RfidScanner
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.snainfotech.tagscout.data.repository.QuickScanRepository
@@ -33,7 +35,8 @@ data class QuickScanState(
 )
 
 class QuickScanViewModel(
-    private val repository: QuickScanRepository
+    private val repository: QuickScanRepository,
+    private val scanner: RfidScanner
 ) : ViewModel() {
 
     // Private: only this ViewModel can change state
@@ -44,6 +47,7 @@ class QuickScanViewModel(
 
     // Reference to the running timer (so we can cancel it)
     private var timerJob: Job? = null
+    private var sdkJob: Job? = null
 
     // Called when user taps "Play" button
     fun startScanning() {
@@ -54,11 +58,14 @@ class QuickScanViewModel(
             isTimerExpired = false
         )
         startTimer()
+        startSdkScan()
     }
 
     // Called when user taps "Pause" button
     fun pauseScanning() {
-        timerJob?.cancel()  // Stop the timer
+        timerJob?.cancel()
+        scanner.stopScanning()
+        sdkJob?.cancel()
         _state.value = _state.value.copy(
             isScanning = false,
             isPaused = true
@@ -72,12 +79,13 @@ class QuickScanViewModel(
             isPaused = false
         )
         startTimer()
+        startSdkScan()
     }
-
     // Called when user moves the antenna slider (only allowed when NOT scanning)
     fun setAntennaStrength(strength: Int) {
         if (!_state.value.isScanning) {
             _state.value = _state.value.copy(antennaStrength = strength)
+            scanner.setAntennaPower(strength)
         }
     }
 
@@ -117,7 +125,9 @@ class QuickScanViewModel(
     // Called when user clicks "Clear" button
     fun clearAllData() {
         timerJob?.cancel()
-        _state.value = QuickScanState()  // Reset to fresh state
+        sdkJob?.cancel()
+        scanner.stopScanning()
+        _state.value = QuickScanState()
     }
 
     // Called when user clicks "Save" button
@@ -168,6 +178,15 @@ class QuickScanViewModel(
                     pauseScanning()
                     _state.value = _state.value.copy(isTimerExpired = true)
                 }
+            }
+        }
+    }
+    // Listens to the SDK for detected tags and adds them to state
+    private fun startSdkScan() {
+        sdkJob?.cancel()  // Cancel any previous scan
+        sdkJob = viewModelScope.launch {
+            scanner.startScanning().collect { scannedTag ->
+                addDetectedTag(scannedTag.epc, scannedTag.rssi)
             }
         }
     }

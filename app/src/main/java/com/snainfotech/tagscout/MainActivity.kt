@@ -59,3 +59,15 @@ class QuickScanViewModelFactory(
         throw IllegalArgumentException("Unknown ViewModel class")
     }
 }
+// Factory: Creates the ConnectDeviceViewModel with its required parameters
+class ConnectDeviceViewModelFactory(
+    private val deviceRepository: DeviceRepository
+) : ViewModelProvider.Factory {
+    override fun <T : ViewModel> create(modelClass: Class<T>): T {
+        if (modelClass.isAssignableFrom(com.snainfotech.tagscout.ui.screens.connect.ConnectDeviceViewModel::class.java)) {
+            @Suppress("UNCHECKED_CAST")
+            return com.snainfotech.tagscout.ui.screens.connect.ConnectDeviceViewModel(deviceRepository) as T
+        }
+        throw IllegalArgumentException("Unknown ViewModel class")
+    }
+}

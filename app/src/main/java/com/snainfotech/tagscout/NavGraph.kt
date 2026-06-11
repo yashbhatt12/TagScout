@@ -28,12 +28,15 @@ import com.snainfotech.tagscout.ui.screens.quickscan.QuickScanScreen
 import com.snainfotech.tagscout.ui.screens.quickscan.QuickScanViewModel
 import com.snainfotech.tagscout.ui.screens.quickscan.SaveScanDialog
 import com.snainfotech.tagscout.ui.screens.quickscan.TimeWarningDialog
+import com.snainfotech.tagscout.ui.screens.connect.ConnectDeviceScreen
+import com.snainfotech.tagscout.ui.screens.connect.ConnectDeviceViewModel
 
 // All possible screen routes (like URLs for each screen)
 object Routes {
     const val HOME = "home"
     const val QUICK_SCAN = "quick_scan"
     const val ABOUT = "about"
+    const val CONNECT_DEVICE = "connect_device"
     // Future routes (we'll add these later):
     // const val INVENTORY = "inventory"
     // const val DEVICE_CONFIG = "device_config"
@@ -100,7 +103,7 @@ fun TagScoutNavGraph(
                         expanded = menuExpanded,
                         showConnectHighlighted = !deviceState.isConnected,
                         onDismiss = { menuExpanded = false },
-                        onConnectClick = { /* TODO: Connect device */ },
+                        onConnectClick = { navController.navigate(Routes.CONNECT_DEVICE) },
                         onAboutClick = { navController.navigate(Routes.ABOUT) },
                         onExitClick = { showExitDialog = true }
                     )
@@ -206,6 +209,27 @@ fun TagScoutNavGraph(
             AboutScreen(
                 onBackClick = { navController.popBackStack() },
                 onMenuClick = { /* Menu not needed on about screen */ }
+            )
+        }
+        // ============================================
+        // CONNECT DEVICE SCREEN
+        // ============================================
+        composable(Routes.CONNECT_DEVICE) {
+            val connectViewModel: ConnectDeviceViewModel = viewModel(
+                factory = ConnectDeviceViewModelFactory(app.deviceRepository)
+            )
+
+            val connectState by connectViewModel.state.collectAsState()
+
+            ConnectDeviceScreen(
+                state = connectState,
+                onBackClick = { navController.popBackStack() },
+                onMenuClick = { /* TODO: maybe show menu here too */ },
+                onSearchClick = { connectViewModel.startSearch() },
+                onSearchQueryChange = { connectViewModel.updateSearchQuery(it) },
+                onDeviceClick = { device ->
+                    connectViewModel.connectToDevice(device)
+                }
             )
         }
     }

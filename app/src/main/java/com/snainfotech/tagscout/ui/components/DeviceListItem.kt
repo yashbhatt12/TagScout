@@ -26,6 +26,8 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import androidx.compose.foundation.ExperimentalFoundationApi
+import androidx.compose.foundation.combinedClickable
 import com.snainfotech.tagscout.ui.screens.connect.DeviceStatus
 import com.snainfotech.tagscout.ui.screens.connect.DiscoveredDevice
 import com.snainfotech.tagscout.ui.theme.BorderGray
@@ -40,11 +42,13 @@ import com.snainfotech.tagscout.ui.theme.SuccessBg
 import com.snainfotech.tagscout.ui.theme.SuccessGreen
 import com.snainfotech.tagscout.ui.theme.SuccessText
 
+@OptIn(ExperimentalFoundationApi::class)
 @Composable
 fun DeviceListItem(
     device: DiscoveredDevice,
     isCurrentlyConnected: Boolean = false,
     onClick: () -> Unit,
+    onLongPress: () -> Unit = {},
     modifier: Modifier = Modifier
 ) {
     val isInteractive = device.status != DeviceStatus.OUT_OF_RANGE
@@ -68,7 +72,12 @@ fun DeviceListItem(
             modifier = Modifier
                 .fillMaxWidth()
                 .let {
-                    if (isInteractive) it.clickable { onClick() } else it
+                    if (isInteractive) {
+                        it.combinedClickable(
+                            onClick = { onClick() },
+                            onLongClick = { onLongPress() }
+                        )
+                    } else it
                 }
                 .padding(12.dp),
             verticalAlignment = Alignment.CenterVertically

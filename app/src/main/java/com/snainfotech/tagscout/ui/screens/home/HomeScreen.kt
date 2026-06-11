@@ -58,7 +58,8 @@ fun HomeScreen(
             serialNumber = deviceState.serialNumber,
             firmwareVersion = deviceState.firmwareVersion,
             batteryPercent = deviceState.batteryPercent,
-            connectionStatus = deviceState.connectionStatus
+            connectionStatus = deviceState.connectionStatus,
+            onClick = onDeviceConfigClick
         )
 
         // 3. Main content area

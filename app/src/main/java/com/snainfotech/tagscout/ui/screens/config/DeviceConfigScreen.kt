@@ -45,6 +45,10 @@ import com.snainfotech.tagscout.ui.theme.Primary
 import com.snainfotech.tagscout.ui.theme.SuccessBg
 import com.snainfotech.tagscout.ui.theme.SuccessGreen
 import com.snainfotech.tagscout.ui.theme.SuccessText
+import com.snainfotech.tagscout.ui.theme.Disabled
+import com.snainfotech.tagscout.ui.theme.DisabledText
+import com.snainfotech.tagscout.ui.theme.InfoBg
+import com.snainfotech.tagscout.ui.theme.InfoText
 
 @Composable
 fun DeviceConfigScreen(
@@ -52,6 +56,8 @@ fun DeviceConfigScreen(
     deviceName: String = "RFR-901",
     serialNumber: String = "SN-123456",
     batteryPercent: Int = 85,
+    isConnected: Boolean = true,
+    firmwareVersion: String = "v5.90.00.02",
     onBackClick: () -> Unit = {},
     onMenuClick: () -> Unit = {},
     onBuzzerChange: (BuzzerLevel) -> Unit = {},
@@ -75,12 +81,12 @@ fun DeviceConfigScreen(
 
         // Device status
         DeviceStatusComponent(
-            isConnected = true,
+            isConnected = isConnected,
             deviceName = deviceName,
             serialNumber = serialNumber,
             firmwareVersion = state.firmwareVersion,
             batteryPercent = batteryPercent,
-            connectionStatus = ConnectionStatus.CONNECTED
+            connectionStatus = if (isConnected) ConnectionStatus.CONNECTED else ConnectionStatus.DISCONNECTED
         )
 
         // Scrollable settings
@@ -91,6 +97,23 @@ fun DeviceConfigScreen(
                 .padding(16.dp),
             verticalArrangement = Arrangement.spacedBy(14.dp)
         ) {
+            // Warning banner when device disconnected
+            if (!isConnected) {
+                Box(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .clip(RoundedCornerShape(8.dp))
+                        .background(InfoBg)
+                        .padding(12.dp)
+                ) {
+                    Text(
+                        text = "ℹ️ Device must be connected to reset or update firmware. Connect a device first to enable these actions.",
+                        color = InfoText,
+                        fontSize = 12.sp,
+                        fontWeight = FontWeight.Medium
+                    )
+                }
+            }
             // === BUZZER LEVEL ===
             SettingGroup(
                 icon = "🔊",
@@ -149,8 +172,13 @@ fun DeviceConfigScreen(
             ) {
                 Button(
                     onClick = onResetClick,
+                    enabled = isConnected,
                     modifier = Modifier.fillMaxWidth(),
-                    colors = ButtonDefaults.buttonColors(containerColor = ErrorRed),
+                    colors = ButtonDefaults.buttonColors(
+                        containerColor = ErrorRed,
+                        disabledContainerColor = Disabled,
+                        disabledContentColor = DisabledText
+                    ),
                     shape = RoundedCornerShape(8.dp)
                 ) {
                     Text(
@@ -169,8 +197,13 @@ fun DeviceConfigScreen(
             ) {
                 Button(
                     onClick = onCheckFirmwareClick,
+                    enabled = isConnected,
                     modifier = Modifier.fillMaxWidth(),
-                    colors = ButtonDefaults.buttonColors(containerColor = Primary),
+                    colors = ButtonDefaults.buttonColors(
+                        containerColor = Primary,
+                        disabledContainerColor = Disabled,
+                        disabledContentColor = DisabledText
+                    ),
                     shape = RoundedCornerShape(8.dp)
                 ) {
                     Text(
@@ -280,19 +313,18 @@ private fun CustomDropdown(
 
 @Preview(showBackground = true, heightDp = 800)
 @Composable
-fun DeviceConfigScreenPreview() {
+fun DeviceConfigScreenConnectedPreview() {
     DeviceConfigScreen(
-        state = DeviceConfigState()
+        state = DeviceConfigState(),
+        isConnected = true
     )
 }
 
 @Preview(showBackground = true, heightDp = 800)
 @Composable
-fun DeviceConfigScreenWithToastPreview() {
+fun DeviceConfigScreenDisconnectedPreview() {
     DeviceConfigScreen(
-        state = DeviceConfigState(
-            buzzerLevel = BuzzerLevel.HIGH,
-            showSettingChangedToast = "✓ Buzzer level changed to HIGH"
-        )
+        state = DeviceConfigState(),
+        isConnected = false
     )
 }

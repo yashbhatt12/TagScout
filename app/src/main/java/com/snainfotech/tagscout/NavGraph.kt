@@ -1,6 +1,6 @@
 package com.snainfotech.tagscout
 
-import androidx.compose.ui.platform.LocalContext
+import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.padding
 import androidx.compose.runtime.Composable
@@ -12,6 +12,7 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.viewmodel.compose.viewModel
 import androidx.navigation.NavHostController
@@ -21,6 +22,19 @@ import androidx.navigation.compose.rememberNavController
 import com.snainfotech.tagscout.ui.components.AppMenu
 import com.snainfotech.tagscout.ui.components.ExitConfirmationDialog
 import com.snainfotech.tagscout.ui.screens.about.AboutScreen
+import com.snainfotech.tagscout.ui.screens.config.DeviceConfigScreen
+import com.snainfotech.tagscout.ui.screens.config.DeviceConfigViewModel
+import com.snainfotech.tagscout.ui.screens.config.FirmwareCheckingDialog
+import com.snainfotech.tagscout.ui.screens.config.FirmwareUpToDateDialog
+import com.snainfotech.tagscout.ui.screens.config.FirmwareUpdateAvailableDialog
+import com.snainfotech.tagscout.ui.screens.config.FirmwareUpdateProgressDialog
+import com.snainfotech.tagscout.ui.screens.config.FirmwareUpdateSuccessDialog
+import com.snainfotech.tagscout.ui.screens.config.OperationState
+import com.snainfotech.tagscout.ui.screens.config.ResetConfirmationDialog
+import com.snainfotech.tagscout.ui.screens.config.ResetProgressDialog
+import com.snainfotech.tagscout.ui.screens.config.ResetSuccessDialog
+import com.snainfotech.tagscout.ui.screens.connect.ConnectDeviceScreen
+import com.snainfotech.tagscout.ui.screens.connect.ConnectDeviceViewModel
 import com.snainfotech.tagscout.ui.screens.home.HomeScreen
 import com.snainfotech.tagscout.ui.screens.home.HomeViewModel
 import com.snainfotech.tagscout.ui.screens.quickscan.ClearConfirmationDialog
@@ -28,19 +42,16 @@ import com.snainfotech.tagscout.ui.screens.quickscan.QuickScanScreen
 import com.snainfotech.tagscout.ui.screens.quickscan.QuickScanViewModel
 import com.snainfotech.tagscout.ui.screens.quickscan.SaveScanDialog
 import com.snainfotech.tagscout.ui.screens.quickscan.TimeWarningDialog
-import com.snainfotech.tagscout.ui.screens.connect.ConnectDeviceScreen
-import com.snainfotech.tagscout.ui.screens.connect.ConnectDeviceViewModel
-import com.snainfotech.tagscout.ui.screens.config.DeviceConfigScreen
-import com.snainfotech.tagscout.ui.screens.config.DeviceConfigViewModel
-import com.snainfotech.tagscout.ui.screens.config.OperationState
-import com.snainfotech.tagscout.ui.screens.config.ResetConfirmationDialog
-import com.snainfotech.tagscout.ui.screens.config.ResetProgressDialog
-import com.snainfotech.tagscout.ui.screens.config.ResetSuccessDialog
-import com.snainfotech.tagscout.ui.screens.config.FirmwareUpdateAvailableDialog
-import com.snainfotech.tagscout.ui.screens.config.FirmwareUpdateProgressDialog
-import com.snainfotech.tagscout.ui.screens.config.FirmwareUpdateSuccessDialog
-import com.snainfotech.tagscout.ui.screens.config.FirmwareCheckingDialog
-import com.snainfotech.tagscout.ui.screens.config.FirmwareUpToDateDialog
+import com.snainfotech.tagscout.ui.screens.connect.DeleteDeviceConfirmationDialog
+import com.snainfotech.tagscout.ui.screens.connect.DeviceLimitReachedDialog
+import android.content.Intent
+import android.net.Uri
+import android.provider.Settings
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
+import com.snainfotech.tagscout.PermissionHelper
+import com.snainfotech.tagscout.ui.components.BluetoothPermissionDeniedDialog
+import com.snainfotech.tagscout.ui.components.BluetoothPermissionRationaleDialog
 
 // All possible screen routes (like URLs for each screen)
 object Routes {
@@ -60,6 +71,13 @@ fun TagScoutNavGraph(
 ) {
     val app = LocalContext.current.applicationContext as TagScoutApplication
 
+    // Create a SHARED HomeViewModel that all screens can read
+    val sharedHomeViewModel: HomeViewModel = viewModel(
+        factory = HomeViewModelFactory(app.deviceRepository)
+    )
+
+    // Initialize device state ONCE at app startup
+
     NavHost(
         navController = navController,
         startDestination = Routes.HOME,
@@ -69,22 +87,7 @@ fun TagScoutNavGraph(
         // HOME SCREEN
         // ============================================
         composable(Routes.HOME) {
-            val homeViewModel: HomeViewModel = viewModel(
-                factory = HomeViewModelFactory(app.deviceRepository)
-            )
-
-            val deviceState by homeViewModel.deviceState.collectAsState()
-
-            LaunchedEffect(Unit) {
-                homeViewModel.updateDeviceStatus(
-                    isConnected = true,
-                    deviceName = "RFR-901",
-                    serialNumber = "SN-123456",
-                    firmwareVersion = "v5.90.00.02",
-                    batteryPercent = 85,
-                    isCharging = false
-                )
-            }
+            val deviceState by sharedHomeViewModel.deviceState.collectAsState()
 
             var menuExpanded by remember { mutableStateOf(false) }
             var showExitDialog by remember { mutableStateOf(false) }
@@ -132,22 +135,29 @@ fun TagScoutNavGraph(
         // ============================================
         composable(Routes.QUICK_SCAN) {
             val quickScanViewModel: QuickScanViewModel = viewModel(
-                factory = QuickScanViewModelFactory(app.quickScanRepository, app.rfidScanner)
+                factory = QuickScanViewModelFactory(app.quickScanRepository, app.rfidScanner, app.settingsRepository)
             )
 
             val scanState by quickScanViewModel.state.collectAsState()
+            val deviceState by sharedHomeViewModel.deviceState.collectAsState()
+
+            // Block system back button when scanning
+            BackHandler(enabled = scanState.isScanning) {
+                // Do nothing — user must pause first
+            }
 
             var showSaveDialog by remember { mutableStateOf(false) }
             var showClearDialog by remember { mutableStateOf(false) }
 
             QuickScanScreen(
                 state = scanState,
-                deviceName = "RFR-901",
-                serialNumber = "SN-123456",
-                firmwareVersion = "v5.90.00.02",
-                batteryPercent = 85,
+                deviceName = deviceState.deviceName,
+                serialNumber = deviceState.serialNumber,
+                firmwareVersion = deviceState.firmwareVersion,
+                batteryPercent = deviceState.batteryPercent,
                 onBackClick = { navController.popBackStack() },
                 onMenuClick = { /* TODO: Show menu */ },
+                onDeviceStatusClick = { navController.navigate(Routes.DEVICE_CONFIG) },
                 onAntennaChange = { quickScanViewModel.setAntennaStrength(it) },
                 onPlayPauseClick = {
                     when {
@@ -210,15 +220,124 @@ fun TagScoutNavGraph(
             )
 
             val connectState by connectViewModel.state.collectAsState()
+            val deviceState by sharedHomeViewModel.deviceState.collectAsState()
+            val context = LocalContext.current
+
+            // Sync visual state with shared connected device
+            LaunchedEffect(deviceState.serialNumber, deviceState.isConnected) {
+                val connectedId = if (deviceState.isConnected) {
+                    deviceState.serialNumber.removePrefix("SN-")
+                } else {
+                    null
+                }
+                connectViewModel.syncWithConnectedDevice(connectedId)
+            }
+
+            // Android's permission request launcher
+            val permissionLauncher = rememberLauncherForActivityResult(
+                contract = ActivityResultContracts.RequestMultiplePermissions()
+            ) { permissions ->
+                val allGranted = permissions.values.all { it }
+                if (allGranted) {
+                    // Permission granted — start searching!
+                    connectViewModel.startSearch()
+                } else {
+                    // User denied — show denied dialog
+                    connectViewModel.showPermissionDenied()
+                }
+            }
 
             ConnectDeviceScreen(
                 state = connectState,
                 onBackClick = { navController.popBackStack() },
                 onMenuClick = { /* TODO */ },
-                onSearchClick = { connectViewModel.startSearch() },
+                onSearchClick = {
+                    if (PermissionHelper.hasBluetoothPermissions(context)) {
+                        connectViewModel.startSearch()
+                    } else {
+                        connectViewModel.showPermissionRationale()
+                    }
+                },
                 onSearchQueryChange = { connectViewModel.updateSearchQuery(it) },
-                onDeviceClick = { device -> connectViewModel.connectToDevice(device) }
+                onDeviceClick = { device ->
+                    val currentConnectedId = deviceState.serialNumber.removePrefix("SN-")
+                    val isAlreadyConnected = deviceState.isConnected && currentConnectedId == device.id
+
+                    if (isAlreadyConnected) {
+                        navController.navigate(Routes.DEVICE_CONFIG)
+                    } else {
+                        connectViewModel.connectToDevice(device)
+                        sharedHomeViewModel.updateDeviceStatus(
+                            isConnected = true,
+                            deviceName = device.name,
+                            serialNumber = "SN-${device.id}",
+                            firmwareVersion = "v5.90.00.02",
+                            batteryPercent = 85,
+                            isCharging = false
+                        )
+                    }
+                },
+                onDeviceLongPress = { device ->
+                    connectViewModel.showDeleteConfirmation(device)
+                }
             )
+
+            // Permission rationale dialog
+            if (connectState.showPermissionRationale) {
+                BluetoothPermissionRationaleDialog(
+                    onDismiss = { connectViewModel.dismissPermissionRationale() },
+                    onAllow = {
+                        connectViewModel.dismissPermissionRationale()
+                        // Actually request the permission from Android
+                        permissionLauncher.launch(PermissionHelper.getRequiredBluetoothPermissions())
+                    }
+                )
+            }
+
+            // Permission denied dialog
+            if (connectState.showPermissionDeniedDialog) {
+                BluetoothPermissionDeniedDialog(
+                    onDismiss = { connectViewModel.dismissPermissionDenied() },
+                    onOpenSettings = {
+                        connectViewModel.dismissPermissionDenied()
+                        // Open the app's settings page so user can grant permission manually
+                        val intent = Intent(Settings.ACTION_APPLICATION_DETAILS_SETTINGS).apply {
+                            data = Uri.fromParts("package", context.packageName, null)
+                        }
+                        context.startActivity(intent)
+                    }
+                )
+            }
+            // Delete device confirmation dialog
+            val deviceToDelete = connectState.showDeleteConfirmation
+            if (deviceToDelete != null) {
+                DeleteDeviceConfirmationDialog(
+                    deviceName = deviceToDelete.name,
+                    isCurrentlyConnected = deviceToDelete.id == connectState.currentlyConnectedId,
+                    onDismiss = { connectViewModel.dismissDeleteConfirmation() },
+                    onConfirm = {
+                        // If deleting the currently connected device, also disconnect
+                        if (deviceToDelete.id == connectState.currentlyConnectedId) {
+                            sharedHomeViewModel.updateDeviceStatus(
+                                isConnected = false,
+                                deviceName = "",
+                                serialNumber = "",
+                                firmwareVersion = "",
+                                batteryPercent = 0,
+                                isCharging = false
+                            )
+                        }
+                        connectViewModel.confirmDeleteDevice(deviceToDelete)
+                    }
+                )
+            }
+
+            // Device limit reached dialog
+            if (connectState.showLimitReachedDialog) {
+                DeviceLimitReachedDialog(
+                    onDismiss = { connectViewModel.dismissLimitReachedDialog() }
+                )
+            }
         }
 
         // ============================================
@@ -226,13 +345,20 @@ fun TagScoutNavGraph(
         // ============================================
         composable(Routes.DEVICE_CONFIG) {
             val configViewModel: DeviceConfigViewModel = viewModel(
-                factory = DeviceConfigViewModelFactory()
+                factory = DeviceConfigViewModelFactory(app.settingsRepository)
             )
 
             val configState by configViewModel.state.collectAsState()
 
+            // Use the SHARED HomeViewModel from app scope
+            val deviceState by sharedHomeViewModel.deviceState.collectAsState()
+
             DeviceConfigScreen(
                 state = configState,
+                deviceName = deviceState.deviceName,
+                serialNumber = deviceState.serialNumber,
+                batteryPercent = deviceState.batteryPercent,
+                isConnected = deviceState.isConnected,
                 onBackClick = { navController.popBackStack() },
                 onMenuClick = { /* TODO */ },
                 onBuzzerChange = { level -> configViewModel.setBuzzerLevel(level) },

@@ -2,6 +2,7 @@ package com.snainfotech.tagscout.ui.screens.connect
 
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
+import com.snainfotech.tagscout.data.entities.DeviceConnectionEntity
 import com.snainfotech.tagscout.data.repository.DeviceRepository
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
@@ -9,6 +10,7 @@ import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.launch
+import kotlin.random.Random
 
 // Status of each discovered device
 enum class DeviceStatus {
@@ -33,7 +35,11 @@ data class ConnectDeviceState(
     val savedDevices: List<DiscoveredDevice> = emptyList(),
     val newDevices: List<DiscoveredDevice> = emptyList(),
     val currentlyConnectedId: String? = null,
-    val searchQuery: String = ""
+    val searchQuery: String = "",
+    val showPermissionRationale: Boolean = false,
+    val showPermissionDeniedDialog: Boolean = false,
+    val showDeleteConfirmation: DiscoveredDevice? = null,  // Device to delete (or null)
+    val showLimitReachedDialog: Boolean = false
 )
 
 class ConnectDeviceViewModel(
@@ -46,25 +52,53 @@ class ConnectDeviceViewModel(
     private var searchJob: Job? = null
 
     init {
-        // Initialize with some mock saved devices
-        loadInitialDevices()
+        observeSavedDevices()
     }
 
-    private fun loadInitialDevices() {
-        // Simulate having previously connected to some devices
-        val mockSavedDevices = listOf(
-            DiscoveredDevice("ABC123", "RFR-901 (ABC123)", 4, DeviceStatus.CONNECTED, true),
-            DiscoveredDevice("XYZ789", "RFR-901 (XYZ789)", 3, DeviceStatus.IN_RANGE, true),
-            DiscoveredDevice("DEF456", "RFR-900 (DEF456)", 0, DeviceStatus.OUT_OF_RANGE, true)
-        )
+    // Watch the database — auto-refresh saved devices list when DB changes
+    private fun observeSavedDevices() {
+        viewModelScope.launch {
+            deviceRepository.getSavedDevices().collect { entities ->
+                val currentConnectedId = _state.value.currentlyConnectedId
+
+                val devices = entities.map { entity ->
+                    // Determine status: keep CONNECTED for current device, default rest to IN_RANGE
+                    val status = when {
+                        entity.deviceId == currentConnectedId -> DeviceStatus.CONNECTED
+                        else -> DeviceStatus.IN_RANGE
+                    }
+
+                    DiscoveredDevice(
+                        id = entity.deviceId,
+                        name = entity.deviceName,
+                        signalBars = if (status == DeviceStatus.CONNECTED) 4 else 3,
+                        status = status,
+                        isSaved = true
+                    )
+                }
+
+                _state.value = _state.value.copy(savedDevices = devices)
+            }
+        }
+    }
+
+    // Called from outside to sync with shared connected device state
+    fun syncWithConnectedDevice(connectedDeviceId: String?) {
+        val updatedSaved = _state.value.savedDevices.map { device ->
+            when {
+                device.id == connectedDeviceId -> device.copy(status = DeviceStatus.CONNECTED)
+                device.status == DeviceStatus.CONNECTED -> device.copy(status = DeviceStatus.IN_RANGE)
+                else -> device
+            }
+        }
 
         _state.value = _state.value.copy(
-            savedDevices = mockSavedDevices,
-            currentlyConnectedId = "ABC123"
+            savedDevices = updatedSaved,
+            currentlyConnectedId = connectedDeviceId
         )
     }
 
-    // Called when user taps the Search button
+    // Called when user taps Search
     fun startSearch() {
         searchJob?.cancel()
 
@@ -77,11 +111,9 @@ class ConnectDeviceViewModel(
             // Simulate searching for 3 seconds
             delay(3000)
 
-            // Add some "newly discovered" devices
-            val newlyFound = listOf(
-                DiscoveredDevice("NEW001", "RFR-901 (NEW001)", 3, DeviceStatus.IN_RANGE, false),
-                DiscoveredDevice("NEW002", "RFR-900 (NEW002)", 2, DeviceStatus.IN_RANGE, false)
-            )
+            // Generate 2-4 fake new devices
+            val savedIds = _state.value.savedDevices.map { it.id }.toSet()
+            val newlyFound = generateFakeNewDevices(savedIds)
 
             _state.value = _state.value.copy(
                 isSearching = false,
@@ -90,15 +122,54 @@ class ConnectDeviceViewModel(
         }
     }
 
-    // Called when user updates the search input
+    private fun generateFakeNewDevices(excludeIds: Set<String>): List<DiscoveredDevice> {
+        val count = Random.nextInt(2, 5)
+        val models = listOf("RFR-901", "RFR-900", "RFR-902")
+
+        return (1..count).map {
+            // Generate a random 6-char alphanumeric ID
+            val id = (1..6).map { "ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789".random() }.joinToString("")
+            val model = models.random()
+            DiscoveredDevice(
+                id = id,
+                name = "$model ($id)",
+                signalBars = Random.nextInt(2, 5),
+                status = DeviceStatus.IN_RANGE,
+                isSaved = false
+            )
+        }.filter { it.id !in excludeIds }
+    }
+
     fun updateSearchQuery(query: String) {
         _state.value = _state.value.copy(searchQuery = query)
     }
 
-    // Called when user taps a device to connect/switch
+    // Called when user taps a device to connect to it
     fun connectToDevice(device: DiscoveredDevice) {
         viewModelScope.launch {
-            // Update connected status — old device becomes IN_RANGE, new device becomes CONNECTED
+            // If it's not saved, try to save it (with limit check)
+            if (!device.isSaved) {
+                val saved = deviceRepository.saveNewDevice(
+                    deviceId = device.id,
+                    deviceName = device.name,
+                    serialNumber = "SN-${device.id}",
+                    firmwareVersion = "v5.90.00.02"
+                )
+
+                if (!saved) {
+                    // Limit reached — show dialog
+                    _state.value = _state.value.copy(showLimitReachedDialog = true)
+                    return@launch
+                }
+
+                // Remove from "new devices" list (it's now saved)
+                val updatedNew = _state.value.newDevices.filter { it.id != device.id }
+                _state.value = _state.value.copy(newDevices = updatedNew)
+                // Saved devices list will auto-update via the Flow we're observing
+            }
+
+            // Mark this device as connected (the database observer will reflect it,
+            // but we also update locally for immediate visual feedback)
             val updatedSaved = _state.value.savedDevices.map { existing ->
                 when {
                     existing.id == device.id -> existing.copy(status = DeviceStatus.CONNECTED)
@@ -107,34 +178,58 @@ class ConnectDeviceViewModel(
                 }
             }
 
-            // If connecting to a new device, add it to saved list
-            val newDeviceAlreadySaved = updatedSaved.any { it.id == device.id }
-            val finalSavedList = if (!newDeviceAlreadySaved) {
-                updatedSaved + device.copy(
-                    isSaved = true,
-                    status = DeviceStatus.CONNECTED
-                )
-            } else {
-                updatedSaved
-            }
-
-            // Remove from new devices list if applicable
-            val updatedNew = _state.value.newDevices.filter { it.id != device.id }
-
             _state.value = _state.value.copy(
-                savedDevices = finalSavedList,
-                newDevices = updatedNew,
+                savedDevices = updatedSaved,
                 currentlyConnectedId = device.id
             )
-
-            // Save to database
-            deviceRepository.recordConnection(
-                deviceId = device.id,
-                deviceName = device.name,
-                serialNumber = "SN-${device.id}",
-                firmwareVersion = "v5.90.00.02",
-                isSaved = true
-            )
         }
+    }
+
+    // ============================================
+    // DELETE / FORGET DEVICE
+    // ============================================
+
+    fun showDeleteConfirmation(device: DiscoveredDevice) {
+        _state.value = _state.value.copy(showDeleteConfirmation = device)
+    }
+
+    fun dismissDeleteConfirmation() {
+        _state.value = _state.value.copy(showDeleteConfirmation = null)
+    }
+
+    fun confirmDeleteDevice(device: DiscoveredDevice) {
+        viewModelScope.launch {
+            deviceRepository.forgetDeviceById(device.id)
+            _state.value = _state.value.copy(showDeleteConfirmation = null)
+            // List auto-updates via Flow
+        }
+    }
+
+    // ============================================
+    // LIMIT REACHED DIALOG
+    // ============================================
+
+    fun dismissLimitReachedDialog() {
+        _state.value = _state.value.copy(showLimitReachedDialog = false)
+    }
+
+    // ============================================
+    // PERMISSION DIALOGS
+    // ============================================
+
+    fun showPermissionRationale() {
+        _state.value = _state.value.copy(showPermissionRationale = true)
+    }
+
+    fun dismissPermissionRationale() {
+        _state.value = _state.value.copy(showPermissionRationale = false)
+    }
+
+    fun showPermissionDenied() {
+        _state.value = _state.value.copy(showPermissionDeniedDialog = true)
+    }
+
+    fun dismissPermissionDenied() {
+        _state.value = _state.value.copy(showPermissionDeniedDialog = false)
     }
 }

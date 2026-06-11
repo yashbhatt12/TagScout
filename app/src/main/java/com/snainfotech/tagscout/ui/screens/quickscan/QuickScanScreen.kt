@@ -37,6 +37,7 @@ fun QuickScanScreen(
     // Callbacks
     onBackClick: () -> Unit = {},
     onMenuClick: () -> Unit = {},
+    onDeviceStatusClick: () -> Unit = {},
     onAntennaChange: (Int) -> Unit = {},
     onPlayPauseClick: () -> Unit = {},
     onSaveClick: () -> Unit = {},
@@ -66,7 +67,7 @@ fun QuickScanScreen(
             // 1. Header with timer badge
             AppHeader(
                 title = "TagScout",
-                showBackButton = true,
+                showBackButton = !state.isScanning,    // Hide back when scanning
                 onBackClick = onBackClick,
                 onMenuClick = onMenuClick,
                 timerBadge = timerBadge
@@ -79,7 +80,8 @@ fun QuickScanScreen(
                 serialNumber = serialNumber,
                 firmwareVersion = firmwareVersion,
                 batteryPercent = batteryPercent,
-                connectionStatus = ConnectionStatus.CONNECTED
+                connectionStatus = ConnectionStatus.CONNECTED,
+                onClick = onDeviceStatusClick
             )
 
             // 3. Scrollable content area

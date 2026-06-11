@@ -7,6 +7,7 @@ import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.launch
+import com.snainfotech.tagscout.data.repository.SettingsRepository
 
 // Buzzer level options
 enum class BuzzerLevel(val label: String) {
@@ -45,15 +46,34 @@ data class DeviceConfigState(
     val showSettingChangedToast: String = "" // Empty = no toast, otherwise the toast text
 )
 
-class DeviceConfigViewModel : ViewModel() {
+class DeviceConfigViewModel(
+    private val settingsRepository: SettingsRepository
+) : ViewModel() {
 
     private val _state = MutableStateFlow(DeviceConfigState())
     val state: StateFlow<DeviceConfigState> = _state.asStateFlow()
+    init {
+        loadSavedSettings()
+    }
 
+    private fun loadSavedSettings() {
+        val savedBuzzerLabel = settingsRepository.getBuzzerLevel()
+        val savedSleepLabel = settingsRepository.getSleepTimeout()
+
+        // Convert labels back to enums
+        val buzzerLevel = BuzzerLevel.values().find { it.label == savedBuzzerLabel } ?: BuzzerLevel.MEDIUM
+        val sleepTimeout = SleepTimeout.values().find { it.label == savedSleepLabel } ?: SleepTimeout.FIVE_MINUTES
+
+        _state.value = _state.value.copy(
+            buzzerLevel = buzzerLevel,
+            sleepTimeout = sleepTimeout
+        )
+    }
     // ============================================
     // BUZZER LEVEL
     // ============================================
     fun setBuzzerLevel(level: BuzzerLevel) {
+        settingsRepository.setBuzzerLevel(level.label)   // Save to disk
         _state.value = _state.value.copy(
             buzzerLevel = level,
             showSettingChangedToast = "✓ Buzzer level changed to ${level.label}"
@@ -65,6 +85,7 @@ class DeviceConfigViewModel : ViewModel() {
     // AUTO SLEEP TIMEOUT
     // ============================================
     fun setSleepTimeout(timeout: SleepTimeout) {
+        settingsRepository.setSleepTimeout(timeout.label)   // Save to disk
         _state.value = _state.value.copy(
             sleepTimeout = timeout,
             showSettingChangedToast = "✓ Auto sleep set to ${timeout.label}"
@@ -99,9 +120,12 @@ class DeviceConfigViewModel : ViewModel() {
                 delay(250)
             }
 
+            // Reset persisted settings to defaults
+            settingsRepository.resetToDefaults()
+
             _state.value = _state.value.copy(
                 resetState = OperationState.SUCCESS,
-                buzzerLevel = BuzzerLevel.MEDIUM,         // Reset to defaults
+                buzzerLevel = BuzzerLevel.MEDIUM,
                 sleepTimeout = SleepTimeout.FIVE_MINUTES
             )
 

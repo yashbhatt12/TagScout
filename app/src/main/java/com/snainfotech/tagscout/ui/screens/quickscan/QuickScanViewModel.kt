@@ -11,6 +11,7 @@ import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.launch
+import com.snainfotech.tagscout.data.repository.SettingsRepository
 
 // A single tag that was detected during scanning
 data class DetectedTag(
@@ -36,14 +37,22 @@ data class QuickScanState(
 
 class QuickScanViewModel(
     private val repository: QuickScanRepository,
-    private val scanner: RfidScanner
+    private val scanner: RfidScanner,
+    private val settingsRepository: SettingsRepository
 ) : ViewModel() {
 
-    // Private: only this ViewModel can change state
     private val _state = MutableStateFlow(QuickScanState())
-
-    // Public: screens can read this
     val state: StateFlow<QuickScanState> = _state.asStateFlow()
+
+    init {
+        loadSavedSettings()
+    }
+
+    private fun loadSavedSettings() {
+        val savedAntenna = settingsRepository.getAntennaStrength()
+        _state.value = _state.value.copy(antennaStrength = savedAntenna)
+        scanner.setAntennaPower(savedAntenna)  // Sync the SDK too
+    }
 
     // Reference to the running timer (so we can cancel it)
     private var timerJob: Job? = null
@@ -84,6 +93,7 @@ class QuickScanViewModel(
     // Called when user moves the antenna slider (only allowed when NOT scanning)
     fun setAntennaStrength(strength: Int) {
         if (!_state.value.isScanning) {
+            settingsRepository.setAntennaStrength(strength)
             _state.value = _state.value.copy(antennaStrength = strength)
             scanner.setAntennaPower(strength)
         }
@@ -189,5 +199,12 @@ class QuickScanViewModel(
                 addDetectedTag(scannedTag.epc, scannedTag.rssi)
             }
         }
+    }
+    // Called when the ViewModel is destroyed (e.g., user closes app)
+    override fun onCleared() {
+        super.onCleared()
+        timerJob?.cancel()
+        sdkJob?.cancel()
+        scanner.stopScanning()
     }
 }

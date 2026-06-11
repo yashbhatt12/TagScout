@@ -12,6 +12,7 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.clickable
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -46,6 +47,7 @@ fun DeviceStatusComponent(
     firmwareVersion: String,
     batteryPercent: Int,
     connectionStatus: ConnectionStatus,
+    onClick: (() -> Unit)? = null,
     modifier: Modifier = Modifier
 ) {
     // Decide colors and text based on connection status
@@ -60,8 +62,15 @@ fun DeviceStatusComponent(
         modifier = modifier
             .fillMaxWidth()
             .background(bgColor)
+            .then(
+                if (onClick != null && isConnected) {
+                    Modifier.clickable { onClick() }
+                } else {
+                    Modifier
+                }
+            )
             .padding(horizontal = 16.dp, vertical = 10.dp)
-    ) {
+    )  {
         // Row 1: Dot, device name, status, battery
         Row(
             modifier = Modifier.fillMaxWidth(),

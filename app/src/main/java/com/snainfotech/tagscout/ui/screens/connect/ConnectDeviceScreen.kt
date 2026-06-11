@@ -55,6 +55,7 @@ fun ConnectDeviceScreen(
     onSearchClick: () -> Unit = {},
     onSearchQueryChange: (String) -> Unit = {},
     onDeviceClick: (DiscoveredDevice) -> Unit = {},
+    onDeviceLongPress: (DiscoveredDevice) -> Unit = {},
     modifier: Modifier = Modifier
 ) {
     Column(
@@ -149,7 +150,8 @@ fun ConnectDeviceScreen(
                     DeviceListItem(
                         device = device,
                         isCurrentlyConnected = device.id == state.currentlyConnectedId,
-                        onClick = { onDeviceClick(device) }
+                        onClick = { onDeviceClick(device) },
+                        onLongPress = { onDeviceLongPress(device) }
                     )
                 }
             }

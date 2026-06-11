@@ -34,6 +34,8 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.snainfotech.tagscout.ui.theme.BorderGray
 import com.snainfotech.tagscout.ui.theme.DarkText
+import com.snainfotech.tagscout.ui.theme.Disabled
+import com.snainfotech.tagscout.ui.theme.DisabledText
 import com.snainfotech.tagscout.ui.theme.ErrorRed
 import com.snainfotech.tagscout.ui.theme.MediumGray
 import com.snainfotech.tagscout.ui.theme.Primary
@@ -61,6 +63,16 @@ fun SaveScanDialog(
     var selectedFormat by remember { mutableStateOf("Excel (.xlsx)") }
     val formats = listOf("Excel (.xlsx)", "CSV (.csv)")
 
+    // Validation — computed at the dialog level so both text body and confirm button can see it
+    val trimmedFilename = filename.trim()
+    val isFilenameValid = trimmedFilename.isNotEmpty() &&
+            trimmedFilename.matches(Regex("[a-zA-Z0-9_\\-]+"))
+    val errorMessage = when {
+        trimmedFilename.isEmpty() -> "Filename cannot be empty"
+        !isFilenameValid -> "Only letters, numbers, _ and - allowed"
+        else -> null
+    }
+
     AlertDialog(
         onDismissRequest = onDismiss,
         title = {
@@ -77,13 +89,18 @@ fun SaveScanDialog(
                     fontWeight = FontWeight.SemiBold,
                     color = DarkText
                 )
+
                 OutlinedTextField(
                     value = filename,
                     onValueChange = { filename = it },
                     modifier = Modifier
                         .fillMaxWidth()
                         .padding(top = 6.dp),
-                    singleLine = true
+                    singleLine = true,
+                    isError = errorMessage != null,
+                    supportingText = errorMessage?.let {
+                        { Text(it, fontSize = 10.sp, color = ErrorRed) }
+                    }
                 )
 
                 Spacer(modifier = Modifier.height(12.dp))
@@ -95,7 +112,6 @@ fun SaveScanDialog(
                     color = DarkText
                 )
 
-                // Custom dropdown — simpler than ExposedDropdownMenu
                 Box(modifier = Modifier.padding(top = 6.dp)) {
                     Row(
                         modifier = Modifier
@@ -139,8 +155,13 @@ fun SaveScanDialog(
         },
         confirmButton = {
             Button(
-                onClick = { onSave(filename, selectedFormat) },
-                colors = ButtonDefaults.buttonColors(containerColor = Primary)
+                onClick = { onSave(trimmedFilename, selectedFormat) },
+                enabled = isFilenameValid,
+                colors = ButtonDefaults.buttonColors(
+                    containerColor = Primary,
+                    disabledContainerColor = Disabled,
+                    disabledContentColor = DisabledText
+                )
             ) {
                 Text("Save")
             }

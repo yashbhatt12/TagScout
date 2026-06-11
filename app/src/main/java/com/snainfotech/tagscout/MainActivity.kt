@@ -70,4 +70,15 @@ class ConnectDeviceViewModelFactory(
         }
         throw IllegalArgumentException("Unknown ViewModel class")
     }
+
+}
+// Factory: Creates the DeviceConfigViewModel (no parameters needed)
+class DeviceConfigViewModelFactory : ViewModelProvider.Factory {
+    override fun <T : ViewModel> create(modelClass: Class<T>): T {
+        if (modelClass.isAssignableFrom(com.snainfotech.tagscout.ui.screens.config.DeviceConfigViewModel::class.java)) {
+            @Suppress("UNCHECKED_CAST")
+            return com.snainfotech.tagscout.ui.screens.config.DeviceConfigViewModel() as T
+        }
+        throw IllegalArgumentException("Unknown ViewModel class")
+    }
 }

@@ -30,6 +30,17 @@ import com.snainfotech.tagscout.ui.screens.quickscan.SaveScanDialog
 import com.snainfotech.tagscout.ui.screens.quickscan.TimeWarningDialog
 import com.snainfotech.tagscout.ui.screens.connect.ConnectDeviceScreen
 import com.snainfotech.tagscout.ui.screens.connect.ConnectDeviceViewModel
+import com.snainfotech.tagscout.ui.screens.config.DeviceConfigScreen
+import com.snainfotech.tagscout.ui.screens.config.DeviceConfigViewModel
+import com.snainfotech.tagscout.ui.screens.config.OperationState
+import com.snainfotech.tagscout.ui.screens.config.ResetConfirmationDialog
+import com.snainfotech.tagscout.ui.screens.config.ResetProgressDialog
+import com.snainfotech.tagscout.ui.screens.config.ResetSuccessDialog
+import com.snainfotech.tagscout.ui.screens.config.FirmwareUpdateAvailableDialog
+import com.snainfotech.tagscout.ui.screens.config.FirmwareUpdateProgressDialog
+import com.snainfotech.tagscout.ui.screens.config.FirmwareUpdateSuccessDialog
+import com.snainfotech.tagscout.ui.screens.config.FirmwareCheckingDialog
+import com.snainfotech.tagscout.ui.screens.config.FirmwareUpToDateDialog
 
 // All possible screen routes (like URLs for each screen)
 object Routes {
@@ -37,10 +48,9 @@ object Routes {
     const val QUICK_SCAN = "quick_scan"
     const val ABOUT = "about"
     const val CONNECT_DEVICE = "connect_device"
+    const val DEVICE_CONFIG = "device_config"
     // Future routes (we'll add these later):
     // const val INVENTORY = "inventory"
-    // const val DEVICE_CONFIG = "device_config"
-    // const val CONNECT_DEVICE = "connect_device"
 }
 
 @Composable
@@ -48,7 +58,7 @@ fun TagScoutNavGraph(
     navController: NavHostController = rememberNavController(),
     modifier: Modifier = Modifier
 ) {
-    val app = androidx.compose.ui.platform.LocalContext.current.applicationContext as TagScoutApplication
+    val app = LocalContext.current.applicationContext as TagScoutApplication
 
     NavHost(
         navController = navController,
@@ -65,7 +75,6 @@ fun TagScoutNavGraph(
 
             val deviceState by homeViewModel.deviceState.collectAsState()
 
-            // Fake "connected" device (remove when real SDK is integrated)
             LaunchedEffect(Unit) {
                 homeViewModel.updateDeviceStatus(
                     isConnected = true,
@@ -77,23 +86,20 @@ fun TagScoutNavGraph(
                 )
             }
 
-            // Menu state
             var menuExpanded by remember { mutableStateOf(false) }
             var showExitDialog by remember { mutableStateOf(false) }
             val context = LocalContext.current
             val activity = context as? android.app.Activity
 
-            // Wrap HomeScreen + menu in a Box so menu appears on top
             Box {
                 HomeScreen(
                     deviceState = deviceState,
                     onMenuClick = { menuExpanded = true },
                     onQuickScanClick = { navController.navigate(Routes.QUICK_SCAN) },
                     onInventoryClick = { /* TODO: Inventory navigation */ },
-                    onDeviceConfigClick = { /* TODO: Device Config navigation */ }
+                    onDeviceConfigClick = { navController.navigate(Routes.DEVICE_CONFIG) }
                 )
 
-                // Menu dropdown — anchored to top-right
                 Box(
                     modifier = Modifier
                         .align(Alignment.TopEnd)
@@ -110,7 +116,6 @@ fun TagScoutNavGraph(
                 }
             }
 
-            // Exit confirmation
             if (showExitDialog) {
                 ExitConfirmationDialog(
                     onDismiss = { showExitDialog = false },
@@ -132,7 +137,6 @@ fun TagScoutNavGraph(
 
             val scanState by quickScanViewModel.state.collectAsState()
 
-            // Dialog state — which dialog is showing (if any)
             var showSaveDialog by remember { mutableStateOf(false) }
             var showClearDialog by remember { mutableStateOf(false) }
 
@@ -142,15 +146,9 @@ fun TagScoutNavGraph(
                 serialNumber = "SN-123456",
                 firmwareVersion = "v5.90.00.02",
                 batteryPercent = 85,
-                onBackClick = {
-                    navController.popBackStack()
-                },
-                onMenuClick = {
-                    // TODO: Show menu
-                },
-                onAntennaChange = { newValue ->
-                    quickScanViewModel.setAntennaStrength(newValue)
-                },
+                onBackClick = { navController.popBackStack() },
+                onMenuClick = { /* TODO: Show menu */ },
+                onAntennaChange = { quickScanViewModel.setAntennaStrength(it) },
                 onPlayPauseClick = {
                     when {
                         scanState.isScanning -> quickScanViewModel.pauseScanning()
@@ -158,15 +156,10 @@ fun TagScoutNavGraph(
                         else -> quickScanViewModel.startScanning()
                     }
                 },
-                onSaveClick = {
-                    showSaveDialog = true
-                },
-                onClearClick = {
-                    showClearDialog = true
-                }
+                onSaveClick = { showSaveDialog = true },
+                onClearClick = { showClearDialog = true }
             )
 
-            // Save dialog
             if (showSaveDialog) {
                 SaveScanDialog(
                     onDismiss = { showSaveDialog = false },
@@ -177,7 +170,6 @@ fun TagScoutNavGraph(
                 )
             }
 
-            // Clear confirmation dialog
             if (showClearDialog) {
                 ClearConfirmationDialog(
                     onDismiss = { showClearDialog = false },
@@ -188,16 +180,13 @@ fun TagScoutNavGraph(
                 )
             }
 
-            // Time warning dialog (auto-shown by ViewModel)
             if (scanState.showTimeWarning) {
                 TimeWarningDialog(
                     onStopScan = {
                         quickScanViewModel.dismissTimeWarning()
                         quickScanViewModel.pauseScanning()
                     },
-                    onExtend = {
-                        quickScanViewModel.extendTimer()
-                    }
+                    onExtend = { quickScanViewModel.extendTimer() }
                 )
             }
         }
@@ -211,6 +200,7 @@ fun TagScoutNavGraph(
                 onMenuClick = { /* Menu not needed on about screen */ }
             )
         }
+
         // ============================================
         // CONNECT DEVICE SCREEN
         // ============================================
@@ -224,13 +214,71 @@ fun TagScoutNavGraph(
             ConnectDeviceScreen(
                 state = connectState,
                 onBackClick = { navController.popBackStack() },
-                onMenuClick = { /* TODO: maybe show menu here too */ },
+                onMenuClick = { /* TODO */ },
                 onSearchClick = { connectViewModel.startSearch() },
                 onSearchQueryChange = { connectViewModel.updateSearchQuery(it) },
-                onDeviceClick = { device ->
-                    connectViewModel.connectToDevice(device)
-                }
+                onDeviceClick = { device -> connectViewModel.connectToDevice(device) }
             )
+        }
+
+        // ============================================
+        // DEVICE CONFIG SCREEN
+        // ============================================
+        composable(Routes.DEVICE_CONFIG) {
+            val configViewModel: DeviceConfigViewModel = viewModel(
+                factory = DeviceConfigViewModelFactory()
+            )
+
+            val configState by configViewModel.state.collectAsState()
+
+            DeviceConfigScreen(
+                state = configState,
+                onBackClick = { navController.popBackStack() },
+                onMenuClick = { /* TODO */ },
+                onBuzzerChange = { level -> configViewModel.setBuzzerLevel(level) },
+                onSleepTimeoutChange = { timeout -> configViewModel.setSleepTimeout(timeout) },
+                onResetClick = { configViewModel.startResetConfirmation() },
+                onCheckFirmwareClick = { configViewModel.checkForFirmwareUpdate() }
+            )
+
+            // === Reset dialogs ===
+            when (configState.resetState) {
+                OperationState.CONFIRMING -> ResetConfirmationDialog(
+                    onDismiss = { configViewModel.dismissReset() },
+                    onConfirm = { configViewModel.confirmReset() }
+                )
+                OperationState.IN_PROGRESS -> ResetProgressDialog(progress = configState.resetProgress)
+                OperationState.SUCCESS -> ResetSuccessDialog(
+                    onDismiss = { configViewModel.dismissReset() }
+                )
+                else -> { /* IDLE or UP_TO_DATE: nothing for reset */ }
+            }
+
+            // === Firmware update dialogs ===
+            when (configState.firmwareUpdateState) {
+                OperationState.IN_PROGRESS -> {
+                    if (configState.firmwareUpdateProgress == 0 && configState.newFirmwareVersion.isEmpty()) {
+                        FirmwareCheckingDialog()
+                    } else {
+                        FirmwareUpdateProgressDialog(progress = configState.firmwareUpdateProgress)
+                    }
+                }
+                OperationState.CONFIRMING -> FirmwareUpdateAvailableDialog(
+                    currentVersion = configState.firmwareVersion,
+                    newVersion = configState.newFirmwareVersion,
+                    onDismiss = { configViewModel.dismissFirmwareUpdate() },
+                    onUpdate = { configViewModel.confirmFirmwareUpdate() }
+                )
+                OperationState.SUCCESS -> FirmwareUpdateSuccessDialog(
+                    newVersion = configState.firmwareVersion,
+                    onDismiss = { configViewModel.dismissFirmwareUpdate() }
+                )
+                OperationState.UP_TO_DATE -> FirmwareUpToDateDialog(
+                    currentVersion = configState.firmwareVersion,
+                    onDismiss = { configViewModel.dismissFirmwareUpdate() }
+                )
+                OperationState.IDLE -> { /* nothing */ }
+            }
         }
     }
 }

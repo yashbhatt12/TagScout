@@ -7,6 +7,14 @@ import kotlin.random.Random
 
 class FakeRfidScanner : RfidScanner {
 
+    override val vendorName: String = "Fake"
+    override val modelName: String = "Simulator v1"
+    override val supportedFeatures: Set<ScannerFeature> = setOf(
+        ScannerFeature.ANTENNA_POWER_CONTROL,
+        ScannerFeature.MULTI_TAG_READING,
+        ScannerFeature.TID_READING
+    )
+
     // A "pool" of fake tags. The scanner will pretend to detect these.
     private val fakeTagPool = listOf(
         "3004A1B2C3D4E5F6",

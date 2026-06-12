@@ -32,7 +32,12 @@ data class QuickScanState(
     val timeRemaining: Int = 180,       // 3 minutes = 180 seconds
     val detectedTags: List<DetectedTag> = emptyList(),
     val showTimeWarning: Boolean = false,  // Show "30 seconds left" dialog
-    val isTimerExpired: Boolean = false
+    val showDeviceDisconnectedDialog: Boolean = false,
+    val isTimerExpired: Boolean = false,
+    val showLowBatteryWarning: Boolean = false,
+    val lowBatteryWarningAcknowledged: Boolean = false,
+    val showCriticalBatteryDialog: Boolean = false
+
 )
 
 class QuickScanViewModel(
@@ -64,7 +69,8 @@ class QuickScanViewModel(
             isScanning = true,
             isPaused = false,
             timeRemaining = 180,
-            isTimerExpired = false
+            isTimerExpired = false,
+            lowBatteryWarningAcknowledged = false
         )
         startTimer()
         startSdkScan()
@@ -138,6 +144,7 @@ class QuickScanViewModel(
         sdkJob?.cancel()
         scanner.stopScanning()
         _state.value = QuickScanState()
+
     }
 
     // Called when user clicks "Save" button
@@ -206,5 +213,85 @@ class QuickScanViewModel(
         timerJob?.cancel()
         sdkJob?.cancel()
         scanner.stopScanning()
+    }
+    // ============================================
+    // LOW BATTERY HANDLING
+    // ============================================
+
+    fun handleLowBattery() {
+        // Don't warn again if already acknowledged
+        if (_state.value.lowBatteryWarningAcknowledged) return
+
+        // Pause the scan
+        timerJob?.cancel()
+        sdkJob?.cancel()
+        scanner.stopScanning()
+
+        _state.value = _state.value.copy(
+            isScanning = false,
+            isPaused = true,
+            showLowBatteryWarning = true
+        )
+    }
+
+    // User chose to continue scanning despite low battery
+    fun continueScanningDespiteLowBattery() {
+        _state.value = _state.value.copy(
+            showLowBatteryWarning = false,
+            lowBatteryWarningAcknowledged = true  // Don't warn again this session
+        )
+        resumeScanning()  // Resume from pause
+    }
+
+    // User chose to stop scanning
+    fun stopScanningDueToLowBattery() {
+        _state.value = _state.value.copy(
+            showLowBatteryWarning = false,
+            lowBatteryWarningAcknowledged = true
+        )
+        // Already paused — just close the dialog
+    }
+
+    // Reset the acknowledged flag when scan is cleared or fresh-started
+    fun resetLowBatteryAck() {
+        _state.value = _state.value.copy(lowBatteryWarningAcknowledged = false)
+    }
+    // ============================================
+    // DEVICE DISCONNECTED HANDLING (E7)
+    // ============================================
+
+    fun handleDeviceDisconnected() {
+        // Auto-pause the scan
+        timerJob?.cancel()
+        sdkJob?.cancel()
+        scanner.stopScanning()
+
+        _state.value = _state.value.copy(
+            isScanning = false,
+            isPaused = true,
+            showDeviceDisconnectedDialog = true
+        )
+    }
+
+    fun dismissDeviceDisconnectedDialog() {
+        _state.value = _state.value.copy(showDeviceDisconnectedDialog = false)
+    }
+    // Critical battery — force-pause, no option to continue
+    fun handleCriticalBattery() {
+        // Force-pause the scan
+        timerJob?.cancel()
+        sdkJob?.cancel()
+        scanner.stopScanning()
+
+        _state.value = _state.value.copy(
+            isScanning = false,
+            isPaused = true,
+            showCriticalBatteryDialog = true,
+            showLowBatteryWarning = false  // Dismiss the regular warning if shown
+        )
+    }
+
+    fun dismissCriticalBatteryDialog() {
+        _state.value = _state.value.copy(showCriticalBatteryDialog = false)
     }
 }

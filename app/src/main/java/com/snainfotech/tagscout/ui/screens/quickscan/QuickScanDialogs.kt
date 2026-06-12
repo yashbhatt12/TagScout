@@ -40,6 +40,8 @@ import com.snainfotech.tagscout.ui.theme.ErrorRed
 import com.snainfotech.tagscout.ui.theme.MediumGray
 import com.snainfotech.tagscout.ui.theme.Primary
 import com.snainfotech.tagscout.ui.theme.SuccessGreen
+import com.snainfotech.tagscout.ui.theme.InfoBlue
+import com.snainfotech.tagscout.ui.theme.WarningOrange
 import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
@@ -251,6 +253,164 @@ fun TimeWarningDialog(
         }
     )
 }
+// ============================================
+// LOW BATTERY WARNING DIALOG
+// ============================================
+
+@Composable
+fun LowBatteryDialog(
+    batteryPercent: Int,
+    onContinue: () -> Unit,
+    onStop: () -> Unit
+) {
+    AlertDialog(
+        onDismissRequest = onStop,  // Tap outside = stop (safer default)
+        title = {
+            Text(
+                text = "🔋 Low Battery",
+                fontWeight = FontWeight.SemiBold,
+                color = WarningOrange
+            )
+        },
+        text = {
+            Column {
+                Text(
+                    text = "Device battery is at $batteryPercent%.",
+                    fontSize = 13.sp,
+                    fontWeight = FontWeight.Medium
+                )
+                Spacer(modifier = Modifier.height(8.dp))
+                Text(
+                    text = "Scanning has been paused. The device may shut down before your scan is complete.",
+                    fontSize = 12.sp,
+                    color = MediumGray
+                )
+                Spacer(modifier = Modifier.height(8.dp))
+                Text(
+                    text = "💡 Tip: Save your current data before continuing.",
+                    fontSize = 11.sp,
+                    color = InfoBlue,
+                    fontWeight = FontWeight.Medium
+                )
+            }
+        },
+        confirmButton = {
+            Button(
+                onClick = onContinue,
+                colors = ButtonDefaults.buttonColors(containerColor = WarningOrange)
+            ) {
+                Text("Continue Scanning")
+            }
+        },
+        dismissButton = {
+            Button(
+                onClick = onStop,
+                colors = ButtonDefaults.buttonColors(containerColor = Primary)
+            ) {
+                Text("Stop Scan")
+            }
+        }
+    )
+}
+// ============================================
+// DEVICE DISCONNECTED DIALOG
+// ============================================
+
+@Composable
+fun DeviceDisconnectedDialog(
+    onDismiss: () -> Unit
+) {
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = {
+            Text(
+                text = "📵 Device Disconnected",
+                fontWeight = FontWeight.SemiBold,
+                color = ErrorRed
+            )
+        },
+        text = {
+            Column {
+                Text(
+                    text = "Your RFID reader has disconnected during the scan.",
+                    fontSize = 13.sp
+                )
+                Spacer(modifier = Modifier.height(8.dp))
+                Text(
+                    text = "Scanning has been paused. Reconnect your device to continue.",
+                    fontSize = 12.sp,
+                    color = MediumGray
+                )
+                Spacer(modifier = Modifier.height(8.dp))
+                Text(
+                    text = "⚠ Scan data may be incomplete.",
+                    fontSize = 11.sp,
+                    color = ErrorRed,
+                    fontWeight = FontWeight.Medium
+                )
+            }
+        },
+        confirmButton = {
+            Button(
+                onClick = onDismiss,
+                colors = ButtonDefaults.buttonColors(containerColor = Primary)
+            ) {
+                Text("OK")
+            }
+        }
+    )
+}
+// ============================================
+// CRITICAL BATTERY DIALOG (forces user to stop)
+// ============================================
+
+@Composable
+fun CriticalBatteryDialog(
+    batteryPercent: Int,
+    onAcknowledge: () -> Unit
+) {
+    AlertDialog(
+        onDismissRequest = onAcknowledge,
+        title = {
+            Text(
+                text = "🪫 Critical Battery",
+                fontWeight = FontWeight.SemiBold,
+                color = ErrorRed
+            )
+        },
+        text = {
+            Column {
+                Text(
+                    text = "Device battery is at $batteryPercent%.",
+                    fontSize = 13.sp,
+                    fontWeight = FontWeight.Medium,
+                    color = ErrorRed
+                )
+                Spacer(modifier = Modifier.height(8.dp))
+                Text(
+                    text = "Scanning has been stopped to protect your data. The device may shut down at any moment.",
+                    fontSize = 12.sp,
+                    color = MediumGray
+                )
+                Spacer(modifier = Modifier.height(8.dp))
+                Text(
+                    text = "💾 Please save your scan data immediately.",
+                    fontSize = 12.sp,
+                    color = Primary,
+                    fontWeight = FontWeight.SemiBold
+                )
+            }
+        },
+        confirmButton = {
+            Button(
+                onClick = onAcknowledge,
+                colors = ButtonDefaults.buttonColors(containerColor = Primary)
+            ) {
+                Text("OK")
+            }
+        }
+    )
+}
 
 // ============================================
 // PREVIEWS
@@ -272,4 +432,26 @@ fun ClearConfirmationDialogPreview() {
 @Composable
 fun TimeWarningDialogPreview() {
     TimeWarningDialog(onStopScan = {}, onExtend = {})
+}
+@Preview(showBackground = true)
+@Composable
+fun LowBatteryDialogPreview() {
+    LowBatteryDialog(
+        batteryPercent = 12,
+        onContinue = {},
+        onStop = {}
+    )
+}
+@Preview(showBackground = true)
+@Composable
+fun DeviceDisconnectedDialogPreview() {
+    DeviceDisconnectedDialog(onDismiss = {})
+}
+@Preview(showBackground = true)
+@Composable
+fun CriticalBatteryDialogPreview() {
+    CriticalBatteryDialog(
+        batteryPercent = 4,
+        onAcknowledge = {}
+    )
 }

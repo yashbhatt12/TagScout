@@ -44,6 +44,9 @@ import com.snainfotech.tagscout.ui.screens.quickscan.SaveScanDialog
 import com.snainfotech.tagscout.ui.screens.quickscan.TimeWarningDialog
 import com.snainfotech.tagscout.ui.screens.connect.DeleteDeviceConfirmationDialog
 import com.snainfotech.tagscout.ui.screens.connect.DeviceLimitReachedDialog
+import com.snainfotech.tagscout.ui.screens.quickscan.LowBatteryDialog
+import com.snainfotech.tagscout.ui.screens.quickscan.DeviceDisconnectedDialog
+import com.snainfotech.tagscout.ui.screens.quickscan.CriticalBatteryDialog
 import android.content.Intent
 import android.net.Uri
 import android.provider.Settings
@@ -52,6 +55,8 @@ import androidx.activity.result.contract.ActivityResultContracts
 import com.snainfotech.tagscout.PermissionHelper
 import com.snainfotech.tagscout.ui.components.BluetoothPermissionDeniedDialog
 import com.snainfotech.tagscout.ui.components.BluetoothPermissionRationaleDialog
+private const val LOW_BATTERY_THRESHOLD = 15
+private const val CRITICAL_BATTERY_THRESHOLD = 5
 
 // All possible screen routes (like URLs for each screen)
 object Routes {
@@ -59,6 +64,7 @@ object Routes {
     const val QUICK_SCAN = "quick_scan"
     const val ABOUT = "about"
     const val CONNECT_DEVICE = "connect_device"
+    // Battery threshold for showing low battery warning during scan
     const val DEVICE_CONFIG = "device_config"
     // Future routes (we'll add these later):
     // const val INVENTORY = "inventory"
@@ -146,6 +152,32 @@ fun TagScoutNavGraph(
                 // Do nothing — user must pause first
             }
 
+            // E7: Watch for device disconnection mid-scan
+            LaunchedEffect(deviceState.isConnected) {
+                if (!deviceState.isConnected && (scanState.isScanning || scanState.isPaused)) {
+                    quickScanViewModel.handleDeviceDisconnected()
+                }
+            }
+
+            // E8: Watch for low battery during scan (two-tier)
+            LaunchedEffect(deviceState.batteryPercent, scanState.isScanning) {
+                if (!scanState.isScanning || !deviceState.isConnected) return@LaunchedEffect
+
+                val battery = deviceState.batteryPercent
+
+                when {
+                    // Critical battery (≤ 5%) — force-stop, no continue option
+                    battery in 1..CRITICAL_BATTERY_THRESHOLD -> {
+                        quickScanViewModel.handleCriticalBattery()
+                    }
+                    // Low battery (≤ 15% but > 5%) — warn with continue option
+                    battery in (CRITICAL_BATTERY_THRESHOLD + 1)..LOW_BATTERY_THRESHOLD &&
+                            !scanState.lowBatteryWarningAcknowledged -> {
+                        quickScanViewModel.handleLowBattery()
+                    }
+                }
+            }
+
             var showSaveDialog by remember { mutableStateOf(false) }
             var showClearDialog by remember { mutableStateOf(false) }
 
@@ -197,6 +229,29 @@ fun TagScoutNavGraph(
                         quickScanViewModel.pauseScanning()
                     },
                     onExtend = { quickScanViewModel.extendTimer() }
+                )
+            }
+
+            // E7: Device disconnected dialog
+            if (scanState.showDeviceDisconnectedDialog) {
+                DeviceDisconnectedDialog(
+                    onDismiss = { quickScanViewModel.dismissDeviceDisconnectedDialog() }
+                )
+            }
+
+            // E8: Low battery warning dialog
+            if (scanState.showLowBatteryWarning) {
+                LowBatteryDialog(
+                    batteryPercent = deviceState.batteryPercent,
+                    onContinue = { quickScanViewModel.continueScanningDespiteLowBattery() },
+                    onStop = { quickScanViewModel.stopScanningDueToLowBattery() }
+                )
+            }
+            // Critical battery dialog
+            if (scanState.showCriticalBatteryDialog) {
+                CriticalBatteryDialog(
+                    batteryPercent = deviceState.batteryPercent,
+                    onAcknowledge = { quickScanViewModel.dismissCriticalBatteryDialog() }
                 )
             }
         }

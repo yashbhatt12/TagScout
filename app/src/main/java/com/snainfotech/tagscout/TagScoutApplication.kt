@@ -30,6 +30,7 @@ class TagScoutApplication : Application() {
     val settingsRepository by lazy {
         SettingsRepository(this)
     }
+
     // RFID Scanner — fake for now, will be Bluebird SDK later
     val rfidScanner: com.snainfotech.tagscout.sdk.RfidScanner by lazy {
         com.snainfotech.tagscout.sdk.FakeRfidScanner()

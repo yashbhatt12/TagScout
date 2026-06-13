@@ -59,7 +59,7 @@ fun BottomButtonBar(
         // Middle button (Play / Pause / Resume)
         when (state) {
             ScanButtonState.INITIAL -> ActionButton(
-                text = "▶ Play",
+                text = "▶ Scan",
                 enabled = true,
                 enabledColor = SuccessGreen,
                 onClick = onPlayPauseClick,

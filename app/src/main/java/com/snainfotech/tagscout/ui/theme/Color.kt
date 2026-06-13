@@ -1,209 +1,46 @@
-package com.snainfotech.tagscout.ui.screens.inventory
+package com.snainfotech.tagscout.ui.theme
 
-import androidx.lifecycle.ViewModel
-import androidx.lifecycle.viewModelScope
-import com.snainfotech.tagscout.data.repository.InventoryScanRepository
-import kotlinx.coroutines.Job
-import kotlinx.coroutines.delay
-import kotlinx.coroutines.flow.MutableStateFlow
-import kotlinx.coroutines.flow.StateFlow
-import kotlinx.coroutines.flow.asStateFlow
-import kotlinx.coroutines.launch
+import androidx.compose.ui.graphics.Color
 
-// A single item from the uploaded inventory file
-data class InventoryItem(
-    val id: Int,
-    val epc: String,
-    val tid: String,
-    val productName: String,
-    val binNumber: String? = null,         // Optional column
-    val productGrouping: String? = null,   // Optional column
-    val isFound: Boolean = false           // Will be true if scanned
-)
+// Default Compose colors (keep these — used by theme)
+val Purple80 = Color(0xFFD0BCFF)
+val PurpleGrey80 = Color(0xFFCCC2DC)
+val Pink80 = Color(0xFFEFB8C8)
+val Purple40 = Color(0xFF6650a4)
+val PurpleGrey40 = Color(0xFF625b71)
+val Pink40 = Color(0xFF7D5260)
 
-// What info the Inventory brain remembers
-data class InventoryScanState(
-    val isScanning: Boolean = false,
-    val isPaused: Boolean = false,
-    val tagsScanned: Int = 0,               // Total tag reads (including duplicates)
-    val uniqueTags: Int = 0,                // Unique tags detected
-    val readPerSecond: Float = 0f,
-    val expectedItems: Int = 0,             // Items in uploaded file
-    val foundItems: Int = 0,                // Items matched
-    val missingItems: Int = 0,              // Items not yet matched
-    val progressPercent: Int = 0,
-    val inventoryItems: List<InventoryItem> = emptyList(),
-    val timeRemaining: Int = 180,
-    val uploadedFilename: String = "",
-    val showTimeWarning: Boolean = false,
-    val hasFileLoaded: Boolean = false
-)
+// === TagScout Brand Colors ===
 
-class InventoryScanViewModel(
-    private val repository: InventoryScanRepository
-) : ViewModel() {
+// Primary palette (used for header gradient, main buttons)
+val Primary = Color(0xFF667eea)
+val Secondary = Color(0xFF764ba2)
 
-    private val _state = MutableStateFlow(InventoryScanState())
-    val state: StateFlow<InventoryScanState> = _state.asStateFlow()
+// Status colors (device status indicators, banners)
+val SuccessGreen = Color(0xFF00d084)      // Connected, ✓ found
+val ErrorRed = Color(0xFFff6b6b)          // Disconnected, ✗ missing, danger
+val WarningOrange = Color(0xFFffa500)     // Low battery, pause
+val InfoBlue = Color(0xFF0d6efd)          // Charging
 
-    private var timerJob: Job? = null
+// Background colors for status banners
+val SuccessBg = Color(0xFFd4edda)
+val SuccessText = Color(0xFF155724)
+val ErrorBg = Color(0xFFf8d7da)
+val ErrorText = Color(0xFF721c24)
+val WarningBg = Color(0xFFfff3cd)
+val WarningText = Color(0xFF664d03)
+val InfoBg = Color(0xFFcfe2ff)
+val InfoText = Color(0xFF084298)
 
-    // Track unique EPCs we've seen (for the stats counter)
-    private val scannedEpcs = mutableSetOf<String>()
+// Neutral colors
+val Disabled = Color(0xFFe9ecef)
+val DisabledText = Color(0xFFadb5bd)
+val BorderGray = Color(0xFFe0e0e0)
+val LightGray = Color(0xFFf8f9fa)
+val MediumGray = Color(0xFF666666)
+val DarkText = Color(0xFF2c3e50)
 
-    // Called when user uploads a file (we'll wire up file parsing later)
-    fun loadInventoryFile(items: List<InventoryItem>, filename: String) {
-        _state.value = _state.value.copy(
-            inventoryItems = items,
-            expectedItems = items.size,
-            missingItems = items.size,    // Initially, all items are "missing"
-            foundItems = 0,
-            progressPercent = 0,
-            uploadedFilename = filename,
-            hasFileLoaded = true
-        )
-    }
-
-    // Called when user taps "Play" button
-    fun startScanning() {
-        _state.value = _state.value.copy(
-            isScanning = true,
-            isPaused = false,
-            timeRemaining = 180
-        )
-        scannedEpcs.clear()
-        startTimer()
-    }
-
-    // Called when user taps "Pause" button
-    fun pauseScanning() {
-        timerJob?.cancel()
-        _state.value = _state.value.copy(
-            isScanning = false,
-            isPaused = true
-        )
-    }
-
-    // Called when user taps "Resume" button
-    fun resumeScanning() {
-        _state.value = _state.value.copy(
-            isScanning = true,
-            isPaused = false
-        )
-        startTimer()
-    }
-
-    // Called by SDK when a tag is detected
-    fun onTagDetected(epc: String, tid: String) {
-        val currentState = _state.value
-
-        // Track unique scans
-        scannedEpcs.add(epc)
-
-        // Try to match this tag against the inventory file
-        val itemIndex = currentState.inventoryItems.indexOfFirst { item ->
-            item.epc == epc || item.tid == tid
-        }
-
-        // Calculate read rate
-        val timeElapsed = 180 - currentState.timeRemaining
-        val rate = if (timeElapsed > 0) {
-            currentState.tagsScanned.toFloat() / timeElapsed
-        } else 0f
-
-        if (itemIndex >= 0) {
-            // ✓ Found a match — mark the item as found
-            val currentItem = currentState.inventoryItems[itemIndex]
-
-            // Only update if not already marked (avoid duplicate counting)
-            if (!currentItem.isFound) {
-                val updatedItems = currentState.inventoryItems.toMutableList()
-                updatedItems[itemIndex] = currentItem.copy(isFound = true)
-
-                val foundCount = updatedItems.count { it.isFound }
-                val missingCount = updatedItems.size - foundCount
-                val percent = if (updatedItems.size > 0) {
-                    (foundCount * 100) / updatedItems.size
-                } else 0
-
-                _state.value = currentState.copy(
-                    inventoryItems = updatedItems,
-                    tagsScanned = currentState.tagsScanned + 1,
-                    uniqueTags = scannedEpcs.size,
-                    foundItems = foundCount,
-                    missingItems = missingCount,
-                    progressPercent = percent,
-                    readPerSecond = rate
-                )
-            } else {
-                // Already marked as found, just update scan count
-                _state.value = currentState.copy(
-                    tagsScanned = currentState.tagsScanned + 1,
-                    uniqueTags = scannedEpcs.size,
-                    readPerSecond = rate
-                )
-            }
-        } else {
-            // Tag not in file — count it but don't mark anything
-            _state.value = currentState.copy(
-                tagsScanned = currentState.tagsScanned + 1,
-                uniqueTags = scannedEpcs.size,
-                readPerSecond = rate
-            )
-        }
-    }
-
-    // Called when user taps "Clear" button
-    fun clearAllData() {
-        timerJob?.cancel()
-        scannedEpcs.clear()
-        _state.value = InventoryScanState()
-    }
-
-    // Called when user taps "Save" button
-    fun saveScan(filename: String) {
-        viewModelScope.launch {
-            val currentState = _state.value
-            repository.saveScan(
-                uploadedFilename = currentState.uploadedFilename,
-                resultFilename = filename,
-                expectedItems = currentState.expectedItems,
-                foundItems = currentState.foundItems,
-                missingItems = currentState.missingItems,
-                matchPercentage = currentState.progressPercent.toFloat()
-            )
-        }
-    }
-
-    fun extendTimer() {
-        _state.value = _state.value.copy(
-            timeRemaining = _state.value.timeRemaining + 180,
-            showTimeWarning = false
-        )
-    }
-
-    fun dismissTimeWarning() {
-        _state.value = _state.value.copy(showTimeWarning = false)
-    }
-
-    // Timer countdown
-    private fun startTimer() {
-        timerJob?.cancel()
-        timerJob = viewModelScope.launch {
-            while (_state.value.isScanning && _state.value.timeRemaining > 0) {
-                delay(1000)
-
-                val newTime = _state.value.timeRemaining - 1
-                _state.value = _state.value.copy(timeRemaining = newTime)
-
-                if (newTime == 30) {
-                    _state.value = _state.value.copy(showTimeWarning = true)
-                }
-
-                if (newTime == 0) {
-                    pauseScanning()
-                }
-            }
-        }
-    }
-}
+// Specific UI elements
+val TableRowFound = Color(0xFFe8f5e9)     // Light green for found rows
+val TableRowMissing = Color(0xFFffebee)   // Light red for missing rows
+val TableRowPending = Color(0xFFf5f5f5)   // Light gray for pending rows

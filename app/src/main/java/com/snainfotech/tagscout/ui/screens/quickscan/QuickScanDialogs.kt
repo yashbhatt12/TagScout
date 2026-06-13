@@ -52,12 +52,13 @@ import java.util.Locale
 
 @Composable
 fun SaveScanDialog(
+    defaultPrefix: String = "scan",
     onDismiss: () -> Unit,
     onSave: (filename: String, format: String) -> Unit
 ) {
-    val defaultFilename = remember {
+    val defaultFilename = remember(defaultPrefix) {
         val sdf = SimpleDateFormat("yyyyMMdd_HHmm", Locale.getDefault())
-        "scan_${sdf.format(Date())}"
+        "${defaultPrefix}_${sdf.format(Date())}"
     }
 
     var filename by remember { mutableStateOf(defaultFilename) }

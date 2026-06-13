@@ -19,6 +19,11 @@ import androidx.navigation.NavHostController
 import androidx.navigation.compose.NavHost
 import androidx.navigation.compose.composable
 import androidx.navigation.compose.rememberNavController
+import androidx.activity.compose.rememberLauncherForActivityResult
+import com.snainfotech.tagscout.ui.screens.inventory.InventoryItem
+import com.snainfotech.tagscout.ui.screens.inventory.InventoryScanScreen
+import com.snainfotech.tagscout.ui.screens.inventory.InventoryScanViewModel
+import com.snainfotech.tagscout.ui.screens.inventory.InventoryScanViewModelFactory
 import com.snainfotech.tagscout.ui.components.AppMenu
 import com.snainfotech.tagscout.ui.components.ExitConfirmationDialog
 import com.snainfotech.tagscout.ui.screens.about.AboutScreen
@@ -47,6 +52,7 @@ import com.snainfotech.tagscout.ui.screens.connect.DeviceLimitReachedDialog
 import com.snainfotech.tagscout.ui.screens.quickscan.LowBatteryDialog
 import com.snainfotech.tagscout.ui.screens.quickscan.DeviceDisconnectedDialog
 import com.snainfotech.tagscout.ui.screens.quickscan.CriticalBatteryDialog
+import com.snainfotech.tagscout.ui.screens.quickscan.SaveScanDialog
 import android.content.Intent
 import android.net.Uri
 import android.provider.Settings
@@ -55,6 +61,7 @@ import androidx.activity.result.contract.ActivityResultContracts
 import com.snainfotech.tagscout.PermissionHelper
 import com.snainfotech.tagscout.ui.components.BluetoothPermissionDeniedDialog
 import com.snainfotech.tagscout.ui.components.BluetoothPermissionRationaleDialog
+import com.snainfotech.tagscout.ui.components.PreSaveWarningDialog
 private const val LOW_BATTERY_THRESHOLD = 15
 private const val CRITICAL_BATTERY_THRESHOLD = 5
 
@@ -66,6 +73,7 @@ object Routes {
     const val CONNECT_DEVICE = "connect_device"
     // Battery threshold for showing low battery warning during scan
     const val DEVICE_CONFIG = "device_config"
+    const val INVENTORY = "inventory"
     // Future routes (we'll add these later):
     // const val INVENTORY = "inventory"
 }
@@ -105,7 +113,7 @@ fun TagScoutNavGraph(
                     deviceState = deviceState,
                     onMenuClick = { menuExpanded = true },
                     onQuickScanClick = { navController.navigate(Routes.QUICK_SCAN) },
-                    onInventoryClick = { /* TODO: Inventory navigation */ },
+                    onInventoryClick = { navController.navigate(Routes.INVENTORY) },
                     onDeviceConfigClick = { navController.navigate(Routes.DEVICE_CONFIG) }
                 )
 
@@ -180,6 +188,7 @@ fun TagScoutNavGraph(
 
             var showSaveDialog by remember { mutableStateOf(false) }
             var showClearDialog by remember { mutableStateOf(false) }
+            var showPreSaveWarning by remember { mutableStateOf(false) }
 
             QuickScanScreen(
                 state = scanState,
@@ -198,15 +207,24 @@ fun TagScoutNavGraph(
                         else -> quickScanViewModel.startScanning()
                     }
                 },
-                onSaveClick = { showSaveDialog = true },
+                onSaveClick = { showPreSaveWarning = true },
                 onClearClick = { showClearDialog = true }
             )
-
+            if (showPreSaveWarning) {
+                PreSaveWarningDialog(
+                    onDismiss = { showPreSaveWarning = false },
+                    onContinue = {
+                        showPreSaveWarning = false
+                        showSaveDialog = true   // Now show the actual save dialog
+                    }
+                )
+            }
             if (showSaveDialog) {
                 SaveScanDialog(
                     onDismiss = { showSaveDialog = false },
                     onSave = { filename, _ ->
                         quickScanViewModel.saveScan(filename)
+                        quickScanViewModel.clearAllData()
                         showSaveDialog = false
                     }
                 )
@@ -461,5 +479,163 @@ fun TagScoutNavGraph(
                 OperationState.IDLE -> { /* nothing */ }
             }
         }
+        composable(Routes.INVENTORY) {
+            val inventoryViewModel: InventoryScanViewModel = viewModel(
+                factory = InventoryScanViewModelFactory(
+                    app.inventoryScanRepository,
+                    app.rfidScanner,
+                    app.settingsRepository
+                )
+            )
+
+            val inventoryState by inventoryViewModel.state.collectAsState()
+            val deviceState by sharedHomeViewModel.deviceState.collectAsState()
+            var showSaveDialog by remember { mutableStateOf(false) }
+            var showPreSaveWarning by remember { mutableStateOf(false) }
+            // File picker launcher
+            val filePickerLauncher = rememberLauncherForActivityResult(
+                contract = ActivityResultContracts.OpenDocument()
+            ) { uri ->
+                if (uri != null) {
+                    // Extract filename from URI
+                    val fileName = extractFileName(uri.toString())
+
+                    // For now, load mock data (real parsing in Phase 2)
+                    val mockItems = generateMockInventoryItems()
+                    inventoryViewModel.loadInventoryFile(mockItems, fileName)
+                }
+            }
+
+            // Block back during scanning
+            BackHandler(enabled = inventoryState.isScanning) {
+                // Do nothing
+            }
+
+            InventoryScanScreen(
+                state = inventoryState,
+                deviceName = deviceState.deviceName,
+                serialNumber = deviceState.serialNumber,
+                firmwareVersion = deviceState.firmwareVersion,
+                batteryPercent = deviceState.batteryPercent,
+                isDeviceConnected = deviceState.isConnected,
+                onBackClick = { navController.popBackStack() },
+                onMenuClick = { /* TODO */ },
+                onDeviceStatusClick = { navController.navigate(Routes.DEVICE_CONFIG) },
+                onLoadFileClick = {
+                    // TEMPORARY: Skip file picker for testing — REMOVE LATER
+                    val mockItems = generateMockInventoryItems()
+                    android.util.Log.d("TagScout", "Load clicked. Mock items count: ${mockItems.size}")
+                    inventoryViewModel.loadInventoryFile(mockItems, "sample_inventory.xlsx")
+                    android.util.Log.d("TagScout", "After load. hasFileLoaded=${inventoryViewModel.state.value.hasFileLoaded}, items=${inventoryViewModel.state.value.inventoryItems.size}")
+                },
+                onAntennaChange = { inventoryViewModel.setAntennaStrength(it) },
+                onTabSelect = { inventoryViewModel.selectTab(it) },
+                onPlayPauseClick = {
+                    when {
+                        inventoryState.isScanning -> inventoryViewModel.pauseScanning()
+                        inventoryState.isPaused -> inventoryViewModel.resumeScanning()
+                        else -> inventoryViewModel.startScanning()
+                    }
+                },
+                onSaveClick = { showPreSaveWarning = true },
+                onClearClick = { inventoryViewModel.clearAllData() }
+            )
+            if (showPreSaveWarning) {
+                PreSaveWarningDialog(
+                    onDismiss = { showPreSaveWarning = false },
+                    onContinue = {
+                        showPreSaveWarning = false
+                        showSaveDialog = true   // Now show the actual save dialog
+                    }
+                )
+            }
+            if (showSaveDialog) {
+                SaveScanDialog(
+                    defaultPrefix = "inventory",
+                    onDismiss = { showSaveDialog = false },
+                    onSave = { filename, _ ->
+                        inventoryViewModel.saveScan(filename)
+                        inventoryViewModel.clearAllData()
+                        showSaveDialog = false
+                    }
+                )
+            }
+        }
     }
+}
+// Helper: extract a usable filename from a content URI
+private fun extractFileName(uriString: String): String {
+    // Content URIs have a path-like structure; grab the last segment
+    val parts = uriString.split("/", "%2F", ":")
+    val last = parts.lastOrNull() ?: "inventory.xlsx"
+    // Decode common URL-encoded characters
+    return last.replace("%20", " ").take(50)
+}
+
+// Helper: generate mock inventory items (used until Phase 2 parsing)
+private fun generateMockInventoryItems(): List<com.snainfotech.tagscout.ui.screens.inventory.InventoryItem> {
+    return listOf(
+        // These EPCs overlap with FakeRfidScanner — will get matched
+        com.snainfotech.tagscout.ui.screens.inventory.InventoryItem(
+            id = 1,
+            epc = "3004A1B2C3D4E5F6",
+            tid = "TIDC3D4E5F6",
+            productName = "Widget Type A"
+        ),
+        com.snainfotech.tagscout.ui.screens.inventory.InventoryItem(
+            id = 2,
+            epc = "3004A2B3C4D5E6F7",
+            tid = "TIDC4D5E6F7",
+            productName = "Widget Type B"
+        ),
+        com.snainfotech.tagscout.ui.screens.inventory.InventoryItem(
+            id = 3,
+            epc = "3004A3B4C5D6E7F8",
+            tid = "TIDC5D6E7F8",
+            productName = "Gadget Mark 1"
+        ),
+        com.snainfotech.tagscout.ui.screens.inventory.InventoryItem(
+            id = 4,
+            epc = "3004A4B5C6D7E8F9",
+            tid = "TIDC6D7E8F9",
+            productName = "Gadget Mark 2"
+        ),
+        com.snainfotech.tagscout.ui.screens.inventory.InventoryItem(
+            id = 5,
+            epc = "3004A5B6C7D8E9F0",
+            tid = "TIDC7D8E9F0",
+            productName = "Sprocket S-100"
+        ),
+        com.snainfotech.tagscout.ui.screens.inventory.InventoryItem(
+            id = 6,
+            epc = "3004A6B7C8D9E0F1",
+            tid = "TIDC8D9E0F1",
+            productName = "Sprocket S-200"
+        ),
+        // These EPCs do NOT overlap — will stay missing
+        com.snainfotech.tagscout.ui.screens.inventory.InventoryItem(
+            id = 7,
+            epc = "3004FF00FF00FF00",
+            tid = "TIDFF00FF00",
+            productName = "Bolt B-1"
+        ),
+        com.snainfotech.tagscout.ui.screens.inventory.InventoryItem(
+            id = 8,
+            epc = "3004FF11FF11FF11",
+            tid = "TIDFF11FF11",
+            productName = "Bolt B-2"
+        ),
+        com.snainfotech.tagscout.ui.screens.inventory.InventoryItem(
+            id = 9,
+            epc = "3004FF22FF22FF22",
+            tid = "TIDFF22FF22",
+            productName = "Nut N-1"
+        ),
+        com.snainfotech.tagscout.ui.screens.inventory.InventoryItem(
+            id = 10,
+            epc = "3004FF33FF33FF33",
+            tid = "TIDFF33FF33",
+            productName = "Nut N-2"
+        )
+    )
 }

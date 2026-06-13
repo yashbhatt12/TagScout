@@ -51,7 +51,7 @@ fun PreSaveWarningDialog(
                 )
                 Spacer(modifier = Modifier.height(8.dp))
                 Text(
-                    text = "💡 If you need more time, tap Cancel and keep scanning on Pause.",
+                    text = "💡 If you need more time, tap Cancel and resume scan when you're ready",
                     fontSize = 11.sp,
                     color = Primary,
                     fontWeight = FontWeight.Medium

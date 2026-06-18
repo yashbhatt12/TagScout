@@ -38,6 +38,8 @@ fun HomeScreen(
     onMenuClick: () -> Unit = {},
     onQuickScanClick: () -> Unit = {},
     onInventoryClick: () -> Unit = {},
+    onWriteTagClick: () -> Unit = {},
+    onKillTagClick: () -> Unit = {},
     onDeviceConfigClick: () -> Unit = {}
 ) {
     Column(
@@ -102,6 +104,21 @@ fun HomeScreen(
                 onClick = onInventoryClick
             )
 
+            FeatureButton(
+                icon = "✏️",
+                title = "Write Tag",
+                description= "Change a tag's EPC",
+                enabled = deviceState.isConnected,
+                onClick= onWriteTagClick,
+            )
+
+            FeatureButton(
+                icon = "❌",
+                title = "Kill Tag",
+                description= "Permanently Disable a Tag",
+                enabled = deviceState.isConnected,
+                onClick= onKillTagClick,
+            )
             FeatureButton(
                 icon = "⚙️",
                 title = "Device Config",

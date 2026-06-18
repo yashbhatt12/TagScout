@@ -53,6 +53,10 @@ import com.snainfotech.tagscout.ui.screens.quickscan.LowBatteryDialog
 import com.snainfotech.tagscout.ui.screens.quickscan.DeviceDisconnectedDialog
 import com.snainfotech.tagscout.ui.screens.quickscan.CriticalBatteryDialog
 import com.snainfotech.tagscout.ui.screens.quickscan.SaveScanDialog
+import com.snainfotech.tagscout.ui.screens.tagops.WriteTagScreen
+import com.snainfotech.tagscout.ui.screens.tagops.WriteTagViewModel
+import com.snainfotech.tagscout.ui.screens.tagops.WriteTagViewModelFactory
+import com.snainfotech.tagscout.ui.screens.tagops.WritePhase
 import android.content.Intent
 import android.net.Uri
 import android.provider.Settings
@@ -76,6 +80,8 @@ object Routes {
     const val INVENTORY = "inventory"
     // Future routes (we'll add these later):
     // const val INVENTORY = "inventory"
+    const val WRITE_TAG = "write_tag"
+    const val KILL_TAG= "kill_tag"
 }
 
 @Composable
@@ -114,6 +120,8 @@ fun TagScoutNavGraph(
                     onMenuClick = { menuExpanded = true },
                     onQuickScanClick = { navController.navigate(Routes.QUICK_SCAN) },
                     onInventoryClick = { navController.navigate(Routes.INVENTORY) },
+                    onWriteTagClick = { navController.navigate(Routes.WRITE_TAG) },
+                    onKillTagClick = { navController.navigate(Routes.KILL_TAG) },
                     onDeviceConfigClick = { navController.navigate(Routes.DEVICE_CONFIG) }
                 )
 
@@ -561,6 +569,50 @@ fun TagScoutNavGraph(
                 )
             }
         }
+        composable(Routes.WRITE_TAG) {
+            val writeTagViewModel: WriteTagViewModel = viewModel(
+                factory = WriteTagViewModelFactory(
+                    app.rfidScanner,
+                    app.settingsRepository
+                )
+            )
+
+            val writeTagState by writeTagViewModel.state.collectAsState()
+            val deviceState by sharedHomeViewModel.deviceState.collectAsState()
+
+            // Block back during operations
+            BackHandler(
+                enabled = writeTagState.phase == WritePhase.SEARCHING ||
+                        writeTagState.phase == WritePhase.WRITING
+            ) {
+                // Do nothing
+            }
+
+            WriteTagScreen(
+                state = writeTagState,
+                deviceName = deviceState.deviceName,
+                serialNumber = deviceState.serialNumber,
+                firmwareVersion = deviceState.firmwareVersion,
+                batteryPercent = deviceState.batteryPercent,
+                isDeviceConnected = deviceState.isConnected,
+                onBackClick = { navController.popBackStack() },
+                onMenuClick = { /* TODO */ },
+                onDeviceStatusClick = { navController.navigate(Routes.DEVICE_CONFIG) },
+                onAntennaChange = { writeTagViewModel.setAntennaStrength(it) },
+                onTargetEpcChange = { writeTagViewModel.setTargetEpc(it) },
+                onNewEpcChange = { writeTagViewModel.setNewEpc(it) },
+                onPasswordChange = { writeTagViewModel.setAccessPassword(it) },
+                onFindTag = { writeTagViewModel.findTag() },
+                onWriteTag = { writeTagViewModel.writeTag() },
+                onRetry = { writeTagViewModel.retrySearch() },
+                onStartOver = { writeTagViewModel.startOver() },
+                onWriteAnother = { writeTagViewModel.writeAnotherTag() },
+                canFindTag = writeTagViewModel.canFindTag(),
+                canWriteTag = writeTagViewModel.canWriteTag(),
+                isTargetEpcValid = writeTagViewModel.isTargetEpcValid(),
+                isNewEpcValid = writeTagViewModel.isNewEpcValid()
+            )
+        }
     }
 }
 // Helper: extract a usable filename from a content URI
@@ -575,67 +627,37 @@ private fun extractFileName(uriString: String): String {
 // Helper: generate mock inventory items (used until Phase 2 parsing)
 private fun generateMockInventoryItems(): List<com.snainfotech.tagscout.ui.screens.inventory.InventoryItem> {
     return listOf(
-        // These EPCs overlap with FakeRfidScanner — will get matched
+        // These match FakeRfidScanner — will become "matched"
         com.snainfotech.tagscout.ui.screens.inventory.InventoryItem(
-            id = 1,
-            epc = "3004A1B2C3D4E5F6",
-            tid = "TIDC3D4E5F6",
-            productName = "Widget Type A"
+            id = 1, epc = "3004A1B2C3D4E5F600000001", tid = "TID00000001", productName = "Widget Type A"
         ),
         com.snainfotech.tagscout.ui.screens.inventory.InventoryItem(
-            id = 2,
-            epc = "3004A2B3C4D5E6F7",
-            tid = "TIDC4D5E6F7",
-            productName = "Widget Type B"
+            id = 2, epc = "3004A2B3C4D5E6F700000002", tid = "TID00000002", productName = "Widget Type B"
         ),
         com.snainfotech.tagscout.ui.screens.inventory.InventoryItem(
-            id = 3,
-            epc = "3004A3B4C5D6E7F8",
-            tid = "TIDC5D6E7F8",
-            productName = "Gadget Mark 1"
+            id = 3, epc = "3004A3B4C5D6E7F800000003", tid = "TID00000003", productName = "Gadget Mark 1"
         ),
         com.snainfotech.tagscout.ui.screens.inventory.InventoryItem(
-            id = 4,
-            epc = "3004A4B5C6D7E8F9",
-            tid = "TIDC6D7E8F9",
-            productName = "Gadget Mark 2"
+            id = 4, epc = "3004A4B5C6D7E8F900000004", tid = "TID00000004", productName = "Gadget Mark 2"
         ),
         com.snainfotech.tagscout.ui.screens.inventory.InventoryItem(
-            id = 5,
-            epc = "3004A5B6C7D8E9F0",
-            tid = "TIDC7D8E9F0",
-            productName = "Sprocket S-100"
+            id = 5, epc = "3004A5B6C7D8E9F000000005", tid = "TID00000005", productName = "Sprocket S-100"
         ),
         com.snainfotech.tagscout.ui.screens.inventory.InventoryItem(
-            id = 6,
-            epc = "3004A6B7C8D9E0F1",
-            tid = "TIDC8D9E0F1",
-            productName = "Sprocket S-200"
+            id = 6, epc = "3004A6B7C8D9E0F100000006", tid = "TID00000006", productName = "Sprocket S-200"
         ),
-        // These EPCs do NOT overlap — will stay missing
+        // These do NOT match — will stay missing
         com.snainfotech.tagscout.ui.screens.inventory.InventoryItem(
-            id = 7,
-            epc = "3004FF00FF00FF00",
-            tid = "TIDFF00FF00",
-            productName = "Bolt B-1"
+            id = 7, epc = "3004FF00FF00FF00FF000001", tid = "TIDFF000001", productName = "Bolt B-1"
         ),
         com.snainfotech.tagscout.ui.screens.inventory.InventoryItem(
-            id = 8,
-            epc = "3004FF11FF11FF11",
-            tid = "TIDFF11FF11",
-            productName = "Bolt B-2"
+            id = 8, epc = "3004FF11FF11FF11FF000002", tid = "TIDFF000002", productName = "Bolt B-2"
         ),
         com.snainfotech.tagscout.ui.screens.inventory.InventoryItem(
-            id = 9,
-            epc = "3004FF22FF22FF22",
-            tid = "TIDFF22FF22",
-            productName = "Nut N-1"
+            id = 9, epc = "3004FF22FF22FF22FF000003", tid = "TIDFF000003", productName = "Nut N-1"
         ),
         com.snainfotech.tagscout.ui.screens.inventory.InventoryItem(
-            id = 10,
-            epc = "3004FF33FF33FF33",
-            tid = "TIDFF33FF33",
-            productName = "Nut N-2"
+            id = 10, epc = "3004FF33FF33FF33FF000004", tid = "TIDFF000004", productName = "Nut N-2"
         )
     )
 }

@@ -36,6 +36,7 @@ fun HomeScreen(
     deviceState: DeviceState,
     modifier: Modifier = Modifier,
     onMenuClick: () -> Unit = {},
+    onConnectDeviceClick: () -> Unit = {},
     onQuickScanClick: () -> Unit = {},
     onInventoryClick: () -> Unit = {},
     onWriteTagClick: () -> Unit = {},
@@ -74,7 +75,7 @@ fun HomeScreen(
             when (deviceState.connectionStatus) {
                 ConnectionStatus.DISCONNECTED -> {
                     InfoBanner(
-                        text = "💡 Go to Menu (⋮) → Connect Device to add your RFID reader."
+                        text = "💡 Connect a Device to Start."
                     )
                     Spacer(modifier = Modifier.height(12.dp))
                 }
@@ -88,6 +89,14 @@ fun HomeScreen(
             }
 
             // Feature buttons
+            // Feature buttons
+            FeatureButton(
+                icon = "🔗",
+                title = "Connect Device",
+                description = "Pair your RFID reader",
+                enabled = true,
+                onClick = onConnectDeviceClick
+            )
             FeatureButton(
                 icon = "📱",
                 title = "Quick Scan",

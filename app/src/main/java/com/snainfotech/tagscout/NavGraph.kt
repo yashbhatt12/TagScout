@@ -57,6 +57,10 @@ import com.snainfotech.tagscout.ui.screens.tagops.WriteTagScreen
 import com.snainfotech.tagscout.ui.screens.tagops.WriteTagViewModel
 import com.snainfotech.tagscout.ui.screens.tagops.WriteTagViewModelFactory
 import com.snainfotech.tagscout.ui.screens.tagops.WritePhase
+import com.snainfotech.tagscout.ui.screens.tagops.KillPhase
+import com.snainfotech.tagscout.ui.screens.tagops.KillTagScreen
+import com.snainfotech.tagscout.ui.screens.tagops.KillTagViewModel
+import com.snainfotech.tagscout.ui.screens.tagops.KillTagViewModelFactory
 import android.content.Intent
 import android.net.Uri
 import android.provider.Settings
@@ -118,6 +122,7 @@ fun TagScoutNavGraph(
                 HomeScreen(
                     deviceState = deviceState,
                     onMenuClick = { menuExpanded = true },
+                    onConnectDeviceClick = { navController.navigate(Routes.CONNECT_DEVICE) },
                     onQuickScanClick = { navController.navigate(Routes.QUICK_SCAN) },
                     onInventoryClick = { navController.navigate(Routes.INVENTORY) },
                     onWriteTagClick = { navController.navigate(Routes.WRITE_TAG) },
@@ -132,9 +137,7 @@ fun TagScoutNavGraph(
                 ) {
                     AppMenu(
                         expanded = menuExpanded,
-                        showConnectHighlighted = !deviceState.isConnected,
                         onDismiss = { menuExpanded = false },
-                        onConnectClick = { navController.navigate(Routes.CONNECT_DEVICE) },
                         onAboutClick = { navController.navigate(Routes.ABOUT) },
                         onExitClick = { showExitDialog = true }
                     )
@@ -611,6 +614,49 @@ fun TagScoutNavGraph(
                 canWriteTag = writeTagViewModel.canWriteTag(),
                 isTargetEpcValid = writeTagViewModel.isTargetEpcValid(),
                 isNewEpcValid = writeTagViewModel.isNewEpcValid()
+            )
+        }
+        composable(Routes.KILL_TAG) {
+            val killTagViewModel: KillTagViewModel = viewModel(
+                factory = KillTagViewModelFactory(
+                    app.rfidScanner,
+                    app.settingsRepository
+                )
+            )
+
+            val killTagState by killTagViewModel.state.collectAsState()
+            val deviceState by sharedHomeViewModel.deviceState.collectAsState()
+
+            // Block back during operations
+            BackHandler(
+                enabled = killTagState.phase == KillPhase.SEARCHING ||
+                        killTagState.phase == KillPhase.KILLING
+            ) {
+                // Do nothing — let operation complete
+            }
+
+            KillTagScreen(
+                state = killTagState,
+                deviceName = deviceState.deviceName,
+                serialNumber = deviceState.serialNumber,
+                firmwareVersion = deviceState.firmwareVersion,
+                batteryPercent = deviceState.batteryPercent,
+                isDeviceConnected = deviceState.isConnected,
+                onBackClick = { navController.popBackStack() },
+                onMenuClick = { /* TODO */ },
+                onDeviceStatusClick = { navController.navigate(Routes.DEVICE_CONFIG) },
+                onAntennaChange = { killTagViewModel.setAntennaStrength(it) },
+                onTargetEpcChange = { killTagViewModel.setTargetEpc(it) },
+                onPasswordChange = { killTagViewModel.setKillPassword(it) },
+                onFindTag = { killTagViewModel.findTag() },
+                onKillTag = { killTagViewModel.killTag() },
+                onConfirmIrreversibleChange = { killTagViewModel.setConfirmIrreversible(it) },
+                onConfirmCorrectTagChange = { killTagViewModel.setConfirmCorrectTag(it) },
+                onRetry = { killTagViewModel.retrySearch() },
+                onStartOver = { killTagViewModel.startOver() },
+                canFindTag = killTagViewModel.canFindTag(),
+                canKillTag = killTagViewModel.canKillTag(),
+                isTargetEpcValid = killTagViewModel.isTargetEpcValid()
             )
         }
     }

@@ -26,9 +26,7 @@ import com.snainfotech.tagscout.ui.theme.InfoBlue
 @Composable
 fun AppMenu(
     expanded: Boolean,
-    showConnectHighlighted: Boolean = false,  // Highlight "Connect Device" when no device
     onDismiss: () -> Unit,
-    onConnectClick: () -> Unit,
     onAboutClick: () -> Unit,
     onExitClick: () -> Unit
 ) {
@@ -39,18 +37,6 @@ fun AppMenu(
             .background(Color.White)
             .width(200.dp)
     ) {
-        MenuItem(
-            icon = "🔌",
-            label = "Connect Device",
-            highlighted = showConnectHighlighted,
-            onClick = {
-                onConnectClick()
-                onDismiss()
-            }
-        )
-
-        MenuDivider()
-
         MenuItem(
             icon = "ℹ️",
             label = "About TagScout",

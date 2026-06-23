@@ -313,54 +313,7 @@ fun LowBatteryDialog(
         }
     )
 }
-// ============================================
-// DEVICE DISCONNECTED DIALOG
-// ============================================
 
-@Composable
-fun DeviceDisconnectedDialog(
-    onDismiss: () -> Unit
-) {
-    AlertDialog(
-        onDismissRequest = onDismiss,
-        title = {
-            Text(
-                text = "📵 Device Disconnected",
-                fontWeight = FontWeight.SemiBold,
-                color = ErrorRed
-            )
-        },
-        text = {
-            Column {
-                Text(
-                    text = "Your RFID reader has disconnected during the scan.",
-                    fontSize = 13.sp
-                )
-                Spacer(modifier = Modifier.height(8.dp))
-                Text(
-                    text = "Scanning has been paused. Reconnect your device to continue.",
-                    fontSize = 12.sp,
-                    color = MediumGray
-                )
-                Spacer(modifier = Modifier.height(8.dp))
-                Text(
-                    text = "⚠ Scan data may be incomplete.",
-                    fontSize = 11.sp,
-                    color = ErrorRed,
-                    fontWeight = FontWeight.Medium
-                )
-            }
-        },
-        confirmButton = {
-            Button(
-                onClick = onDismiss,
-                colors = ButtonDefaults.buttonColors(containerColor = Primary)
-            ) {
-                Text("OK")
-            }
-        }
-    )
-}
 // ============================================
 // CRITICAL BATTERY DIALOG (forces user to stop)
 // ============================================
@@ -443,11 +396,7 @@ fun LowBatteryDialogPreview() {
         onStop = {}
     )
 }
-@Preview(showBackground = true)
-@Composable
-fun DeviceDisconnectedDialogPreview() {
-    DeviceDisconnectedDialog(onDismiss = {})
-}
+
 @Preview(showBackground = true)
 @Composable
 fun CriticalBatteryDialogPreview() {

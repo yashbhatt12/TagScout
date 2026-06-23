@@ -50,7 +50,7 @@ import com.snainfotech.tagscout.ui.screens.quickscan.TimeWarningDialog
 import com.snainfotech.tagscout.ui.screens.connect.DeleteDeviceConfirmationDialog
 import com.snainfotech.tagscout.ui.screens.connect.DeviceLimitReachedDialog
 import com.snainfotech.tagscout.ui.screens.quickscan.LowBatteryDialog
-import com.snainfotech.tagscout.ui.screens.quickscan.DeviceDisconnectedDialog
+import com.snainfotech.tagscout.ui.components.DeviceDisconnectedDialog
 import com.snainfotech.tagscout.ui.screens.quickscan.CriticalBatteryDialog
 import com.snainfotech.tagscout.ui.screens.quickscan.SaveScanDialog
 import com.snainfotech.tagscout.ui.screens.tagops.WriteTagScreen

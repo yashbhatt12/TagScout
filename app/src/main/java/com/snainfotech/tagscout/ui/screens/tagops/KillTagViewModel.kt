@@ -36,7 +36,8 @@ data class KillTagState(
     val killedEpc: String = "",             // The EPC that was killed (for success display)
     // Safety confirmation checkboxes — BOTH must be true to enable kill
     val confirmIrreversible: Boolean = false,
-    val confirmCorrectTag: Boolean = false
+    val confirmCorrectTag: Boolean = false,
+    val showDeviceDisconnectedDialog: Boolean = false
 )
 
 class KillTagViewModel(
@@ -189,6 +190,25 @@ class KillTagViewModel(
     override fun onCleared() {
         super.onCleared()
         operationJob?.cancel()
+    }
+    // ============================================
+    // DEVICE DISCONNECTED HANDLING (E11)
+    // ============================================
+
+    fun handleDeviceDisconnected() {
+        // Cancel any in-flight operation
+        operationJob?.cancel()
+
+        // Reset to ENTER_TARGET phase but preserve antenna setting
+        // Clear all form data + confirmations since operation was interrupted
+        _state.value = KillTagState(
+            antennaStrength = _state.value.antennaStrength,
+            showDeviceDisconnectedDialog = true
+        )
+    }
+
+    fun dismissDeviceDisconnectedDialog() {
+        _state.value = _state.value.copy(showDeviceDisconnectedDialog = false)
     }
 }
 

@@ -35,7 +35,8 @@ data class WriteTagState(
     val foundTagRssi: Int = 0,                // Signal strength when tag found
     val writeError: String = "",              // Error message when failed
     val previousEpc: String = "",             // The old EPC after successful write
-    val verifiedNewEpc: String = ""           // The verified new EPC after write
+    val verifiedNewEpc: String = "",
+    val showDeviceDisconnectedDialog: Boolean = false // The verified new EPC after write
 )
 
 class WriteTagViewModel(
@@ -184,6 +185,25 @@ class WriteTagViewModel(
     override fun onCleared() {
         super.onCleared()
         operationJob?.cancel()
+    }
+// ============================================
+    // DEVICE DISCONNECTED HANDLING (E11)
+    // ============================================
+
+    fun handleDeviceDisconnected() {
+        // Cancel any in-flight operation
+        operationJob?.cancel()
+
+        // Reset to ENTER_TARGET phase but preserve antenna setting
+        // Clear all form data since operation was interrupted
+        _state.value = WriteTagState(
+            antennaStrength = _state.value.antennaStrength,
+            showDeviceDisconnectedDialog = true
+        )
+    }
+
+    fun dismissDeviceDisconnectedDialog() {
+        _state.value = _state.value.copy(showDeviceDisconnectedDialog = false)
     }
 }
 

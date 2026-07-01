@@ -516,7 +516,11 @@ fun TagScoutNavGraph(
                     inventoryViewModel.loadInventoryFile(mockItems, fileName)
                 }
             }
-
+            LaunchedEffect(deviceState.isConnected) {
+                if (!deviceState.isConnected && (inventoryState.isScanning || inventoryState.isPaused)) {
+                    inventoryViewModel.handleDeviceDisconnected()
+                }
+            }
             // Block back during scanning
             BackHandler(enabled = inventoryState.isScanning) {
                 // Do nothing
@@ -551,6 +555,12 @@ fun TagScoutNavGraph(
                 onSaveClick = { showPreSaveWarning = true },
                 onClearClick = { inventoryViewModel.clearAllData() }
             )
+            // Device disconnected dialog (E11)
+            if (inventoryState.showDeviceDisconnectedDialog) {
+                DeviceDisconnectedDialog(
+                    onDismiss = { inventoryViewModel.dismissDeviceDisconnectedDialog() }
+                )
+            }
             if (showPreSaveWarning) {
                 PreSaveWarningDialog(
                     onDismiss = { showPreSaveWarning = false },
@@ -583,6 +593,12 @@ fun TagScoutNavGraph(
             val writeTagState by writeTagViewModel.state.collectAsState()
             val deviceState by sharedHomeViewModel.deviceState.collectAsState()
 
+            // Auto-handle device disconnect (E11)
+            LaunchedEffect(deviceState.isConnected) {
+                if (!deviceState.isConnected && writeTagState.phase != WritePhase.ENTER_TARGET) {
+                    writeTagViewModel.handleDeviceDisconnected()
+                }
+            }
             // Block back during operations
             BackHandler(
                 enabled = writeTagState.phase == WritePhase.SEARCHING ||
@@ -615,6 +631,13 @@ fun TagScoutNavGraph(
                 isTargetEpcValid = writeTagViewModel.isTargetEpcValid(),
                 isNewEpcValid = writeTagViewModel.isNewEpcValid()
             )
+            // Device disconnected dialog (E11)
+            if (writeTagState.showDeviceDisconnectedDialog) {
+                DeviceDisconnectedDialog(
+                    onDismiss = { writeTagViewModel.dismissDeviceDisconnectedDialog() },
+                    customMessage = "Your RFID reader has disconnected during the write operation."
+                )
+            }
         }
         composable(Routes.KILL_TAG) {
             val killTagViewModel: KillTagViewModel = viewModel(
@@ -627,6 +650,13 @@ fun TagScoutNavGraph(
             val killTagState by killTagViewModel.state.collectAsState()
             val deviceState by sharedHomeViewModel.deviceState.collectAsState()
 
+
+            // Auto-handle device disconnect (E11)
+            LaunchedEffect(deviceState.isConnected) {
+                if (!deviceState.isConnected && killTagState.phase != KillPhase.ENTER_TARGET) {
+                    killTagViewModel.handleDeviceDisconnected()
+                }
+            }
             // Block back during operations
             BackHandler(
                 enabled = killTagState.phase == KillPhase.SEARCHING ||
@@ -658,6 +688,13 @@ fun TagScoutNavGraph(
                 canKillTag = killTagViewModel.canKillTag(),
                 isTargetEpcValid = killTagViewModel.isTargetEpcValid()
             )
+            // Device disconnected dialog (E11)
+            if (killTagState.showDeviceDisconnectedDialog) {
+                DeviceDisconnectedDialog(
+                    onDismiss = { killTagViewModel.dismissDeviceDisconnectedDialog() },
+                    customMessage = "Your RFID reader has disconnected. The kill operation was NOT completed — the tag is still active."
+                )
+            }
         }
     }
 }

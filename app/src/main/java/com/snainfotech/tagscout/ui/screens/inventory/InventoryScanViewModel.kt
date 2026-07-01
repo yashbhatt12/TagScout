@@ -53,7 +53,8 @@ data class InventoryScanState(
     val hasFileLoaded: Boolean = false,
     val antennaStrength: Int = 5,
     val unexpectedTags: List<UnexpectedTag> = emptyList(),
-    val selectedTab: InventoryTab = InventoryTab.FILE_MAPPING
+    val selectedTab: InventoryTab = InventoryTab.FILE_MAPPING,
+    val showDeviceDisconnectedDialog: Boolean = false
 )
 
 class InventoryScanViewModel(
@@ -267,6 +268,26 @@ class InventoryScanViewModel(
         timerJob?.cancel()
         scanJob?.cancel()
         scanner.stopScanning()
+    }
+// ============================================
+    // DEVICE DISCONNECTED HANDLING (E11)
+    // ============================================
+
+    fun handleDeviceDisconnected() {
+        // Auto-pause the scan
+        timerJob?.cancel()
+        scanJob?.cancel()
+        scanner.stopScanning()
+
+        _state.value = _state.value.copy(
+            isScanning = false,
+            isPaused = true,
+            showDeviceDisconnectedDialog = true
+        )
+    }
+
+    fun dismissDeviceDisconnectedDialog() {
+        _state.value = _state.value.copy(showDeviceDisconnectedDialog = false)
     }
 }
 class InventoryScanViewModelFactory(

@@ -36,7 +36,8 @@ data class QuickScanState(
     val isTimerExpired: Boolean = false,
     val showLowBatteryWarning: Boolean = false,
     val lowBatteryWarningAcknowledged: Boolean = false,
-    val showCriticalBatteryDialog: Boolean = false
+    val showCriticalBatteryDialog: Boolean = false,
+    val isCriticalBatteryLocked: Boolean = false
 
 )
 
@@ -65,6 +66,10 @@ class QuickScanViewModel(
 
     // Called when user taps "Play" button
     fun startScanning() {
+        if (_state.value.isCriticalBatteryLocked) {
+            return
+        }
+
         _state.value = _state.value.copy(
             isScanning = true,
             isPaused = false,
@@ -89,6 +94,11 @@ class QuickScanViewModel(
 
     // Called when user taps "Resume" button
     fun resumeScanning() {
+        // Safety: block resume if battery is critically low
+        if (_state.value.isCriticalBatteryLocked) {
+            return
+        }
+
         _state.value = _state.value.copy(
             isScanning = true,
             isPaused = false
@@ -287,10 +297,16 @@ class QuickScanViewModel(
             isScanning = false,
             isPaused = true,
             showCriticalBatteryDialog = true,
-            showLowBatteryWarning = false  // Dismiss the regular warning if shown
+            showLowBatteryWarning = false, // Dismiss the regular warning if shown
+            isCriticalBatteryLocked = true
         )
     }
-
+    // Auto-unlock when battery recovers above safe threshold (25%)
+    fun checkBatteryRecovery(batteryPercent: Int) {
+        if (_state.value.isCriticalBatteryLocked && batteryPercent >= 25) {
+            _state.value = _state.value.copy(isCriticalBatteryLocked = false)
+        }
+    }
     fun dismissCriticalBatteryDialog() {
         _state.value = _state.value.copy(showCriticalBatteryDialog = false)
     }

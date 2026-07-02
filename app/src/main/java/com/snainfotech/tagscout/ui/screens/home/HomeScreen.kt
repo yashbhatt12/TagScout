@@ -39,6 +39,7 @@ fun HomeScreen(
     onConnectDeviceClick: () -> Unit = {},
     onQuickScanClick: () -> Unit = {},
     onInventoryClick: () -> Unit = {},
+    onPickOrderClick: () -> Unit = {},
     onWriteTagClick: () -> Unit = {},
     onKillTagClick: () -> Unit = {},
     onDeviceConfigClick: () -> Unit = {}
@@ -112,7 +113,13 @@ fun HomeScreen(
                 enabled = deviceState.isConnected,
                 onClick = onInventoryClick
             )
-
+            FeatureButton(
+                icon = "📦",
+                title = "Pick Order",
+                description = "Fulfill customer orders",
+                enabled = deviceState.isConnected,
+                onClick = onPickOrderClick
+            )
             FeatureButton(
                 icon = "✏️",
                 title = "Write Tag",

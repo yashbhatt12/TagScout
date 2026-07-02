@@ -20,6 +20,7 @@ import androidx.navigation.compose.NavHost
 import androidx.navigation.compose.composable
 import androidx.navigation.compose.rememberNavController
 import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.compose.runtime.saveable.rememberSaveable
 import com.snainfotech.tagscout.ui.screens.inventory.InventoryItem
 import com.snainfotech.tagscout.ui.screens.inventory.InventoryScanScreen
 import com.snainfotech.tagscout.ui.screens.inventory.InventoryScanViewModel
@@ -61,6 +62,11 @@ import com.snainfotech.tagscout.ui.screens.tagops.KillPhase
 import com.snainfotech.tagscout.ui.screens.tagops.KillTagScreen
 import com.snainfotech.tagscout.ui.screens.tagops.KillTagViewModel
 import com.snainfotech.tagscout.ui.screens.tagops.KillTagViewModelFactory
+import com.snainfotech.tagscout.ui.screens.pickorder.PickOrderScreen
+import com.snainfotech.tagscout.ui.screens.pickorder.PickOrderViewModel
+import com.snainfotech.tagscout.ui.screens.pickorder.PickOrderViewModelFactory
+import com.snainfotech.tagscout.ui.screens.pickorder.generateMockPickOrder
+import com.snainfotech.tagscout.ui.screens.pickorder.generateMockFilename
 import android.content.Intent
 import android.net.Uri
 import android.provider.Settings
@@ -86,6 +92,7 @@ object Routes {
     // const val INVENTORY = "inventory"
     const val WRITE_TAG = "write_tag"
     const val KILL_TAG= "kill_tag"
+    const val PICK_ORDER = "pick_order"
 }
 
 @Composable
@@ -113,8 +120,8 @@ fun TagScoutNavGraph(
         composable(Routes.HOME) {
             val deviceState by sharedHomeViewModel.deviceState.collectAsState()
 
-            var menuExpanded by remember { mutableStateOf(false) }
-            var showExitDialog by remember { mutableStateOf(false) }
+            var menuExpanded by rememberSaveable { mutableStateOf(false) }
+            var showExitDialog by rememberSaveable { mutableStateOf(false) }
             val context = LocalContext.current
             val activity = context as? android.app.Activity
 
@@ -125,6 +132,7 @@ fun TagScoutNavGraph(
                     onConnectDeviceClick = { navController.navigate(Routes.CONNECT_DEVICE) },
                     onQuickScanClick = { navController.navigate(Routes.QUICK_SCAN) },
                     onInventoryClick = { navController.navigate(Routes.INVENTORY) },
+                    onPickOrderClick = { navController.navigate(Routes.PICK_ORDER) },
                     onWriteTagClick = { navController.navigate(Routes.WRITE_TAG) },
                     onKillTagClick = { navController.navigate(Routes.KILL_TAG) },
                     onDeviceConfigClick = { navController.navigate(Routes.DEVICE_CONFIG) }
@@ -180,16 +188,20 @@ fun TagScoutNavGraph(
 
             // E8: Watch for low battery during scan (two-tier)
             LaunchedEffect(deviceState.batteryPercent, scanState.isScanning) {
-                if (!scanState.isScanning || !deviceState.isConnected) return@LaunchedEffect
-
                 val battery = deviceState.batteryPercent
 
+                // E16: Check for battery recovery FIRST (works even when paused/not scanning)
+                if (deviceState.isConnected) {
+                    quickScanViewModel.checkBatteryRecovery(battery)
+                }
+
+                // Rest of the checks only fire during active scanning
+                if (!scanState.isScanning || !deviceState.isConnected) return@LaunchedEffect
+
                 when {
-                    // Critical battery (≤ 5%) — force-stop, no continue option
                     battery in 1..CRITICAL_BATTERY_THRESHOLD -> {
                         quickScanViewModel.handleCriticalBattery()
                     }
-                    // Low battery (≤ 15% but > 5%) — warn with continue option
                     battery in (CRITICAL_BATTERY_THRESHOLD + 1)..LOW_BATTERY_THRESHOLD &&
                             !scanState.lowBatteryWarningAcknowledged -> {
                         quickScanViewModel.handleLowBattery()
@@ -197,9 +209,9 @@ fun TagScoutNavGraph(
                 }
             }
 
-            var showSaveDialog by remember { mutableStateOf(false) }
-            var showClearDialog by remember { mutableStateOf(false) }
-            var showPreSaveWarning by remember { mutableStateOf(false) }
+            var showSaveDialog by rememberSaveable { mutableStateOf(false) }
+            var showClearDialog by rememberSaveable { mutableStateOf(false) }
+            var showPreSaveWarning by rememberSaveable { mutableStateOf(false) }
 
             QuickScanScreen(
                 state = scanState,
@@ -501,8 +513,8 @@ fun TagScoutNavGraph(
 
             val inventoryState by inventoryViewModel.state.collectAsState()
             val deviceState by sharedHomeViewModel.deviceState.collectAsState()
-            var showSaveDialog by remember { mutableStateOf(false) }
-            var showPreSaveWarning by remember { mutableStateOf(false) }
+            var showSaveDialog by rememberSaveable { mutableStateOf(false) }
+            var showPreSaveWarning by rememberSaveable { mutableStateOf(false) }
             // File picker launcher
             val filePickerLauncher = rememberLauncherForActivityResult(
                 contract = ActivityResultContracts.OpenDocument()
@@ -695,6 +707,51 @@ fun TagScoutNavGraph(
                     customMessage = "Your RFID reader has disconnected. The kill operation was NOT completed — the tag is still active."
                 )
             }
+        }
+        composable(Routes.PICK_ORDER) {
+            val pickOrderViewModel: PickOrderViewModel = viewModel(
+                factory = PickOrderViewModelFactory(
+                    app.rfidScanner,
+                    app.settingsRepository
+                )
+            )
+
+            val pickOrderState by pickOrderViewModel.state.collectAsState()
+            val deviceState by sharedHomeViewModel.deviceState.collectAsState()
+
+            // Block back during active picking
+            BackHandler(enabled = pickOrderState.isPicking) {
+                // Do nothing
+            }
+
+            PickOrderScreen(
+                state = pickOrderState,
+                deviceName = deviceState.deviceName,
+                serialNumber = deviceState.serialNumber,
+                firmwareVersion = deviceState.firmwareVersion,
+                batteryPercent = deviceState.batteryPercent,
+                isDeviceConnected = deviceState.isConnected,
+                onBackClick = { navController.popBackStack() },
+                onMenuClick = { /* TODO */ },
+                onDeviceStatusClick = { navController.navigate(Routes.DEVICE_CONFIG) },
+                onLoadFileClick = {
+                    // TEMPORARY: Skip file picker, load mock data
+                    val mockItems = generateMockPickOrder()
+                    pickOrderViewModel.loadPickOrder(mockItems, generateMockFilename())
+                },
+                onAntennaChange = { pickOrderViewModel.setAntennaStrength(it) },
+                onTabSelect = { pickOrderViewModel.setSelectedTab(it) },
+                onStartPicking = { pickOrderViewModel.startPicking() },
+                onPausePicking = { pickOrderViewModel.pausePicking() },
+                onResumePicking = { pickOrderViewModel.resumePicking() },
+                onConfirmPick = { serialNo -> pickOrderViewModel.confirmPick(serialNo) },
+                onLocateItem = { epc -> pickOrderViewModel.startLocateMode(epc) },
+                onAddUnexpected = { epc -> pickOrderViewModel.addUnexpectedToOrder(epc) },
+                onDismissSnackbar = { pickOrderViewModel.dismissWrongEpcSnackbar() },
+                onCompleteOrder = { pickOrderViewModel.completeOrder() },
+                onCancelOrder = { pickOrderViewModel.cancelOrder() },
+                isItemReadyToConfirm = { item -> pickOrderViewModel.isItemReadyToConfirm(item) }
+            )
         }
     }
 }

@@ -38,6 +38,7 @@ fun BottomButtonBar(
     onSaveClick: () -> Unit,
     onPlayPauseClick: () -> Unit,
     onClearClick: () -> Unit,
+    isCriticalBatteryLocked: Boolean = false,
     modifier: Modifier = Modifier
 ) {
     Row(
@@ -59,8 +60,8 @@ fun BottomButtonBar(
         // Middle button (Play / Pause / Resume)
         when (state) {
             ScanButtonState.INITIAL -> ActionButton(
-                text = "▶ Scan",
-                enabled = true,
+                text = if (isCriticalBatteryLocked) "🔋 Charging Needed" else "▶ Scan",
+                enabled = !isCriticalBatteryLocked,
                 enabledColor = SuccessGreen,
                 onClick = onPlayPauseClick,
                 modifier = Modifier.weight(1f)
@@ -73,8 +74,8 @@ fun BottomButtonBar(
                 modifier = Modifier.weight(1f)
             )
             ScanButtonState.PAUSED -> ActionButton(
-                text = "▶ Resume",
-                enabled = true,
+                text = if (isCriticalBatteryLocked) "🔋 Charging Needed" else "▶ Resume",
+                enabled = !isCriticalBatteryLocked,
                 enabledColor = SuccessGreen,
                 onClick = onPlayPauseClick,
                 modifier = Modifier.weight(1f)

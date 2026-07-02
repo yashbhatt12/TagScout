@@ -125,7 +125,8 @@ fun QuickScanScreen(
                 state = buttonState,
                 onSaveClick = onSaveClick,
                 onPlayPauseClick = onPlayPauseClick,
-                onClearClick = onClearClick
+                onClearClick = onClearClick,
+                isCriticalBatteryLocked = state.isCriticalBatteryLocked
             )
         }
     }

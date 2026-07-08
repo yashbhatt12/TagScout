@@ -1,6 +1,8 @@
 package com.snainfotech.tagscout.ui.screens.home
 
 import androidx.compose.foundation.background
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Spacer
@@ -9,8 +11,6 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.shape.RoundedCornerShape
-import androidx.compose.foundation.rememberScrollState
-import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.collectAsState
@@ -42,6 +42,7 @@ fun HomeScreen(
     onQuickScanClick: () -> Unit = {},
     onInventoryClick: () -> Unit = {},
     onPickOrderClick: () -> Unit = {},
+    onOrderPickingClick: () -> Unit = {},
     onWriteTagClick: () -> Unit = {},
     onKillTagClick: () -> Unit = {},
     onDeviceConfigClick: () -> Unit = {}
@@ -69,12 +70,11 @@ fun HomeScreen(
         )
 
         // 3. Main content area
-
         Column(
             modifier = Modifier
                 .fillMaxWidth()
-                .weight(1f)                              // claim remaining space below the status bar
-                .verticalScroll(rememberScrollState())   // scroll when content overflows
+                .weight(1f)
+                .verticalScroll(rememberScrollState())
                 .padding(16.dp)
         ) {
             // Show banner based on state
@@ -118,12 +118,21 @@ fun HomeScreen(
                 enabled = deviceState.isConnected,
                 onClick = onInventoryClick
             )
+            /*
             FeatureButton(
                 icon = "📦",
                 title = "Pick Order",
                 description = "Fulfill customer orders",
                 enabled = deviceState.isConnected,
                 onClick = onPickOrderClick
+            )
+             */
+            FeatureButton(
+                icon = "🗂️",
+                title = "Pick List",
+                description = "Pick goods against an order file",
+                enabled = deviceState.isConnected,
+                onClick = onOrderPickingClick
             )
             FeatureButton(
                 icon = "✏️",

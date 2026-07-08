@@ -67,6 +67,20 @@ import com.snainfotech.tagscout.ui.screens.pickorder.PickOrderViewModel
 import com.snainfotech.tagscout.ui.screens.pickorder.PickOrderViewModelFactory
 import com.snainfotech.tagscout.ui.screens.pickorder.generateMockPickOrder
 import com.snainfotech.tagscout.ui.screens.pickorder.generateMockFilename
+import com.snainfotech.tagscout.data.file.OrderPickingExcelParser
+import com.snainfotech.tagscout.ui.screens.orderpicking.ClearOrderWarningDialog
+import com.snainfotech.tagscout.ui.screens.orderpicking.ConfirmPickDialog
+import com.snainfotech.tagscout.ui.screens.orderpicking.OrderFileErrorDialog
+import com.snainfotech.tagscout.ui.screens.orderpicking.OrderPickingScreen
+import com.snainfotech.tagscout.ui.screens.orderpicking.OrderPickingViewModel
+import com.snainfotech.tagscout.ui.screens.orderpicking.OrderPickingViewModelFactory
+import com.snainfotech.tagscout.ui.screens.orderpicking.OrderSaveErrorDialog
+import com.snainfotech.tagscout.ui.screens.orderpicking.OrderSaveSuccessDialog
+import com.snainfotech.tagscout.ui.screens.orderpicking.generateMockOrderPickingItems
+import com.snainfotech.tagscout.ui.screens.orderpicking.generateMockOrderFilename
+import java.text.SimpleDateFormat
+import java.util.Date
+import java.util.Locale
 import android.content.Intent
 import android.net.Uri
 import android.provider.Settings
@@ -93,6 +107,7 @@ object Routes {
     const val WRITE_TAG = "write_tag"
     const val KILL_TAG= "kill_tag"
     const val PICK_ORDER = "pick_order"
+    const val ORDER_PICKING = "order_picking"
 }
 
 @Composable
@@ -133,6 +148,7 @@ fun TagScoutNavGraph(
                     onQuickScanClick = { navController.navigate(Routes.QUICK_SCAN) },
                     onInventoryClick = { navController.navigate(Routes.INVENTORY) },
                     onPickOrderClick = { navController.navigate(Routes.PICK_ORDER) },
+                    onOrderPickingClick = { navController.navigate(Routes.ORDER_PICKING) },
                     onWriteTagClick = { navController.navigate(Routes.WRITE_TAG) },
                     onKillTagClick = { navController.navigate(Routes.KILL_TAG) },
                     onDeviceConfigClick = { navController.navigate(Routes.DEVICE_CONFIG) }
@@ -752,6 +768,157 @@ fun TagScoutNavGraph(
                 onCancelOrder = { pickOrderViewModel.cancelOrder() },
                 isItemReadyToConfirm = { item -> pickOrderViewModel.isItemReadyToConfirm(item) }
             )
+        }
+        composable(Routes.ORDER_PICKING) {
+            val orderPickingViewModel: OrderPickingViewModel = viewModel(
+                factory = OrderPickingViewModelFactory(
+                    app.rfidScanner,
+                    app.settingsRepository
+                )
+            )
+
+            val orderState by orderPickingViewModel.state.collectAsState()
+            val deviceState by sharedHomeViewModel.deviceState.collectAsState()
+            val context = LocalContext.current
+
+            // ============================================
+            // FILE UPLOAD (User Story 1)
+            // ============================================
+            val openFileLauncher = rememberLauncherForActivityResult(
+                contract = ActivityResultContracts.OpenDocument()
+            ) { uri ->
+                if (uri != null) {
+                    orderPickingViewModel.beginFileParse()
+                    val fileName = extractFileName(uri.toString())
+                    try {
+                        context.contentResolver.openInputStream(uri)?.use { input ->
+                            when (val result = OrderPickingExcelParser.parse(input)) {
+                                is OrderPickingExcelParser.ParseResult.Success ->
+                                    orderPickingViewModel.onFileParsed(fileName, result.items)
+                                is OrderPickingExcelParser.ParseResult.Error ->
+                                    orderPickingViewModel.onFileParseFailed(result.message)
+                            }
+                        } ?: orderPickingViewModel.onFileParseFailed("Could not open the selected file.")
+                    } catch (e: Exception) {
+                        orderPickingViewModel.onFileParseFailed(
+                            "Could not read the file: ${e.message ?: e.javaClass.simpleName}"
+                        )
+                    }
+                }
+            }
+
+            // ============================================
+            // SAVE RESULT FILE (User Story 5)
+            // ============================================
+            val saveFileLauncher = rememberLauncherForActivityResult(
+                contract = ActivityResultContracts.CreateDocument(
+                    "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+                )
+            ) { uri ->
+                if (uri != null) {
+                    orderPickingViewModel.beginSave()
+                    try {
+                        context.contentResolver.openOutputStream(uri)?.use { output ->
+                            OrderPickingExcelParser.write(output, orderState.items)
+                            orderPickingViewModel.onSaveSucceeded()
+                        } ?: orderPickingViewModel.onSaveFailed("Could not create the output file.")
+                    } catch (e: Exception) {
+                        orderPickingViewModel.onSaveFailed(
+                            "Could not save the file: ${e.message ?: e.javaClass.simpleName}"
+                        )
+                    }
+                }
+            }
+
+            LaunchedEffect(deviceState.isConnected) {
+                if (!deviceState.isConnected && (orderState.isScanning || orderState.isPaused)) {
+                    orderPickingViewModel.handleDeviceDisconnected()
+                }
+            }
+
+            // Block system back while actively scanning (User Story 4 — pause via the on-screen control instead)
+            BackHandler(enabled = orderState.isScanning) {
+                // Do nothing
+            }
+
+            OrderPickingScreen(
+                state = orderState,
+                deviceName = deviceState.deviceName,
+                serialNumber = deviceState.serialNumber,
+                firmwareVersion = deviceState.firmwareVersion,
+                batteryPercent = deviceState.batteryPercent,
+                isDeviceConnected = deviceState.isConnected,
+                onBackClick = { navController.popBackStack() },
+                onMenuClick = { /* TODO */ },
+                onDeviceStatusClick = { navController.navigate(Routes.DEVICE_CONFIG) },
+                onUploadFileClick = {
+                    // TEMPORARY: Skip the real file picker, load mock data — REMOVE LATER
+                    val mockItems = generateMockOrderPickingItems()
+                    orderPickingViewModel.onFileParsed(generateMockOrderFilename(), mockItems)
+                },
+                onAntennaChange = { orderPickingViewModel.setAntennaStrength(it) },
+                onPlayPauseClick = {
+                    when {
+                        orderState.isScanning -> orderPickingViewModel.pauseScanning()
+                        orderState.isPaused -> orderPickingViewModel.resumeScanning()
+                        else -> orderPickingViewModel.startScanning()
+                    }
+                },
+                onSaveClick = {
+                    val stamp = SimpleDateFormat("yyyyMMdd_HHmm", Locale.getDefault()).format(Date())
+                    saveFileLauncher.launch("pick_result_$stamp.xlsx")
+                },
+                onClearClick = { orderPickingViewModel.requestClear() }
+            )
+
+            // Pick confirmation dialog (User Story 3)
+            orderState.proximityCandidate?.let { candidate ->
+                ConfirmPickDialog(
+                    candidate = candidate,
+                    onConfirmPick = { orderPickingViewModel.confirmPick() },
+                    onNotNow = { orderPickingViewModel.dismissProximityCandidate() }
+                )
+            }
+
+            // Clear warning dialog (User Story 6)
+            if (orderState.showClearWarningDialog) {
+                ClearOrderWarningDialog(
+                    onDismiss = { orderPickingViewModel.cancelClearRequest() },
+                    onConfirmClear = { orderPickingViewModel.confirmClear() }
+                )
+            }
+
+            // File parse error
+            orderState.fileError?.let { message ->
+                OrderFileErrorDialog(
+                    message = message,
+                    onDismiss = { orderPickingViewModel.dismissFileError() }
+                )
+            }
+
+            // Save error
+            orderState.saveError?.let { message ->
+                OrderSaveErrorDialog(
+                    message = message,
+                    onDismiss = { orderPickingViewModel.dismissSaveError() }
+                )
+            }
+
+            // Save success
+            if (orderState.saveCompleted) {
+                OrderSaveSuccessDialog(
+                    fileName = orderState.fileName,
+                    onDismiss = { orderPickingViewModel.acknowledgeSaveCompleted() }
+                )
+            }
+
+            // Device disconnected dialog
+            if (orderState.showDeviceDisconnectedDialog) {
+                DeviceDisconnectedDialog(
+                    onDismiss = { orderPickingViewModel.dismissDeviceDisconnectedDialog() },
+                    customMessage = "Your RFID reader has disconnected. Scanning has been paused."
+                )
+            }
         }
     }
 }

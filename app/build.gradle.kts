@@ -65,6 +65,8 @@ dependencies {
 
     // File handling
     implementation(libs.androidx.documentfile)
+    implementation(libs.fastexcel)
+    implementation(libs.fastexcel.reader)
     testImplementation(libs.junit)
     androidTestImplementation(libs.androidx.junit)
     androidTestImplementation(libs.androidx.espresso.core)

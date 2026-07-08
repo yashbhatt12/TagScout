@@ -213,4 +213,51 @@ class FakeRfidScanner : RfidScanner {
     }
 
     fun getActiveTagsForTesting(): List<String> = activeTags.toList()
+
+    // ============================================
+    // CONNECTION LIFECYCLE (Phase 2)
+    // ============================================
+
+    private var simulatedBattery = 85
+
+    override fun connectionEvents(): Flow<ConnectionEvent> = flow {
+        emit(
+            ConnectionEvent.Connected(
+                deviceName = "$vendorName $modelName",
+                serialNumber = "SIM-0001",
+                firmwareVersion = "v1.0.0-sim"
+            )
+        )
+        // Simulate a slowly draining battery so the app's low/critical battery
+        // safety logic can actually be exercised in testing, rather than sitting
+        // frozen at one value forever.
+        while (true) {
+            delay(5000)
+            simulatedBattery = (simulatedBattery - 1).coerceAtLeast(0)
+            emit(ConnectionEvent.BatteryUpdate(simulatedBattery))
+        }
+    }
+
+    // ============================================
+    // LOCATE / PROXIMITY (Phase 2)
+    // ============================================
+
+    private var locating = false
+
+    override fun locateTag(epc: String): Flow<ProximityReading> = flow {
+        locating = true
+        val cleanTarget = epc.trim().uppercase()
+        var proximity = 10
+
+        while (locating) {
+            delay(300)
+            // Simulate a rising-and-falling signal, as if walking toward then past the tag
+            proximity = (proximity + Random.nextInt(-5, 15)).coerceIn(0, 100)
+            emit(ProximityReading(epc = cleanTarget, proximity = proximity))
+        }
+    }
+
+    override fun stopLocating() {
+        locating = false
+    }
 }

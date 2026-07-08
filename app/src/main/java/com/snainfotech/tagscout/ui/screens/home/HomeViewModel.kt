@@ -3,6 +3,9 @@ package com.snainfotech.tagscout.ui.screens.home
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.snainfotech.tagscout.data.repository.DeviceRepository
+import com.snainfotech.tagscout.sdk.ConnectionEvent
+import com.snainfotech.tagscout.sdk.RfidScanner
+import kotlinx.coroutines.Job
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -35,6 +38,57 @@ class HomeViewModel(
 
     // Public: screens can read this but not modify
     val deviceState: StateFlow<DeviceState> = _deviceState.asStateFlow()
+
+    private var connectionJob: Job? = null
+
+    // ============================================
+    // CONNECTION LIFECYCLE (Phase 2)
+    // ============================================
+
+    // Starts continuously observing the scanner's connection/battery stream,
+    // replacing the old one-time status snapshot. Call this once a connect
+    // action succeeds. Safe to call again on a new connection — cancels any
+    // previous observation first.
+    fun startObservingConnection(rfidScanner: RfidScanner) {
+        connectionJob?.cancel()
+        connectionJob = viewModelScope.launch {
+            rfidScanner.connectionEvents().collect { event ->
+                when (event) {
+                    is ConnectionEvent.Connected -> updateDeviceStatus(
+                        isConnected = true,
+                        deviceName = event.deviceName,
+                        serialNumber = event.serialNumber,
+                        firmwareVersion = event.firmwareVersion,
+                        batteryPercent = _deviceState.value.batteryPercent.takeIf { it > 0 } ?: 100
+                    )
+                    is ConnectionEvent.Disconnected -> updateDeviceStatus(
+                        isConnected = false,
+                        deviceName = "",
+                        serialNumber = "",
+                        firmwareVersion = "",
+                        batteryPercent = 0
+                    )
+                    is ConnectionEvent.BatteryUpdate -> {
+                        val current = _deviceState.value
+                        updateDeviceStatus(
+                            isConnected = current.isConnected,
+                            deviceName = current.deviceName,
+                            serialNumber = current.serialNumber,
+                            firmwareVersion = current.firmwareVersion,
+                            batteryPercent = event.percent
+                        )
+                    }
+                }
+            }
+        }
+    }
+
+    // Stops observing the connection stream — call on an explicit disconnect/delete,
+    // so a stale battery tick can't override the disconnected status right after.
+    fun stopObservingConnection() {
+        connectionJob?.cancel()
+        connectionJob = null
+    }
 
     // Called when the device status changes (we'll wire this up later when SDK is added)
     fun updateDeviceStatus(

@@ -379,14 +379,7 @@ fun TagScoutNavGraph(
                         navController.navigate(Routes.DEVICE_CONFIG)
                     } else {
                         connectViewModel.connectToDevice(device)
-                        sharedHomeViewModel.updateDeviceStatus(
-                            isConnected = true,
-                            deviceName = device.name,
-                            serialNumber = "SN-${device.id}",
-                            firmwareVersion = "v5.90.00.02",
-                            batteryPercent = 85,
-                            isCharging = false
-                        )
+                        sharedHomeViewModel.startObservingConnection(app.rfidScanner)
                     }
                 },
                 onDeviceLongPress = { device ->
@@ -430,6 +423,7 @@ fun TagScoutNavGraph(
                     onConfirm = {
                         // If deleting the currently connected device, also disconnect
                         if (deviceToDelete.id == connectState.currentlyConnectedId) {
+                            sharedHomeViewModel.stopObservingConnection()
                             sharedHomeViewModel.updateDeviceStatus(
                                 isConnected = false,
                                 deviceName = "",

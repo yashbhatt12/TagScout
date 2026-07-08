@@ -41,7 +41,8 @@ android {
 }
 
 dependencies {
-
+// Bluebird RFID SDK (local jar, not on Maven)
+    implementation(fileTree(mapOf("dir" to "libs", "include" to listOf("*.jar"))))
     implementation(libs.androidx.core.ktx)
     implementation(libs.androidx.lifecycle.runtime.ktx)
     implementation(libs.androidx.activity.compose)

@@ -39,6 +39,36 @@ sealed class KillTagResult {
 }
 
 // ============================================
+// CONNECTION LIFECYCLE (Phase 2)
+// ============================================
+
+// A change in connection state or an ongoing update from the sled, arriving
+// over time — not just a single point-in-time check like the app relied on before.
+sealed class ConnectionEvent {
+    data class Connected(
+        val deviceName: String,
+        val serialNumber: String,
+        val firmwareVersion: String
+    ) : ConnectionEvent()
+
+    object Disconnected : ConnectionEvent()
+
+    data class BatteryUpdate(val percent: Int) : ConnectionEvent()
+}
+
+// ============================================
+// LOCATE / PROXIMITY (Phase 2)
+// ============================================
+
+// A single proximity reading while actively locating one specific tag.
+// proximity is 0 (not detected) to 100 (very close) — implementations derive
+// this from RSSI, or from a vendor-native proximity value where available.
+data class ProximityReading(
+    val epc: String,
+    val proximity: Int
+)
+
+// ============================================
 // FEATURES
 // ============================================
 
@@ -135,4 +165,24 @@ interface RfidScanner {
         targetEpc: String,
         killPassword: String = RfidConstants.DEFAULT_PASSWORD
     ): KillTagResult
+
+    // ============================================
+    // CONNECTION LIFECYCLE (new — Phase 2)
+    // ============================================
+
+    // Continuous stream of connection/battery events. Screens observe this
+    // instead of relying on a single point-in-time status check like before —
+    // this is what makes disconnect detection and live battery reporting real.
+    fun connectionEvents(): Flow<ConnectionEvent>
+
+    // ============================================
+    // LOCATE / PROXIMITY (new — Phase 2)
+    // ============================================
+
+    // Continuously reports proximity to one specific tag until stopLocating()
+    // is called. Backs the "Locate" feature in Order Picking / Pick Order.
+    fun locateTag(epc: String): Flow<ProximityReading>
+
+    // Stops an active locate session started by locateTag().
+    fun stopLocating()
 }

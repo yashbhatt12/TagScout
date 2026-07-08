@@ -31,8 +31,15 @@ class TagScoutApplication : Application() {
         SettingsRepository(this)
     }
 
-    // RFID Scanner — fake for now, will be Bluebird SDK later
+    // RFID Scanner — flip this one flag once the sled is in hand and BluebirdRfidScanner
+    // is ready to test. Keeping Fake as the default until then so nothing regresses.
+    private val useRealHardware = false
+
     val rfidScanner: com.snainfotech.tagscout.sdk.RfidScanner by lazy {
-        com.snainfotech.tagscout.sdk.FakeRfidScanner()
+        if (useRealHardware) {
+            com.snainfotech.tagscout.sdk.BluebirdRfidScanner(this)
+        } else {
+            com.snainfotech.tagscout.sdk.FakeRfidScanner()
+        }
     }
 }

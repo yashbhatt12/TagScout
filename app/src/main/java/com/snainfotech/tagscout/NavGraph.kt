@@ -328,7 +328,7 @@ fun TagScoutNavGraph(
         // ============================================
         composable(Routes.CONNECT_DEVICE) {
             val connectViewModel: ConnectDeviceViewModel = viewModel(
-                factory = ConnectDeviceViewModelFactory(app.deviceRepository)
+                factory = ConnectDeviceViewModelFactory(app.deviceRepository, app.rfidScanner)
             )
 
             val connectState by connectViewModel.state.collectAsState()
@@ -424,6 +424,7 @@ fun TagScoutNavGraph(
                         // If deleting the currently connected device, also disconnect
                         if (deviceToDelete.id == connectState.currentlyConnectedId) {
                             sharedHomeViewModel.stopObservingConnection()
+                            connectViewModel.disconnectCurrentDevice()
                             sharedHomeViewModel.updateDeviceStatus(
                                 isConnected = false,
                                 deviceName = "",

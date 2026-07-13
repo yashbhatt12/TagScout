@@ -4,13 +4,13 @@ import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.snainfotech.tagscout.data.entities.DeviceConnectionEntity
 import com.snainfotech.tagscout.data.repository.DeviceRepository
+import com.snainfotech.tagscout.sdk.RfidScanner
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.launch
-import kotlin.random.Random
 
 // Status of each discovered device
 enum class DeviceStatus {
@@ -43,7 +43,8 @@ data class ConnectDeviceState(
 )
 
 class ConnectDeviceViewModel(
-    private val deviceRepository: DeviceRepository
+    private val deviceRepository: DeviceRepository,
+    private val rfidScanner: RfidScanner
 ) : ViewModel() {
 
     private val _state = MutableStateFlow(ConnectDeviceState())
@@ -98,7 +99,9 @@ class ConnectDeviceViewModel(
         )
     }
 
-    // Called when user taps Search
+    // Called when user taps Search.
+    // Lists devices already paired via Android's own Bluetooth settings —
+    // pair the sled there first; this doesn't do discovery/pairing itself.
     fun startSearch() {
         searchJob?.cancel()
 
@@ -108,36 +111,26 @@ class ConnectDeviceViewModel(
         )
 
         searchJob = viewModelScope.launch {
-            // Simulate searching for 3 seconds
-            delay(3000)
+            delay(500) // brief pause so the searching state is visibly shown
 
-            // Generate 2-4 fake new devices
             val savedIds = _state.value.savedDevices.map { it.id }.toSet()
-            val newlyFound = generateFakeNewDevices(savedIds)
+            val paired = rfidScanner.getPairedDevices()
+                .filter { it.address !in savedIds }
+                .map { device ->
+                    DiscoveredDevice(
+                        id = device.address,
+                        name = device.name,
+                        signalBars = 4, // not known until connected over classic BT
+                        status = DeviceStatus.IN_RANGE,
+                        isSaved = false
+                    )
+                }
 
             _state.value = _state.value.copy(
                 isSearching = false,
-                newDevices = newlyFound
+                newDevices = paired
             )
         }
-    }
-
-    private fun generateFakeNewDevices(excludeIds: Set<String>): List<DiscoveredDevice> {
-        val count = Random.nextInt(2, 5)
-        val models = listOf("RFR-901", "RFR-900", "RFR-902")
-
-        return (1..count).map {
-            // Generate a random 6-char alphanumeric ID
-            val id = (1..6).map { "ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789".random() }.joinToString("")
-            val model = models.random()
-            DiscoveredDevice(
-                id = id,
-                name = "$model ($id)",
-                signalBars = Random.nextInt(2, 5),
-                status = DeviceStatus.IN_RANGE,
-                isSaved = false
-            )
-        }.filter { it.id !in excludeIds }
     }
 
     fun updateSearchQuery(query: String) {
@@ -182,7 +175,16 @@ class ConnectDeviceViewModel(
                 savedDevices = updatedSaved,
                 currentlyConnectedId = device.id
             )
+
+            // device.id is the real Bluetooth address for real hardware
+            // (see startSearch()) — this is what actually opens the connection.
+            rfidScanner.connect(device.id)
         }
+    }
+
+    // Disconnects the currently connected device, if any (e.g. when it's deleted).
+    fun disconnectCurrentDevice() {
+        rfidScanner.disconnect()
     }
 
     // ============================================

@@ -62,17 +62,19 @@ class QuickScanViewModelFactory(
 }
 // Factory: Creates the ConnectDeviceViewModel with its required parameters
 class ConnectDeviceViewModelFactory(
-    private val deviceRepository: DeviceRepository
+    private val deviceRepository: DeviceRepository,
+    private val rfidScanner: com.snainfotech.tagscout.sdk.RfidScanner
 ) : ViewModelProvider.Factory {
     override fun <T : ViewModel> create(modelClass: Class<T>): T {
         if (modelClass.isAssignableFrom(com.snainfotech.tagscout.ui.screens.connect.ConnectDeviceViewModel::class.java)) {
             @Suppress("UNCHECKED_CAST")
-            return com.snainfotech.tagscout.ui.screens.connect.ConnectDeviceViewModel(deviceRepository) as T
+            return com.snainfotech.tagscout.ui.screens.connect.ConnectDeviceViewModel(deviceRepository, rfidScanner) as T
         }
         throw IllegalArgumentException("Unknown ViewModel class")
     }
 
 }
+
 // Factory: Creates the DeviceConfigViewModel (no parameters needed)
 class DeviceConfigViewModelFactory(
     private val settingsRepository: com.snainfotech.tagscout.data.repository.SettingsRepository

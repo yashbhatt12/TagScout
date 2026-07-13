@@ -111,6 +111,12 @@ object RfidConstants {
     }
 }
 
+// A device already paired at the OS Bluetooth-settings level.
+data class PairedDevice(
+    val name: String,
+    val address: String
+)
+
 // ============================================
 // SCANNER INTERFACE
 // ============================================
@@ -185,4 +191,20 @@ interface RfidScanner {
 
     // Stops an active locate session started by locateTag().
     fun stopLocating()
+
+    // ============================================
+    // DEVICE DISCOVERY & CONNECT (new — Phase 2)
+    // ============================================
+    // Note: pair the sled via Android's own Bluetooth settings first — this
+    // lists devices already paired at the OS level, it doesn't do discovery/pairing itself.
+
+    // Already-paired devices available to connect to.
+    fun getPairedDevices(): List<PairedDevice>
+
+    // Connect to a specific paired device by address. Once this returns,
+    // observe connectionEvents() for the resulting Connected event.
+    fun connect(address: String)
+
+    // Disconnect from the currently connected device.
+    fun disconnect()
 }

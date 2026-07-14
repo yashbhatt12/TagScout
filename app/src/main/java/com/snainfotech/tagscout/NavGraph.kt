@@ -336,12 +336,8 @@ fun TagScoutNavGraph(
             val context = LocalContext.current
 
             // Sync visual state with shared connected device
-            LaunchedEffect(deviceState.serialNumber, deviceState.isConnected) {
-                val connectedId = if (deviceState.isConnected) {
-                    deviceState.serialNumber.removePrefix("SN-")
-                } else {
-                    null
-                }
+            LaunchedEffect(deviceState.deviceId, deviceState.isConnected) {
+                val connectedId = if (deviceState.isConnected) deviceState.deviceId else null
                 connectViewModel.syncWithConnectedDevice(connectedId)
             }
 

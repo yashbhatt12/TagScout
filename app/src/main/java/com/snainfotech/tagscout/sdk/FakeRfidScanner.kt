@@ -224,6 +224,7 @@ class FakeRfidScanner : RfidScanner {
         emit(
             ConnectionEvent.Connected(
                 deviceName = "$vendorName $modelName",
+                address = "00:11:22:33:44:55",
                 serialNumber = "SIM-0001",
                 firmwareVersion = "v1.0.0-sim"
             )
@@ -265,12 +266,11 @@ class FakeRfidScanner : RfidScanner {
     // DEVICE DISCOVERY & CONNECT (Phase 2)
     // ============================================
 
-    override fun getPairedDevices(): List<PairedDevice> = listOf(
+    override suspend fun getPairedDevices(): List<PairedDevice> = listOf(
         PairedDevice(name = "$vendorName $modelName (SIM)", address = "00:11:22:33:44:55")
     )
 
-    override fun connect(address: String) {
-        // No-op — the fake "connects" via connectionEvents() emitting a
+    override suspend fun connect(address: String) {        // No-op — the fake "connects" via connectionEvents() emitting a
         // Connected event on first collection, which HomeViewModel triggers
         // right after calling this.
     }

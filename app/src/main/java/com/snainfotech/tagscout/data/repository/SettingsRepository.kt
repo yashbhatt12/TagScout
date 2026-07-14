@@ -17,7 +17,7 @@ class SettingsRepository(context: Context) {
 
         const val DEFAULT_BUZZER_LEVEL = "MEDIUM"
         const val DEFAULT_SLEEP_TIMEOUT = "5 Minutes"
-        const val DEFAULT_ANTENNA_STRENGTH = 5                          // ← NEW
+        const val DEFAULT_ANTENNA_STRENGTH = 30                         // ← NEW (SDK valid range is 5-30 dBm; 30 is the SDK's own factory default)           // ← NEW
     }
 
     // ============================================
@@ -46,7 +46,11 @@ class SettingsRepository(context: Context) {
     // ANTENNA STRENGTH
     // ============================================
     fun getAntennaStrength(): Int {
-        return prefs.getInt(KEY_ANTENNA_STRENGTH, DEFAULT_ANTENNA_STRENGTH)
+        // Clamp defensively — a value saved before this range was corrected
+        // (old UI allowed 1-10; the SDK's real valid range is 5-30) could
+        // otherwise still be sent to real hardware as an invalid value.
+        val saved = prefs.getInt(KEY_ANTENNA_STRENGTH, DEFAULT_ANTENNA_STRENGTH)
+        return saved.coerceIn(5, 30)
     }
 
     fun setAntennaStrength(strength: Int) {

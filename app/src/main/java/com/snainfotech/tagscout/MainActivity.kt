@@ -31,6 +31,20 @@ class MainActivity : ComponentActivity() {
             }
         }
     }
+
+    override fun onDestroy() {
+        // Best-effort: disconnect cleanly when the app closes, so the sled
+        // doesn't get left thinking it's still connected next time the app
+        // opens (which would otherwise block a fresh connection attempt).
+        // Not guaranteed to run if Android kills the process outright — the
+        // real fix for that case is the defensive disconnect-before-connect
+        // in BluebirdRfidScanner.connect() — but this covers the common case
+        // of a normal app close.
+        runCatching {
+            (applicationContext as? TagScoutApplication)?.rfidScanner?.disconnect()
+        }
+        super.onDestroy()
+    }
 }
 
 // Factory: Creates the HomeViewModel with its required parameters

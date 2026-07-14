@@ -47,6 +47,7 @@ sealed class KillTagResult {
 sealed class ConnectionEvent {
     data class Connected(
         val deviceName: String,
+        val address: String,
         val serialNumber: String,
         val firmwareVersion: String
     ) : ConnectionEvent()
@@ -198,12 +199,14 @@ interface RfidScanner {
     // Note: pair the sled via Android's own Bluetooth settings first — this
     // lists devices already paired at the OS level, it doesn't do discovery/pairing itself.
 
-    // Already-paired devices available to connect to.
-    fun getPairedDevices(): List<PairedDevice>
+    // Already-paired devices available to connect to. May need to wait for the
+    // sled's Bluetooth adapter to finish enabling first, hence suspend.
+    suspend fun getPairedDevices(): List<PairedDevice>
 
     // Connect to a specific paired device by address. Once this returns,
     // observe connectionEvents() for the resulting Connected event.
-    fun connect(address: String)
+    suspend fun connect(address: String)
+
 
     // Disconnect from the currently connected device.
     fun disconnect()

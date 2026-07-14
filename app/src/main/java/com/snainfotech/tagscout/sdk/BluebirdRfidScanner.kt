@@ -3,7 +3,7 @@ package com.snainfotech.tagscout.sdk
 import android.content.Context
 import android.os.Bundle
 import android.os.Handler
-import android.os.Looper
+import android.os.HandlerThread
 import android.os.Message
 import co.kr.bluebird.sled.BTReader
 import co.kr.bluebird.sled.SDConsts
@@ -71,19 +71,40 @@ class BluebirdRfidScanner(private val context: Context) : RfidScanner {
 
     // BTReader.getReader(context, handler) hands back ONE shared instance keyed
     // to this (context, handler) pair — every call in this class routes through it.
+    // BTReader.getReader(context, handler) hands back ONE shared instance keyed
+    // to this (context, handler) pair — every call in this class routes through it.
+    //
+    // The Handler runs on its OWN dedicated background thread, not the main/UI
+    // thread. This turned out to matter: some SDK calls (observed with BT_Connect)
+    // appear to be blocking wrappers that internally pump this same message queue
+    // while waiting for a reply — if that queue were the main thread's, a message
+    // handled during that internal pump could trigger another blocking call and
+    // recurse into the same call stack, eventually overflowing it. Isolating the
+    // SDK's callback thread from the UI thread avoids that entirely.
+    private var handlerThread: HandlerThread? = null
     private var handler: Handler? = null
     private var reader: BTReader? = null
 
     private fun getReader(): BTReader {
         reader?.let { return it }
 
-        val h = object : Handler(Looper.getMainLooper()) {
+        val thread = HandlerThread("BluebirdRfidScannerThread").apply { start() }
+        handlerThread = thread
+
+        val h = object : Handler(thread.looper) {
             override fun handleMessage(msg: Message) {
-                dispatchMessage(msg)
+                routeMessage(msg)
             }
         }
         handler = h
         val r = BTReader.getReader(context, h)
+
+        // Required once, right after getReader() — nothing else works reliably
+        // until this succeeds (this was the missing piece that made BT_Enable()
+        // and BT_GetPairedDevices() silently fail/return null).
+        val opened = r.SD_Open()
+        android.util.Log.d("BluebirdRfidScanner", "SD_Open() returned: $opened")
+
         reader = r
         return r
     }
@@ -102,7 +123,15 @@ class BluebirdRfidScanner(private val context: Context) : RfidScanner {
     private var pendingWriteResult: ((resultCode: Int) -> Unit)? = null
     private var pendingKillResult: ((resultCode: Int) -> Unit)? = null
 
-    private fun dispatchMessage(msg: Message) {
+    // Fires once when BT_Enable() actually finishes (it's async — returns
+    // immediately, real completion arrives later as SLED_BT_STATE_CHANGED).
+    private var pendingBtStateChanged: (() -> Unit)? = null
+
+    // Fires once when a BT_Disconnect() we asked for is actually confirmed
+    // (also async — see connect() below for why this matters).
+    private var pendingDisconnectConfirm: (() -> Unit)? = null
+
+    private fun routeMessage(msg: Message) {
         when (msg.what) {
             SDConsts.Msg.BTMsg -> handleBtMessage(msg)
             SDConsts.Msg.SDMsg -> handleSdMessage(msg)
@@ -115,18 +144,30 @@ class BluebirdRfidScanner(private val context: Context) : RfidScanner {
             SDConsts.BTCmdMsg.SLED_BT_ACL_CONNECTED -> {
                 val bundle = msg.obj as? Bundle
                 val name = bundle?.getString(SDConsts.BT_BUNDLE_NAME_KEY) ?: modelName
-                connectionCallback?.invoke(
-                    ConnectionEvent.Connected(
-                        deviceName = name,
-                        serialNumber = runCatching { getReader().SD_GetSerialNumber() }.getOrNull().orEmpty(),
-                        // SD_GetVersion() = the sled's own firmware; RF_GetRFIDVersion()
-                        // is the RFID module's version if that's wanted alongside it later.
-                        firmwareVersion = runCatching { getReader().SD_GetVersion() }.getOrNull().orEmpty()
+                val address = bundle?.getString(SDConsts.BT_BUNDLE_ADDR_KEY) ?: ""
+                // IMPORTANT: don't call SD_GetSerialNumber()/SD_GetVersion() synchronously
+                // here — calling them from directly inside handleMessage caused infinite
+                // recursion (the SDK's blocking calls appear to pump this same message
+                // queue while waiting for a reply). Defer to a fresh dispatch instead.
+                handler?.post {
+                    val serial = runCatching { getReader().SD_GetSerialNumber() }.getOrNull().orEmpty()
+                    val firmware = runCatching { getReader().SD_GetVersion() }.getOrNull().orEmpty()
+                    connectionCallback?.invoke(
+                        ConnectionEvent.Connected(
+                            deviceName = name,
+                            address = address,
+                            serialNumber = serial,
+                            firmwareVersion = firmware
+                        )
                     )
-                )
+                }
             }
             SDConsts.BTCmdMsg.SLED_BT_ACL_DISCONNECTED -> {
                 connectionCallback?.invoke(ConnectionEvent.Disconnected)
+                pendingDisconnectConfirm?.invoke()
+            }
+            SDConsts.BTCmdMsg.SLED_BT_STATE_CHANGED -> {
+                pendingBtStateChanged?.invoke()
             }
         }
     }
@@ -208,7 +249,10 @@ class BluebirdRfidScanner(private val context: Context) : RfidScanner {
     }
 
     override fun setAntennaPower(power: Int) {
-        getReader().RF_SetRadioPowerState(power)
+        val result = getReader().RF_SetRadioPowerState(power)
+        if (result != SDConsts.RFResult.SUCCESS) {
+            android.util.Log.e("BluebirdRfidScanner", "RF_SetRadioPowerState($power) failed with code $result")
+        }
     }
 
     override fun isScanning(): Boolean = scanningCallback != null
@@ -382,19 +426,54 @@ class BluebirdRfidScanner(private val context: Context) : RfidScanner {
     // Lists devices already paired via Android's own Bluetooth settings —
     // pair the sled there first. This doesn't perform discovery/pairing itself.
 
-    override fun getPairedDevices(): List<PairedDevice> {
+    override suspend fun getPairedDevices(): List<PairedDevice> {
         return try {
-            getReader().BT_GetPairedDevices()
+            val reader = getReader()
+            if (!reader.BT_IsEnabled()) {
+                android.util.Log.d("BluebirdRfidScanner", "BT not enabled at SDK level, calling BT_Enable() and waiting")
+                val deferred = CompletableDeferred<Unit>()
+                pendingBtStateChanged = { if (!deferred.isCompleted) deferred.complete(Unit) }
+                reader.BT_Enable()
+                withTimeoutOrNull(5000) { deferred.await() }
+                pendingBtStateChanged = null
+                android.util.Log.d("BluebirdRfidScanner", "BT_IsEnabled now: ${reader.BT_IsEnabled()}")
+            }
+            val paired = reader.BT_GetPairedDevices()
+            android.util.Log.d("BluebirdRfidScanner", "BT_GetPairedDevices returned: $paired")
+            paired
                 ?.map { device -> PairedDevice(name = device.name ?: modelName, address = device.address) }
                 ?: emptyList()
-        } catch (e: SecurityException) {
-            // BLUETOOTH_CONNECT not granted at runtime yet
+        } catch (e: Exception) {
+            android.util.Log.e("BluebirdRfidScanner", "getPairedDevices failed", e)
             emptyList()
         }
     }
 
-    override fun connect(address: String) {
-        getReader().BT_Connect(address)
+    override suspend fun connect(address: String) {
+        val reader = getReader()
+        // Always attempt to clear any stale connection first — even on what
+        // looks like a completely fresh reader/session. reader.BT_GetConnectState()
+        // is unreliable for deciding this: it's always "not connected" on a
+        // freshly-created reader object (e.g. right after the app restarts),
+        // regardless of what the sled or Android's Bluetooth stack actually
+        // think. If the app was previously killed without a clean disconnect,
+        // the sled can still consider itself connected and silently ignore or
+        // lose a fresh BT_Connect() call.
+        //
+        // Instead, just call BT_Disconnect() unconditionally and check its
+        // own result: SUCCESS means a real disconnect was actually initiated
+        // (and, like BT_Enable(), it's async — wait for SLED_BT_ACL_DISCONNECTED
+        // before reconnecting). Any other result means there was nothing to
+        // disconnect, so we can proceed straight to connecting.
+        val disconnectResult = reader.BT_Disconnect()
+        if (disconnectResult == SDConsts.BTResult.SUCCESS) {
+            android.util.Log.d("BluebirdRfidScanner", "Clearing stale connection before reconnecting")
+            val deferred = CompletableDeferred<Unit>()
+            pendingDisconnectConfirm = { if (!deferred.isCompleted) deferred.complete(Unit) }
+            withTimeoutOrNull(5000) { deferred.await() }
+            pendingDisconnectConfirm = null
+        }
+        reader.BT_Connect(address)
     }
 
     override fun disconnect() {

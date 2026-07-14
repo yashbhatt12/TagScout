@@ -63,8 +63,8 @@ fun AntennaSlider(
             Slider(
                 value = value.toFloat(),
                 onValueChange = { onValueChange(it.toInt()) },
-                valueRange = 1f..10f,
-                steps = 8,
+                valueRange = 5f..30f,
+                steps = 24,
                 enabled = enabled,
                 modifier = Modifier.weight(1f),
                 colors = SliderDefaults.colors(

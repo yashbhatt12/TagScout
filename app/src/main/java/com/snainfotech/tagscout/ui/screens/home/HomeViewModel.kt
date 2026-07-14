@@ -14,6 +14,7 @@ import kotlinx.coroutines.launch
 // What info the homepage brain remembers
 data class DeviceState(
     val isConnected: Boolean = false,
+    val deviceId: String = "",
     val deviceName: String = "",
     val serialNumber: String = "",
     val firmwareVersion: String = "",
@@ -56,6 +57,7 @@ class HomeViewModel(
                 when (event) {
                     is ConnectionEvent.Connected -> updateDeviceStatus(
                         isConnected = true,
+                        deviceId = event.address,
                         deviceName = event.deviceName,
                         serialNumber = event.serialNumber,
                         firmwareVersion = event.firmwareVersion,
@@ -63,6 +65,7 @@ class HomeViewModel(
                     )
                     is ConnectionEvent.Disconnected -> updateDeviceStatus(
                         isConnected = false,
+                        deviceId = "",
                         deviceName = "",
                         serialNumber = "",
                         firmwareVersion = "",
@@ -72,6 +75,7 @@ class HomeViewModel(
                         val current = _deviceState.value
                         updateDeviceStatus(
                             isConnected = current.isConnected,
+                            deviceId = current.deviceId,
                             deviceName = current.deviceName,
                             serialNumber = current.serialNumber,
                             firmwareVersion = current.firmwareVersion,
@@ -93,6 +97,7 @@ class HomeViewModel(
     // Called when the device status changes (we'll wire this up later when SDK is added)
     fun updateDeviceStatus(
         isConnected: Boolean,
+        deviceId: String = "",
         deviceName: String,
         serialNumber: String,
         firmwareVersion: String,
@@ -110,6 +115,7 @@ class HomeViewModel(
         // Update the state — all screens watching will automatically refresh
         _deviceState.value = DeviceState(
             isConnected = isConnected,
+            deviceId = deviceId,
             deviceName = deviceName,
             serialNumber = serialNumber,
             firmwareVersion = firmwareVersion,
@@ -117,7 +123,6 @@ class HomeViewModel(
             connectionStatus = status
         )
     }
-
     // Called when user successfully connects to a device
     fun recordConnection(
         deviceId: String,

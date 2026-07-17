@@ -36,6 +36,7 @@ import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import com.snainfotech.tagscout.ui.components.AntennaSlider
 import com.snainfotech.tagscout.ui.components.AppHeader
 import com.snainfotech.tagscout.ui.components.DeviceStatusComponent
 import com.snainfotech.tagscout.ui.screens.home.ConnectionStatus
@@ -100,9 +101,9 @@ fun WriteTagScreen(
 
         // Antenna control
         AntennaSlider(
-            strength = state.antennaStrength,
+            value = state.antennaStrength,
             enabled = !isBusy,
-            onChange = onAntennaChange
+            onValueChange = onAntennaChange
         )
 
         // Phase-specific content
@@ -725,55 +726,5 @@ private fun SignalStrengthIndicator(rssi: Int) {
                 color = MediumGray
             )
         }
-    }
-}
-
-@Composable
-private fun AntennaSlider(
-    strength: Int,
-    enabled: Boolean,
-    onChange: (Int) -> Unit
-) {
-    Column(
-        modifier = Modifier
-            .fillMaxWidth()
-            .background(Color.White)
-            .padding(horizontal = 16.dp, vertical = 8.dp)
-    ) {
-        Row(
-            modifier = Modifier.fillMaxWidth(),
-            verticalAlignment = Alignment.CenterVertically
-        ) {
-            Text(
-                text = "📡 Antenna Strength",
-                fontSize = 12.sp,
-                fontWeight = FontWeight.SemiBold,
-                color = if (enabled) DarkText else MediumGray,
-                modifier = Modifier.weight(1f)
-            )
-            Text(
-                text = "$strength / 10",
-                fontSize = 12.sp,
-                fontWeight = FontWeight.SemiBold,
-                color = if (enabled) Primary else MediumGray,
-                fontFamily = FontFamily.Monospace
-            )
-        }
-        Spacer(modifier = Modifier.height(4.dp))
-        Slider(
-            value = strength.toFloat(),
-            onValueChange = { onChange(it.toInt()) },
-            valueRange = 1f..10f,
-            steps = 8,
-            enabled = enabled,
-            colors = SliderDefaults.colors(
-                thumbColor = Primary,
-                activeTrackColor = Primary,
-                inactiveTrackColor = BorderGray,
-                disabledThumbColor = DisabledText,
-                disabledActiveTrackColor = Disabled,
-                disabledInactiveTrackColor = Disabled
-            )
-        )
     }
 }

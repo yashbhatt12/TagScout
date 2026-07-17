@@ -1,5 +1,4 @@
 package com.snainfotech.tagscout.ui.screens.connect
-
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.snainfotech.tagscout.data.entities.DeviceConnectionEntity
@@ -11,6 +10,7 @@ import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.launch
+
 
 // Status of each discovered device
 enum class DeviceStatus {
@@ -163,18 +163,12 @@ class ConnectDeviceViewModel(
 
             // Mark this device as connected (the database observer will reflect it,
             // but we also update locally for immediate visual feedback)
-            val updatedSaved = _state.value.savedDevices.map { existing ->
-                when {
-                    existing.id == device.id -> existing.copy(status = DeviceStatus.CONNECTED)
-                    existing.status == DeviceStatus.CONNECTED -> existing.copy(status = DeviceStatus.IN_RANGE)
-                    else -> existing
-                }
-            }
-
-            _state.value = _state.value.copy(
-                savedDevices = updatedSaved,
-                currentlyConnectedId = device.id
-            )
+            // Note: we don't mark this device as "Connected" here. That would be
+            // optimistic — showing success before we actually know the real
+            // BT_Connect() call below succeeded. The Connect Device screen's
+            // status instead reflects the real hardware state via
+            // syncWithConnectedDevice(), which reacts to genuine connection
+            // events (see the LaunchedEffect in NavGraph watching deviceState).
 
             // device.id is the real Bluetooth address for real hardware
             // (see startSearch()) — this is what actually opens the connection.

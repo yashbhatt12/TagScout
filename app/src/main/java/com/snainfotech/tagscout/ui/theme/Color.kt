@@ -10,37 +10,46 @@ val Purple40 = Color(0xFF6650a4)
 val PurpleGrey40 = Color(0xFF625b71)
 val Pink40 = Color(0xFF7D5260)
 
-// === TagScout Brand Colors ===
+// ============================================================
+// TagScout Brand Colors — Professional Redesign (Navy + Amber)
+// ============================================================
 
-// Primary palette (used for header gradient, main buttons)
-val Primary = Color(0xFF667eea)
-val Secondary = Color(0xFF764ba2)
+// --- Primary palette ---
+val Primary = Color(0xFF1E4B8F)        // Navy — main buttons, primary actions, icons
+val Secondary = Color(0xFF163A6E)      // Darker navy
+val Amber = Color(0xFFD98E2B)          // NEW accent — scanning/pause, stat values, highlights
 
-// Status colors (device status indicators, banners)
-val SuccessGreen = Color(0xFF00d084)      // Connected, ✓ found
-val ErrorRed = Color(0xFFff6b6b)          // Disconnected, ✗ missing, danger
-val WarningOrange = Color(0xFFffa500)     // Low battery, pause
-val InfoBlue = Color(0xFF0d6efd)          // Charging
+// --- Header (new light-grey header, replaces the purple gradient) ---
+val HeaderBg = Color(0xFFE8EAEE)       // NEW — header bar background
+val HeaderText = Color(0xFF232A3B)     // NEW — header title text
+val HeaderIcon = Color(0xFF5B6472)     // NEW — header icons (back arrow, menu dot)
 
-// Background colors for status banners
-val SuccessBg = Color(0xFFd4edda)
-val SuccessText = Color(0xFF155724)
-val ErrorBg = Color(0xFFf8d7da)
-val ErrorText = Color(0xFF721c24)
-val WarningBg = Color(0xFFfff3cd)
-val WarningText = Color(0xFF664d03)
-val InfoBg = Color(0xFFcfe2ff)
-val InfoText = Color(0xFF084298)
+// --- Status colors ---
+val SuccessGreen = Color(0xFF2E9B62)   // Connected, found, battery, progress
+val ErrorRed = Color(0xFFC24444)       // Disconnected, missing, danger/destructive
+val WarningOrange = Color(0xFFD98E2B)  // Low battery / pause — now amber-aligned
+val InfoBlue = Color(0xFF1E4B8F)       // Charging — folded into navy for consistency
 
-// Neutral colors
-val Disabled = Color(0xFFe9ecef)
-val DisabledText = Color(0xFFadb5bd)
-val BorderGray = Color(0xFFe0e0e0)
-val LightGray = Color(0xFFf8f9fa)
-val MediumGray = Color(0xFF666666)
-val DarkText = Color(0xFF2c3e50)
+// --- Background colors for status banners ---
+val SuccessBg = Color(0xFFEAF6EF)
+val SuccessText = Color(0xFF1B6B41)
+val ErrorBg = Color(0xFFFDF3F3)
+val ErrorText = Color(0xFF8A2F2F)
+val WarningBg = Color(0xFFFBF1E3)
+val WarningText = Color(0xFF8A5A18)
+val InfoBg = Color(0xFFE8EEF7)
+val InfoText = Color(0xFF163A6E)
 
-// Specific UI elements
-val TableRowFound = Color(0xFFe8f5e9)     // Light green for found rows
-val TableRowMissing = Color(0xFFffebee)   // Light red for missing rows
-val TableRowPending = Color(0xFFf5f5f5)   // Light gray for pending rows
+// --- Neutral colors ---
+val Disabled = Color(0xFFEDEFF2)
+val DisabledText = Color(0xFFAAB2BF)
+val BorderGray = Color(0xFFE4E7EC)     // card/table borders
+val LightGray = Color(0xFFF4F5F7)      // app background
+val MediumGray = Color(0xFF6B7688)     // muted / secondary text
+val DarkText = Color(0xFF1B2436)       // primary "ink" text
+val CardBg = Color(0xFFFFFFFF)         // NEW — explicit card surface
+
+// --- Specific UI elements ---
+val TableRowFound = Color(0xFFF3FAF5)     // soft green for found/picked rows
+val TableRowMissing = Color(0xFFFDF3F3)   // soft red for missing rows
+val TableRowPending = Color(0xFFF9FAFB)   // soft grey for pending rows

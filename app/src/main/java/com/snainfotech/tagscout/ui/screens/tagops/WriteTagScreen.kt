@@ -204,7 +204,7 @@ private fun EnterTargetSection(
 
         if (targetEpc.isNotEmpty() && !isValid) {
             Text(
-                text = "EPC must be exactly 24 or 32 hex characters (0-9, A-F)",
+                text = "EPC must be exactly 16-32 hex characters (0-9, A-F)",
                 fontSize = 10.sp,
                 color = ErrorRed
             )
@@ -263,7 +263,7 @@ private fun SearchingSection(targetEpc: String) {
             )
             Spacer(modifier = Modifier.height(8.dp))
             Text(
-                text = targetEpc.take(24),
+                text = targetEpc,
                 fontSize = 10.sp,
                 color = MediumGray,
                 fontFamily = FontFamily.Monospace
@@ -472,13 +472,13 @@ private fun WritingSection(targetEpc: String, newEpc: String) {
             )
             Spacer(modifier = Modifier.height(12.dp))
             Text(
-                text = "From: ${targetEpc.take(24)}",
+                text = "From: ${targetEpc}",
                 fontSize = 10.sp,
                 color = MediumGray,
                 fontFamily = FontFamily.Monospace
             )
             Text(
-                text = "To:   ${newEpc.take(24)}",
+                text = "To:   ${newEpc}",
                 fontSize = 10.sp,
                 color = MediumGray,
                 fontFamily = FontFamily.Monospace

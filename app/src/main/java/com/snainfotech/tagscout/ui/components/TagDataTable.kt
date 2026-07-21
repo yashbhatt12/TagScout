@@ -49,10 +49,10 @@ fun TagDataTable(
                 .background(Color(0xFFF8F9FA))
                 .padding(horizontal = 12.dp, vertical = 10.dp)
         ) {
-            TableHeaderCell("Scan", weight = 0.12f)
-            TableHeaderCell("EPC", weight = 0.38f)
-            TableHeaderCell("Signal", weight = 0.28f)
-            TableHeaderCell("Count", weight = 0.22f)
+            TableHeaderCell("Scan", weight = 0.08f)
+            TableHeaderCell("EPC", weight = 0.65f)
+            TableHeaderCell("Signal", weight = 0.15f)
+            TableHeaderCell("Count", weight = 0.12f)
         }
 
         // Body
@@ -84,7 +84,10 @@ fun TagDataTable(
 // Header cell — uses weight inside Row
 @Composable
 private fun RowScope.TableHeaderCell(text: String, weight: Float) {
-    Box(modifier = Modifier.weight(weight)) {
+    Box(
+        modifier = Modifier.weight(weight),
+        contentAlignment = Alignment.Center
+    ) {
         Text(
             text = text,
             fontSize = 10.sp,
@@ -103,7 +106,7 @@ private fun TagRow(tag: DetectedTag) {
             .padding(horizontal = 12.dp, vertical = 10.dp),
         verticalAlignment = Alignment.CenterVertically
     ) {
-        Box(modifier = Modifier.weight(0.12f)) {
+        Box(modifier = Modifier.weight(0.08f), contentAlignment = Alignment.Center) {
             Text(
                 text = "✓",
                 color = SuccessGreen,
@@ -111,22 +114,22 @@ private fun TagRow(tag: DetectedTag) {
                 fontWeight = FontWeight.Bold
             )
         }
-        Box(modifier = Modifier.weight(0.38f)) {
+        Box(modifier = Modifier.weight(0.65f), contentAlignment = Alignment.Center) {
             Text(
-                text = tag.epc.take(12),
-                fontSize = 10.sp,
+                text = tag.epc,
+                fontSize = 11.sp,
                 fontFamily = FontFamily.Monospace,
                 color = DarkText
             )
         }
-        Box(modifier = Modifier.weight(0.28f)) {
+        Box(modifier = Modifier.weight(0.15f), contentAlignment = Alignment.Center) {
             Text(
                 text = "${tag.signalStrength}dB",
                 fontSize = 11.sp,
                 color = DarkText
             )
         }
-        Box(modifier = Modifier.weight(0.22f)) {
+        Box(modifier = Modifier.weight(0.12f), contentAlignment = Alignment.Center) {
             Text(
                 text = "${tag.count}",
                 fontSize = 11.sp,

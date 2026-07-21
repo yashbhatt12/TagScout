@@ -361,7 +361,7 @@ private fun SearchingSection(targetEpc: String) {
             )
             Spacer(modifier = Modifier.height(8.dp))
             Text(
-                text = targetEpc.take(24),
+                text = targetEpc,
                 fontSize = 10.sp,
                 color = MediumGray,
                 fontFamily = FontFamily.Monospace
@@ -595,7 +595,7 @@ private fun KillingSection(targetEpc: String) {
             )
             Spacer(modifier = Modifier.height(12.dp))
             Text(
-                text = targetEpc.take(24),
+                text = targetEpc,
                 fontSize = 10.sp,
                 color = MediumGray,
                 fontFamily = FontFamily.Monospace

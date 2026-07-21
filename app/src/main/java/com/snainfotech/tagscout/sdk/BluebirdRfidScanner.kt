@@ -183,6 +183,7 @@ class BluebirdRfidScanner(private val context: Context) : RfidScanner {
             SDConsts.RFCmdMsg.INVENTORY, SDConsts.RFCmdMsg.READ -> {
                 if (msg.arg2 == SDConsts.RFResult.SUCCESS) {
                     val data = msg.obj as? String ?: return
+                    android.util.Log.d("BluebirdRfidScanner", "Raw tag data: [$data]")
                     parseTagData(data)?.let { scanningCallback?.invoke(it) }
                 }
             }
@@ -378,12 +379,17 @@ class BluebirdRfidScanner(private val context: Context) : RfidScanner {
                     accessPassword,
                     true // enableSelection — only the tag matching our selection responds
                 )
+                android.util.Log.d(
+                    "BluebirdRfidScanner",
+                    "RF_WRITE call for target=$cleanTarget new=$cleanNew returned code $callResult"
+                )
 
                 if (callResult != SDConsts.RFResult.SUCCESS) {
                     pendingWriteResult = null
                     WriteTagResult.Failure("RF_WRITE call rejected with code $callResult")
                 } else {
                     val resultCode = withTimeoutOrNull(10_000) { deferred.await() }
+                    android.util.Log.d("BluebirdRfidScanner", "RF_WRITE async result code: $resultCode")
                     pendingWriteResult = null
                     mapWriteResult(resultCode, cleanNew)
                 }

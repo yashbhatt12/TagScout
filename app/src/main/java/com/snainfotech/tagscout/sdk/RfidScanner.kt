@@ -98,20 +98,30 @@ object RfidConstants {
     // Default password used by tags that haven't been password-protected
     const val DEFAULT_PASSWORD = "00000000"
 
-    // Valid EPC lengths in hex characters
+    // Valid EPC lengths in hex characters. EPC Gen2 allows the EPC memory bank
+    // to be sized in 16-bit words, so valid EPCs come in multiples of 4 hex
+    // characters (16 bits) — commonly 24 (96-bit) or 32 (128-bit), but also
+    // 28 (112-bit) and others in between. We accept the practical range rather
+    // than only two hardcoded lengths, which was rejecting valid real-world tags.
     const val EPC_LENGTH_96_BIT = 24
     const val EPC_LENGTH_128_BIT = 32
+    const val EPC_MIN_LENGTH = 16   // 64-bit
+    const val EPC_MAX_LENGTH = 32   // 128-bit
 
     // Validates that an EPC string is well-formed
     fun isValidEpc(epc: String): Boolean {
         val cleaned = epc.trim().uppercase()
-        if (cleaned.length != EPC_LENGTH_96_BIT && cleaned.length != EPC_LENGTH_128_BIT) {
+        // Must be hex, within the valid length range, and a whole number of
+        // 16-bit words (i.e. length divisible by 4).
+        if (cleaned.length < EPC_MIN_LENGTH || cleaned.length > EPC_MAX_LENGTH) {
+            return false
+        }
+        if (cleaned.length % 4 != 0) {
             return false
         }
         return cleaned.matches(Regex("[0-9A-F]+"))
     }
 }
-
 // A device already paired at the OS Bluetooth-settings level.
 data class PairedDevice(
     val name: String,

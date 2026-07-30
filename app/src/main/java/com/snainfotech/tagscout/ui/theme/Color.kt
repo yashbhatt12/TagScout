@@ -20,7 +20,7 @@ val Secondary = Color(0xFF163A6E)      // Darker navy
 val Amber = Color(0xFFD98E2B)          // NEW accent — scanning/pause, stat values, highlights
 
 // --- Header (new light-grey header, replaces the purple gradient) ---
-val HeaderBg = Color(0xFFE8EAEE)       // NEW — header bar background
+val HeaderBg = Color(0xFFD8DCE4)       // NEW — header bar background
 val HeaderText = Color(0xFF232A3B)     // NEW — header title text
 val HeaderIcon = Color(0xFF5B6472)     // NEW — header icons (back arrow, menu dot)
 

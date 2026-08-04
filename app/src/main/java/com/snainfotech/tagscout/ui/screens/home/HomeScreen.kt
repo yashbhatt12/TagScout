@@ -1,5 +1,5 @@
 package com.snainfotech.tagscout.ui.screens.home
-
+import com.snainfotech.tagscout.R
 import androidx.compose.foundation.background
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
@@ -97,14 +97,14 @@ fun HomeScreen(
             // Feature buttons
             // Feature buttons
             FeatureButton(
-                icon = "🔗",
+                icon = R.drawable.ic_connect,
                 title = "Connect Device",
                 description = "Pair your RFID reader",
                 enabled = true,
                 onClick = onConnectDeviceClick
             )
             FeatureButton(
-                icon = "📱",
+                icon = R.drawable.ic_scan,
                 title = "Quick Scan",
                 description = "Scan and identify tags",
                 enabled = deviceState.isConnected,
@@ -112,7 +112,7 @@ fun HomeScreen(
             )
 
             FeatureButton(
-                icon = "📊",
+                icon = R.drawable.ic_inventory,
                 title = "Inventory by File",
                 description = "Match tags against inventory",
                 enabled = deviceState.isConnected,
@@ -128,14 +128,14 @@ fun HomeScreen(
             )
              */
             FeatureButton(
-                icon = "🗂️",
+                icon = R.drawable.ic_pick,
                 title = "Pick List",
                 description = "Pick goods against an order file",
                 enabled = deviceState.isConnected,
                 onClick = onOrderPickingClick
             )
             FeatureButton(
-                icon = "✏️",
+                icon = R.drawable.ic_write,
                 title = "Write Tag",
                 description= "Change a tag's EPC",
                 enabled = deviceState.isConnected,
@@ -143,14 +143,14 @@ fun HomeScreen(
             )
 
             FeatureButton(
-                icon = "❌",
+                icon = R.drawable.ic_kill,
                 title = "Kill Tag",
                 description= "Permanently Disable a Tag",
                 enabled = deviceState.isConnected,
                 onClick= onKillTagClick,
             )
             FeatureButton(
-                icon = "⚙️",
+                icon = R.drawable.ic_config,
                 title = "Device Config",
                 description = "Configure your device",
                 enabled = deviceState.isConnected,

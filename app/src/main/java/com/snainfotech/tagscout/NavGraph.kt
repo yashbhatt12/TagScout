@@ -90,6 +90,8 @@ import com.snainfotech.tagscout.PermissionHelper
 import com.snainfotech.tagscout.ui.components.BluetoothPermissionDeniedDialog
 import com.snainfotech.tagscout.ui.components.BluetoothPermissionRationaleDialog
 import com.snainfotech.tagscout.ui.components.PreSaveWarningDialog
+import com.snainfotech.tagscout.data.file.InventoryExcelParser
+
 private const val LOW_BATTERY_THRESHOLD = 15
 private const val CRITICAL_BATTERY_THRESHOLD = 5
 
@@ -522,17 +524,58 @@ fun TagScoutNavGraph(
             val deviceState by sharedHomeViewModel.deviceState.collectAsState()
             var showSaveDialog by rememberSaveable { mutableStateOf(false) }
             var showPreSaveWarning by rememberSaveable { mutableStateOf(false) }
-            // File picker launcher
+            val context = LocalContext.current
+
+            // File picker — parses the chosen .xlsx into real inventory items
             val filePickerLauncher = rememberLauncherForActivityResult(
                 contract = ActivityResultContracts.OpenDocument()
             ) { uri ->
                 if (uri != null) {
-                    // Extract filename from URI
                     val fileName = extractFileName(uri.toString())
+                    try {
+                        context.contentResolver.openInputStream(uri)?.use { input ->
+                            when (val result = InventoryExcelParser.parse(input)) {
+                                is InventoryExcelParser.ParseResult.Success ->
+                                    inventoryViewModel.loadInventoryFile(result.items, fileName)
+                                is InventoryExcelParser.ParseResult.Error ->
+                                    android.widget.Toast.makeText(
+                                        context, result.message, android.widget.Toast.LENGTH_LONG
+                                    ).show()
+                            }
+                        }
+                    } catch (e: Exception) {
+                        android.widget.Toast.makeText(
+                            context,
+                            "Could not read the file: ${e.message ?: e.javaClass.simpleName}",
+                            android.widget.Toast.LENGTH_LONG
+                        ).show()
+                    }
+                }
+            }
 
-                    // For now, load mock data (real parsing in Phase 2)
-                    val mockItems = generateMockInventoryItems()
-                    inventoryViewModel.loadInventoryFile(mockItems, fileName)
+            // Save launcher — writes the reconciliation result to a real .xlsx
+            val saveFileLauncher = rememberLauncherForActivityResult(
+                contract = ActivityResultContracts.CreateDocument(
+                    "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+                )
+            ) { uri ->
+                if (uri != null) {
+                    try {
+                        context.contentResolver.openOutputStream(uri)?.use { output ->
+                            InventoryExcelParser.write(output, inventoryState.inventoryItems)
+                        }
+                        inventoryViewModel.saveScan(extractFileName(uri.toString()))
+                        inventoryViewModel.clearAllData()
+                        android.widget.Toast.makeText(
+                            context, "Inventory saved", android.widget.Toast.LENGTH_SHORT
+                        ).show()
+                    } catch (e: Exception) {
+                        android.widget.Toast.makeText(
+                            context,
+                            "Could not save the file: ${e.message ?: e.javaClass.simpleName}",
+                            android.widget.Toast.LENGTH_LONG
+                        ).show()
+                    }
                 }
             }
             LaunchedEffect(deviceState.isConnected) {
@@ -556,11 +599,9 @@ fun TagScoutNavGraph(
                 onMenuClick = { /* TODO */ },
                 onDeviceStatusClick = { navController.navigate(Routes.DEVICE_CONFIG) },
                 onLoadFileClick = {
-                    // TEMPORARY: Skip file picker for testing — REMOVE LATER
-                    val mockItems = generateMockInventoryItems()
-                    android.util.Log.d("TagScout", "Load clicked. Mock items count: ${mockItems.size}")
-                    inventoryViewModel.loadInventoryFile(mockItems, "sample_inventory.xlsx")
-                    android.util.Log.d("TagScout", "After load. hasFileLoaded=${inventoryViewModel.state.value.hasFileLoaded}, items=${inventoryViewModel.state.value.inventoryItems.size}")
+                    filePickerLauncher.launch(
+                        arrayOf("application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")
+                    )
                 },
                 onAntennaChange = { inventoryViewModel.setAntennaStrength(it) },
                 onTabSelect = { inventoryViewModel.selectTab(it) },
@@ -575,10 +616,39 @@ fun TagScoutNavGraph(
                 onClearClick = { inventoryViewModel.clearAllData() }
             )
             // Device disconnected dialog (E11)
+
             if (inventoryState.showDeviceDisconnectedDialog) {
+
                 DeviceDisconnectedDialog(
+
                     onDismiss = { inventoryViewModel.dismissDeviceDisconnectedDialog() }
+
                 )
+
+            }
+
+            // Session time warning at 30s remaining (previously never rendered —
+
+            // the ViewModel set showTimeWarning but nothing displayed it, so
+
+            // inventory scans auto-paused silently with no warning or extend option)
+
+            if (inventoryState.showTimeWarning) {
+
+                TimeWarningDialog(
+
+                    onStopScan = {
+
+                        inventoryViewModel.dismissTimeWarning()
+
+                        inventoryViewModel.pauseScanning()
+
+                    },
+
+                    onExtend = { inventoryViewModel.extendTimer() }
+
+                )
+
             }
             if (showPreSaveWarning) {
                 PreSaveWarningDialog(
@@ -594,9 +664,11 @@ fun TagScoutNavGraph(
                     defaultPrefix = "inventory",
                     onDismiss = { showSaveDialog = false },
                     onSave = { filename, _ ->
-                        inventoryViewModel.saveScan(filename)
-                        inventoryViewModel.clearAllData()
                         showSaveDialog = false
+                        // Launch the system save dialog; actual .xlsx write, DB save,
+                        // and clear all happen in the saveFileLauncher callback.
+                        val name = if (filename.endsWith(".xlsx")) filename else "$filename.xlsx"
+                        saveFileLauncher.launch(name)
                     }
                 )
             }

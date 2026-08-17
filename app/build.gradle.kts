@@ -65,9 +65,11 @@ dependencies {
     implementation(libs.androidx.navigation.compose)
 
     // File handling
-    implementation(libs.androidx.documentfile)
     implementation(libs.fastexcel)
     implementation(libs.fastexcel.reader)
+    implementation(libs.aalto.xml) // required by fastexcel-reader to read xlsx on Android (provides the StAX/javax.xml.stream API Android lacks)
+    implementation(libs.stax.api)   // the javax.xml.stream API that Android lacks
+    implementation(libs.stax2.api)  // stax2 extensions aalto builds on
     testImplementation(libs.junit)
     androidTestImplementation(libs.androidx.junit)
     androidTestImplementation(libs.androidx.espresso.core)
@@ -75,5 +77,6 @@ dependencies {
     androidTestImplementation(libs.androidx.ui.test.junit4)
     debugImplementation(libs.androidx.ui.tooling)
     debugImplementation(libs.androidx.ui.test.manifest)
+
 
 }

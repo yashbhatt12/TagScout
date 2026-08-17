@@ -160,6 +160,19 @@ class BluebirdRfidScanner(private val context: Context) : RfidScanner {
                             firmwareVersion = firmware
                         )
                     )
+                    // Fetch the current battery level once, right after connecting.
+                    // The SDK only PUSHES SLED_BATTERY_STATE_CHANGED when the level
+                    // actually changes — on a fresh connection no such event has
+                    // fired yet, so without this proactive query the UI would show
+                    // 0% until the battery happened to tick. Verified against the
+                    // sample app (SD_GetBatteryStatus() returns an int percent).
+                    // NOTE: fetch ONCE on connect, not on a timer — the vendor's
+                    // own code notes that continuous battery polling hurts inventory
+                    // performance, which is why their BatteryPollingHandler is disabled.
+                    val battery = runCatching { getReader().SD_GetBatteryStatus() }.getOrNull()
+                    if (battery != null && battery in 0..100) {
+                        connectionCallback?.invoke(ConnectionEvent.BatteryUpdate(battery))
+                    }
                 }
             }
             SDConsts.BTCmdMsg.SLED_BT_ACL_DISCONNECTED -> {

@@ -74,6 +74,13 @@ class InventoryScanViewModel(
     private var timerJob: Job? = null
     private val scannedEpcs = mutableSetOf<String>()
 
+    // Total seconds spent actively scanning this session. Incremented once per
+    // timer tick and reset at scan start. Used for the read-rate calculation.
+    // This replaces the old "180 - timeRemaining" approach, which broke after
+    // extendTimer() pushed timeRemaining above 180 and made elapsed go negative,
+    // corrupting the rate and the firstSeen timestamps.
+    private var elapsedSeconds = 0
+
     fun loadInventoryFile(items: List<InventoryItem>, filename: String) {
         _state.value = _state.value.copy(
             inventoryItems = items,
@@ -95,6 +102,7 @@ class InventoryScanViewModel(
             timeRemaining = 180
         )
         scannedEpcs.clear()
+        elapsedSeconds = 0
         startTimer()
         startScanCollection()
     }
@@ -136,7 +144,7 @@ class InventoryScanViewModel(
             item.epc == epc || item.tid == tid
         }
 
-        val timeElapsed = 180 - currentState.timeRemaining
+        val timeElapsed = elapsedSeconds
         val rate = if (timeElapsed > 0) {
             currentState.tagsScanned.toFloat() / timeElapsed
         } else 0f
@@ -178,7 +186,7 @@ class InventoryScanViewModel(
             val alreadyCaptured = currentState.unexpectedTags.any { it.epc == epc }
 
             if (!alreadyCaptured) {
-                val timeElapsedSec = 180 - currentState.timeRemaining
+                val timeElapsedSec = elapsedSeconds
                 val newUnexpected = UnexpectedTag(
                     epc = epc,
                     tid = tid,
@@ -250,6 +258,7 @@ class InventoryScanViewModel(
             while (_state.value.isScanning && _state.value.timeRemaining > 0) {
                 delay(1000)
 
+                elapsedSeconds++
                 val newTime = _state.value.timeRemaining - 1
                 _state.value = _state.value.copy(timeRemaining = newTime)
 

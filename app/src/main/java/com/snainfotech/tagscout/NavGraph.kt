@@ -915,9 +915,9 @@ fun TagScoutNavGraph(
                 onMenuClick = { /* TODO */ },
                 onDeviceStatusClick = { navController.navigate(Routes.DEVICE_CONFIG) },
                 onUploadFileClick = {
-                    // TEMPORARY: Skip the real file picker, load mock data — REMOVE LATER
-                    val mockItems = generateMockOrderPickingItems()
-                    orderPickingViewModel.onFileParsed(generateMockOrderFilename(), mockItems)
+                    openFileLauncher.launch(
+                        arrayOf("application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")
+                    )
                 },
                 onAntennaChange = { orderPickingViewModel.setAntennaStrength(it) },
                 onPlayPauseClick = {

@@ -102,7 +102,8 @@ fun PickOrderScreen(
             showBackButton = !state.isPicking,
             onBackClick = onBackClick,
             onMenuClick = onMenuClick,
-            timerBadge = timerBadge
+            timerBadge = timerBadge,
+            showMenu = false
         )
 
         DeviceStatusComponent(

@@ -76,7 +76,8 @@ fun DeviceConfigScreen(
             title = "TagScout",
             showBackButton = true,
             onBackClick = onBackClick,
-            onMenuClick = onMenuClick
+            onMenuClick = onMenuClick,
+            showMenu = false
         )
 
         // Device status

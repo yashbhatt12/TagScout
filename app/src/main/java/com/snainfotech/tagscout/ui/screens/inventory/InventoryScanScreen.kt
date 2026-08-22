@@ -83,7 +83,8 @@ fun InventoryScanScreen(
             showBackButton = !state.isScanning,
             onBackClick = onBackClick,
             onMenuClick = onMenuClick,
-            timerBadge = timerBadge
+            timerBadge = timerBadge,
+            showMenu = false
         )
 
         // Device status bar

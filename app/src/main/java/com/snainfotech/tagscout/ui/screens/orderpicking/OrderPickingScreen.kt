@@ -76,7 +76,8 @@ fun OrderPickingScreen(
             showBackButton = !state.isScanning,
             onBackClick = onBackClick,
             onMenuClick = onMenuClick,
-            timerBadge = TimerBadge.None
+            timerBadge = TimerBadge.None,
+            showMenu = false
         )
 
         DeviceStatusComponent(

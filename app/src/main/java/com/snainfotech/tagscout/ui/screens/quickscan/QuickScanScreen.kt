@@ -70,7 +70,8 @@ fun QuickScanScreen(
                 showBackButton = !state.isScanning,    // Hide back when scanning
                 onBackClick = onBackClick,
                 onMenuClick = onMenuClick,
-                timerBadge = timerBadge
+                timerBadge = timerBadge,
+                showMenu = false
             )
 
             // 2. Device status

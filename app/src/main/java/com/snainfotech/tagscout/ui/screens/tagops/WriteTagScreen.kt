@@ -85,7 +85,8 @@ fun WriteTagScreen(
             title = "Write Tag",
             showBackButton = !isBusy,
             onBackClick = onBackClick,
-            onMenuClick = onMenuClick
+            onMenuClick = onMenuClick,
+            showMenu = false
         )
 
         // Device status

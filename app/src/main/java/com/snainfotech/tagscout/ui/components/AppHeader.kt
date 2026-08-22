@@ -42,6 +42,7 @@ fun AppHeader(
     showBackButton: Boolean = false,
     onBackClick: () -> Unit = {},
     onMenuClick: () -> Unit = {},
+    showMenu: Boolean = true,
     timerBadge: TimerBadge = TimerBadge.None,
     modifier: Modifier = Modifier
 ) {
@@ -92,13 +93,18 @@ fun AppHeader(
             TimerBadge.None -> { /* nothing */ }
         }
 
-        // Right: menu (three dots)
-        IconButton(onClick = onMenuClick) {
-            Icon(
-                imageVector = Icons.Default.MoreVert,
-                contentDescription = "Menu",
-                tint = HeaderIcon
-            )
+        // Right: menu (three dots) — only shown when the screen provides a menu
+        if (showMenu) {
+            IconButton(onClick = onMenuClick) {
+                Icon(
+                    imageVector = Icons.Default.MoreVert,
+                    contentDescription = "Menu",
+                    tint = HeaderIcon
+                )
+            }
+        } else {
+            // Keep the right-edge padding balanced with the left when no menu
+            Spacer(modifier = Modifier.width(12.dp))
         }
     }
 }

@@ -33,7 +33,6 @@ import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
-import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
@@ -41,6 +40,7 @@ import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import androidx.compose.ui.graphics.Brush
 import com.snainfotech.tagscout.ui.components.AntennaSlider
 import com.snainfotech.tagscout.ui.components.DeviceStatusComponent
 import com.snainfotech.tagscout.ui.screens.home.ConnectionStatus
@@ -53,6 +53,7 @@ import com.snainfotech.tagscout.ui.theme.LightGray
 import com.snainfotech.tagscout.ui.theme.MediumGray
 import com.snainfotech.tagscout.ui.theme.Primary
 import com.snainfotech.tagscout.ui.theme.SuccessGreen
+import com.snainfotech.tagscout.ui.components.AppHeader
 
 // Custom red colors specific to Kill Tag screen
 private val KillRed = Color(0xFFC92A2A)
@@ -89,10 +90,12 @@ fun KillTagScreen(
     Column(modifier = modifier.fillMaxSize().background(LightGray)) {
 
         // CUSTOM RED HEADER (not the standard AppHeader)
-        KillTagHeader(
+        AppHeader(
+            title = "Kill Tag",
             showBackButton = !isBusy,
             onBackClick = onBackClick,
-            onMenuClick = onMenuClick
+            onMenuClick = onMenuClick,
+            showMenu = false
         )
 
         // Device status

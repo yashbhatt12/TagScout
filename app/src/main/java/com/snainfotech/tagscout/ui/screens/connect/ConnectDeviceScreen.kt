@@ -143,8 +143,8 @@ fun ConnectDeviceScreen(
                 SearchingIndicator()
             }
 
-            // Saved Devices section
-            if (state.savedDevices.isNotEmpty()) {
+            // Saved Devices section — always visible when there are saved devices
+            if (state.savedDevices.isNotEmpty() && state.newDevices.isEmpty()) {
                 SectionTitle(text = "📱 Saved Devices")
                 state.savedDevices.forEach { device ->
                     DeviceListItem(
@@ -156,23 +156,39 @@ fun ConnectDeviceScreen(
                 }
             }
 
-            // New Devices section
+            // Search results — split into saved and new for clear distinction
             if (state.newDevices.isNotEmpty()) {
-                Spacer(modifier = Modifier.height(8.dp))
-                SectionTitle(text = "🔍 New Devices Found")
-                state.newDevices.forEach { device ->
-                    DeviceListItem(
-                        device = device,
-                        isCurrentlyConnected = false,
-                        onClick = { onDeviceClick(device) }
-                    )
+                val savedResults = state.newDevices.filter { it.isSaved }
+                val newResults = state.newDevices.filter { !it.isSaved }
+
+                if (savedResults.isNotEmpty()) {
+                    SectionTitle(text = "📱 Saved Devices (Paired)")
+                    savedResults.forEach { device ->
+                        DeviceListItem(
+                            device = device,
+                            isCurrentlyConnected = device.id == state.currentlyConnectedId,
+                            onClick = { onDeviceClick(device) },
+                            onLongPress = { onDeviceLongPress(device) }
+                        )
+                    }
                 }
-            } else if (!state.isSearching && state.savedDevices.all { it.status == DeviceStatus.OUT_OF_RANGE }) {
+
+                if (newResults.isNotEmpty()) {
+                    Spacer(modifier = Modifier.height(8.dp))
+                    SectionTitle(text = "🔍 New Devices Found")
+                    newResults.forEach { device ->
+                        DeviceListItem(
+                            device = device,
+                            isCurrentlyConnected = false,
+                            onClick = { onDeviceClick(device) }
+                        )
+                    }
+                }
+            } else if (!state.isSearching && state.savedDevices.isEmpty()) {
                 // Empty state — no devices at all
                 Spacer(modifier = Modifier.height(20.dp))
                 EmptyState(onRetry = onSearchClick)
             }
-
             // Bottom spacer
             Spacer(modifier = Modifier.height(20.dp))
         }

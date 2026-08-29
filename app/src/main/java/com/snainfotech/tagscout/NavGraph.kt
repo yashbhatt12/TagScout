@@ -28,6 +28,12 @@ import com.snainfotech.tagscout.ui.screens.inventory.InventoryScanViewModelFacto
 import com.snainfotech.tagscout.ui.components.AppMenu
 import com.snainfotech.tagscout.ui.components.ExitConfirmationDialog
 import com.snainfotech.tagscout.ui.screens.about.AboutScreen
+import com.snainfotech.tagscout.data.auth.AuthRepository
+import com.snainfotech.tagscout.ui.screens.auth.AuthViewModel
+import com.snainfotech.tagscout.ui.screens.auth.AuthViewModelFactory
+import com.snainfotech.tagscout.ui.screens.auth.EmailVerificationScreen
+import com.snainfotech.tagscout.ui.screens.auth.LoginScreen
+import com.snainfotech.tagscout.ui.screens.auth.RegistrationScreen
 import com.snainfotech.tagscout.ui.screens.config.DeviceConfigScreen
 import com.snainfotech.tagscout.ui.screens.config.DeviceConfigViewModel
 import com.snainfotech.tagscout.ui.screens.config.FirmwareCheckingDialog
@@ -91,12 +97,19 @@ import com.snainfotech.tagscout.ui.components.BluetoothPermissionDeniedDialog
 import com.snainfotech.tagscout.ui.components.BluetoothPermissionRationaleDialog
 import com.snainfotech.tagscout.ui.components.PreSaveWarningDialog
 import com.snainfotech.tagscout.data.file.InventoryExcelParser
+import com.snainfotech.tagscout.ui.screens.locate.LocateTagScreen
+import com.snainfotech.tagscout.ui.screens.locate.LocateTagViewModel
+import com.snainfotech.tagscout.ui.screens.locate.LocateTagViewModelFactory
 
 private const val LOW_BATTERY_THRESHOLD = 15
 private const val CRITICAL_BATTERY_THRESHOLD = 5
 
 // All possible screen routes (like URLs for each screen)
 object Routes {
+    const val AUTH_CHECK = "auth_check"
+    const val LOGIN = "login"
+    const val REGISTER = "register"
+    const val EMAIL_VERIFICATION = "email_verification"
     const val HOME = "home"
     const val QUICK_SCAN = "quick_scan"
     const val ABOUT = "about"
@@ -110,6 +123,7 @@ object Routes {
     const val KILL_TAG= "kill_tag"
     const val PICK_ORDER = "pick_order"
     const val ORDER_PICKING = "order_picking"
+    const val LOCATE_TAG = "locate_tag"
 }
 
 @Composable
@@ -128,12 +142,137 @@ fun TagScoutNavGraph(
 
     NavHost(
         navController = navController,
-        startDestination = Routes.HOME,
+        startDestination = Routes.AUTH_CHECK,
         modifier = modifier
     ) {
         // ============================================
         // HOME SCREEN
         // ============================================
+        // ============================================
+        // AUTH SCREENS
+        // ============================================
+
+        // Auth check — silent routing based on current Firebase state
+        composable(Routes.AUTH_CHECK) {
+            val authRepo = remember { AuthRepository() }
+
+            LaunchedEffect(Unit) {
+                val destination = when {
+                    !authRepo.isLoggedIn -> Routes.LOGIN
+                    !authRepo.isEmailVerified -> Routes.EMAIL_VERIFICATION
+                    !authRepo.isSessionFresh -> {
+                        authRepo.logout()
+                        Routes.LOGIN
+                    }
+                    else -> Routes.HOME
+                }
+                navController.navigate(destination) {
+                    popUpTo(Routes.AUTH_CHECK) { inclusive = true }
+                }
+            }
+        }
+
+        // Login screen
+        composable(Routes.LOGIN) {
+            val authRepo = remember { AuthRepository() }
+            val authViewModel: AuthViewModel = viewModel(
+                factory = AuthViewModelFactory(authRepo)
+            )
+            val authState by authViewModel.state.collectAsState()
+
+            // Navigate after successful login
+            LaunchedEffect(authState.loginComplete) {
+                if (authState.loginComplete) {
+                    val dest = if (authRepo.isEmailVerified) Routes.HOME else Routes.EMAIL_VERIFICATION
+                    navController.navigate(dest) {
+                        popUpTo(Routes.LOGIN) { inclusive = true }
+                    }
+                }
+            }
+
+            LoginScreen(
+                state = authState,
+                onEmailChange = authViewModel::updateEmail,
+                onPasswordChange = authViewModel::updatePassword,
+                onLoginClick = authViewModel::login,
+                onRegisterClick = {
+                    navController.navigate(Routes.REGISTER) {
+                        popUpTo(Routes.LOGIN) { inclusive = true }
+                    }
+                }
+            )
+        }
+
+        // Registration screen
+        composable(Routes.REGISTER) {
+            val authRepo = remember { AuthRepository() }
+            val authViewModel: AuthViewModel = viewModel(
+                factory = AuthViewModelFactory(authRepo)
+            )
+            val authState by authViewModel.state.collectAsState()
+
+            // Navigate after successful registration
+            LaunchedEffect(authState.registrationComplete) {
+                if (authState.registrationComplete) {
+                    navController.navigate(Routes.EMAIL_VERIFICATION) {
+                        popUpTo(Routes.REGISTER) { inclusive = true }
+                    }
+                }
+            }
+
+            RegistrationScreen(
+                state = authState,
+                onNameChange = authViewModel::updateName,
+                onEmailChange = authViewModel::updateEmail,
+                onMobileChange = authViewModel::updateMobile,
+                onCompanyNameChange = authViewModel::updateCompanyName,
+                onPasswordChange = authViewModel::updatePassword,
+                onConfirmPasswordChange = authViewModel::updateConfirmPassword,
+                onRegisterClick = authViewModel::register,
+                onLoginClick = {
+                    navController.navigate(Routes.LOGIN) {
+                        popUpTo(Routes.REGISTER) { inclusive = true }
+                    }
+                }
+            )
+        }
+
+        // Email verification screen
+        composable(Routes.EMAIL_VERIFICATION) {
+            val authRepo = remember { AuthRepository() }
+            val authViewModel: AuthViewModel = viewModel(
+                factory = AuthViewModelFactory(authRepo)
+            )
+            val authState by authViewModel.state.collectAsState()
+            val userEmail = authRepo.currentUser?.email ?: ""
+
+            // Navigate to Home when verified
+            LaunchedEffect(authState.emailVerified) {
+                if (authState.emailVerified) {
+                    navController.navigate(Routes.HOME) {
+                        popUpTo(Routes.EMAIL_VERIFICATION) { inclusive = true }
+                    }
+                }
+            }
+
+            EmailVerificationScreen(
+                state = authState,
+                email = userEmail,
+                onCheckVerified = authViewModel::checkEmailVerified,
+                onResendEmail = authViewModel::resendVerificationEmail,
+                onLogout = {
+                    authViewModel.logout()
+                    navController.navigate(Routes.LOGIN) {
+                        popUpTo(Routes.EMAIL_VERIFICATION) { inclusive = true }
+                    }
+                }
+            )
+        }
+
+        // ============================================
+        // MAIN APP SCREENS (require auth)
+        // ============================================
+
         composable(Routes.HOME) {
             val deviceState by sharedHomeViewModel.deviceState.collectAsState()
 
@@ -141,6 +280,18 @@ fun TagScoutNavGraph(
             var showExitDialog by rememberSaveable { mutableStateOf(false) }
             val context = LocalContext.current
             val activity = context as? android.app.Activity
+
+            // Fetch logged-in user's profile for the menu header
+            val authRepo = remember { AuthRepository() }
+            var userName by rememberSaveable { mutableStateOf("") }
+            var userEmail by rememberSaveable { mutableStateOf(authRepo.currentUser?.email ?: "") }
+
+            LaunchedEffect(Unit) {
+                authRepo.getUserProfile().onSuccess { profile ->
+                    userName = profile.name
+                    userEmail = profile.email
+                }
+            }
 
             Box {
                 HomeScreen(
@@ -153,6 +304,7 @@ fun TagScoutNavGraph(
                     onOrderPickingClick = { navController.navigate(Routes.ORDER_PICKING) },
                     onWriteTagClick = { navController.navigate(Routes.WRITE_TAG) },
                     onKillTagClick = { navController.navigate(Routes.KILL_TAG) },
+                    onLocateTagClick = { navController.navigate(Routes.LOCATE_TAG) },
                     onDeviceConfigClick = { navController.navigate(Routes.DEVICE_CONFIG) }
                 )
 
@@ -164,7 +316,15 @@ fun TagScoutNavGraph(
                     AppMenu(
                         expanded = menuExpanded,
                         onDismiss = { menuExpanded = false },
+                        userName = userName,
+                        userEmail = userEmail,
                         onAboutClick = { navController.navigate(Routes.ABOUT) },
+                        onLogoutClick = {
+                            AuthRepository().logout()
+                            navController.navigate(Routes.LOGIN) {
+                                popUpTo(0) { inclusive = true }
+                            }
+                        },
                         onExitClick = { showExitDialog = true }
                     )
                 }
@@ -982,6 +1142,30 @@ fun TagScoutNavGraph(
                     customMessage = "Your RFID reader has disconnected. Scanning has been paused."
                 )
             }
+        }
+        // ============================================
+        // LOCATE TAG
+        // ============================================
+        composable(Routes.LOCATE_TAG) {
+            val locateViewModel: LocateTagViewModel = viewModel(
+                factory = LocateTagViewModelFactory(app.rfidScanner)
+            )
+            val locateState by locateViewModel.state.collectAsState()
+            val deviceState by sharedHomeViewModel.deviceState.collectAsState()
+
+            LocateTagScreen(
+                state = locateState,
+                isDeviceConnected = deviceState.isConnected,
+                deviceName = deviceState.deviceName,
+                serialNumber = deviceState.serialNumber,
+                firmwareVersion = deviceState.firmwareVersion,
+                batteryPercent = deviceState.batteryPercent,
+                onBackClick = { navController.popBackStack() },
+                onDeviceStatusClick = { navController.navigate(Routes.DEVICE_CONFIG) },
+                onTargetEpcChange = locateViewModel::updateTargetEpc,
+                onStartLocate = locateViewModel::startLocating,
+                onStopLocate = locateViewModel::stopLocating
+            )
         }
     }
 }

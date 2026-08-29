@@ -22,12 +22,17 @@ import androidx.compose.ui.unit.sp
 import com.snainfotech.tagscout.ui.theme.DarkText
 import com.snainfotech.tagscout.ui.theme.ErrorRed
 import com.snainfotech.tagscout.ui.theme.InfoBlue
+import androidx.compose.foundation.layout.Column
+import com.snainfotech.tagscout.ui.theme.MediumGray
 
 @Composable
 fun AppMenu(
     expanded: Boolean,
     onDismiss: () -> Unit,
+    userName: String = "",
+    userEmail: String = "",
     onAboutClick: () -> Unit,
+    onLogoutClick: () -> Unit = {},
     onExitClick: () -> Unit
 ) {
     DropdownMenu(
@@ -37,11 +42,51 @@ fun AppMenu(
             .background(Color.White)
             .width(200.dp)
     ) {
+        // User info header
+        if (userName.isNotBlank() || userEmail.isNotBlank()) {
+            Box(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .background(Color(0xFFF4F5F7))
+                    .padding(horizontal = 16.dp, vertical = 12.dp)
+            ) {
+                Column {
+                    if (userName.isNotBlank()) {
+                        Text(
+                            text = userName,
+                            fontSize = 14.sp,
+                            fontWeight = FontWeight.SemiBold,
+                            color = DarkText
+                        )
+                    }
+                    if (userEmail.isNotBlank()) {
+                        Text(
+                            text = userEmail,
+                            fontSize = 11.sp,
+                            color = MediumGray
+                        )
+                    }
+                }
+            }
+            MenuDivider()
+        }
+
         MenuItem(
             icon = "ℹ️",
             label = "About TagScout",
             onClick = {
                 onAboutClick()
+                onDismiss()
+            }
+        )
+
+        MenuDivider()
+
+        MenuItem(
+            icon = "🔓",
+            label = "Logout",
+            onClick = {
+                onLogoutClick()
                 onDismiss()
             }
         )

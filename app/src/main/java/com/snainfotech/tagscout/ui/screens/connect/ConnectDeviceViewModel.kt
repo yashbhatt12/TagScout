@@ -115,14 +115,13 @@ class ConnectDeviceViewModel(
 
             val savedIds = _state.value.savedDevices.map { it.id }.toSet()
             val paired = rfidScanner.getPairedDevices()
-                .filter { it.address !in savedIds }
                 .map { device ->
                     DiscoveredDevice(
                         id = device.address,
                         name = device.name,
                         signalBars = 4, // not known until connected over classic BT
                         status = DeviceStatus.IN_RANGE,
-                        isSaved = false
+                        isSaved = device.address in savedIds
                     )
                 }
 

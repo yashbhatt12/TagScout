@@ -202,8 +202,14 @@ class BluebirdRfidScanner(private val context: Context) : RfidScanner {
             }
             SDConsts.RFCmdMsg.LOCATE -> {
                 if (msg.arg2 == SDConsts.RFResult.SUCCESS) {
-                    val data = msg.obj as? String ?: return
-                    parseLocateData(data)?.let { locateCallback?.invoke(it) }
+                    // LOCATE data arrives as an Integer proximity value in msg.obj,
+                    // NOT as a String like INVENTORY does. Verified against the vendor
+                    // sample: "if (m.obj != null && m.obj instanceof Integer)"
+                    val proximity = msg.obj as? Int
+                    if (proximity != null) {
+                        android.util.Log.d("BluebirdRfidScanner", "Locate proximity: $proximity")
+                        locateCallback?.invoke(ProximityReading(epc = "", proximity = proximity))
+                    }
                 }
             }
             SDConsts.RFCmdMsg.WRITE -> pendingWriteResult?.invoke(msg.arg2)
@@ -286,13 +292,39 @@ class BluebirdRfidScanner(private val context: Context) : RfidScanner {
 
     override fun locateTag(epc: String): Flow<ProximityReading> = callbackFlow {
         locateCallback = { reading -> trySend(reading) }
-        val result = getReader().RF_PerformInventoryForLocating(epc)
+
+        // The vendor's sample sets up SelectionCriteria BEFORE calling locate,
+        // telling the reader which specific tag to track. Without this, the SDK
+        // doesn't know which tag to focus on and reports nothing.
+        //
+        // The sample uses the FULL tag data (including the 4-char PC prefix) with
+        // selectStartPos=0 when hasPc=true. Our scanned EPCs include the PC word
+        // (e.g. "3000E280..."), so we pass the full string at offset 0.
+        val criteria = SelectionCriterias()
+        criteria.makeCriteria(
+            SDConsts.RFMemType.EPC,      // EPC memory bank
+            epc,                         // full tag data including PC prefix
+            0,                           // selectStartPosByte — 0 because we include the PC
+            epc.length * 4,              // mask length in bits (hex chars * 4)
+            0                            // actionPos — ASLINVA_DSLINVB ("select this tag")
+        )
+        getReader().RF_SetSelection(criteria)
+        android.util.Log.d("BluebirdRfidScanner", "locateTag: selection set for $epc (${epc.length * 4} bits at offset 0)")
+
+        // Now start the locate — pass the EPC WITHOUT the PC prefix, as the sample does
+        val epcWithoutPc = if (epc.length > 4) epc.substring(4) else epc
+        android.util.Log.d("BluebirdRfidScanner", "locateTag: calling RF_PerformInventoryForLocating with $epcWithoutPc")
+        val result = getReader().RF_PerformInventoryForLocating(epcWithoutPc)
+        android.util.Log.d("BluebirdRfidScanner", "locateTag: RF_PerformInventoryForLocating returned $result")
+
         if (result != SDConsts.RFResult.SUCCESS) {
+            runCatching { getReader().RF_RemoveSelection() }
             close(IllegalStateException("RF_PerformInventoryForLocating failed with code $result"))
         }
         awaitClose {
             locateCallback = null
             runCatching { getReader().RF_StopInventory() }
+            runCatching { getReader().RF_RemoveSelection() }
         }
     }
 

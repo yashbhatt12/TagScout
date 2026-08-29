@@ -3,8 +3,8 @@ plugins {
     alias(libs.plugins.kotlin.android)
     alias(libs.plugins.kotlin.compose)
     alias(libs.plugins.ksp)
+    alias(libs.plugins.google.services)
 }
-
 android {
     namespace = "com.snainfotech.tagscout"
     compileSdk = 35
@@ -68,9 +68,15 @@ dependencies {
     implementation(libs.fastexcel)
     implementation(libs.fastexcel.reader)
     implementation(libs.aalto.xml) // required by fastexcel-reader to read xlsx on Android (provides the StAX/javax.xml.stream API Android lacks)
-    implementation(libs.stax.api)   // the javax.xml.stream API that Android lacks
     implementation(libs.stax2.api)  // stax2 extensions aalto builds on
+
+    // Firebase
+    implementation(platform(libs.firebase.bom))
+    implementation(libs.firebase.auth)
+    implementation(libs.firebase.firestore)
+
     testImplementation(libs.junit)
+    implementation(libs.stax.api)   // the javax.xml.stream API that Android lacks
     androidTestImplementation(libs.androidx.junit)
     androidTestImplementation(libs.androidx.espresso.core)
     androidTestImplementation(platform(libs.androidx.compose.bom))

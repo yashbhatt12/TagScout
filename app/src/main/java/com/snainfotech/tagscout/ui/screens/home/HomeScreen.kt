@@ -45,6 +45,7 @@ fun HomeScreen(
     onOrderPickingClick: () -> Unit = {},
     onWriteTagClick: () -> Unit = {},
     onKillTagClick: () -> Unit = {},
+    onLocateTagClick: () -> Unit = {},
     onDeviceConfigClick: () -> Unit = {}
 ) {
     Column(
@@ -134,7 +135,8 @@ fun HomeScreen(
                 enabled = deviceState.isConnected,
                 onClick = onOrderPickingClick
             )
-            FeatureButton(
+            /*
+           FeatureButton(
                 icon = R.drawable.ic_write,
                 title = "Write Tag",
                 description= "Change a tag's EPC",
@@ -148,6 +150,14 @@ fun HomeScreen(
                 description= "Permanently Disable a Tag",
                 enabled = deviceState.isConnected,
                 onClick= onKillTagClick,
+            )
+             */
+            FeatureButton(
+                icon = R.drawable.ic_locate,
+                title = "Locate Tag",
+                description = "Find a product by its RFID tag",
+                enabled = deviceState.isConnected,
+                onClick = onLocateTagClick,
             )
             FeatureButton(
                 icon = R.drawable.ic_config,

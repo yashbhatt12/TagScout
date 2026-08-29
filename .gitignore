@@ -33,3 +33,5 @@ Thumbs.db
 # Keystore files (never commit these!)
 *.jks
 *.keystore
+
+app/google-services.json

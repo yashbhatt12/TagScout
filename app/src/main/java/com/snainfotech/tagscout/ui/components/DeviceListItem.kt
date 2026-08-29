@@ -90,14 +90,32 @@ fun DeviceListItem(
 
             Spacer(modifier = Modifier.width(12.dp))
 
-            // Device info (name + signal)
+            // Device info (name + saved badge + signal)
             Column(modifier = Modifier.weight(1f)) {
-                Text(
-                    text = device.name,
-                    fontSize = 13.sp,
-                    fontWeight = FontWeight.SemiBold,
-                    color = DarkText
-                )
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Text(
+                        text = device.name,
+                        fontSize = 13.sp,
+                        fontWeight = FontWeight.SemiBold,
+                        color = DarkText
+                    )
+                    if (device.isSaved && !isCurrentlyConnected) {
+                        Spacer(modifier = Modifier.width(6.dp))
+                        Box(
+                            modifier = Modifier
+                                .clip(RoundedCornerShape(3.dp))
+                                .background(Primary.copy(alpha = 0.1f))
+                                .padding(horizontal = 5.dp, vertical = 1.dp)
+                        ) {
+                            Text(
+                                text = "SAVED",
+                                fontSize = 8.sp,
+                                fontWeight = FontWeight.Bold,
+                                color = Primary
+                            )
+                        }
+                    }
+                }
                 Spacer(modifier = Modifier.height(2.dp))
 
                 if (device.status == DeviceStatus.OUT_OF_RANGE) {

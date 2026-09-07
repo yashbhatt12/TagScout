@@ -100,6 +100,7 @@ import com.snainfotech.tagscout.data.file.InventoryExcelParser
 import com.snainfotech.tagscout.ui.screens.locate.LocateTagScreen
 import com.snainfotech.tagscout.ui.screens.locate.LocateTagViewModel
 import com.snainfotech.tagscout.ui.screens.locate.LocateTagViewModelFactory
+import com.snainfotech.tagscout.ui.components.SecureScreen
 
 private const val LOW_BATTERY_THRESHOLD = 15
 private const val CRITICAL_BATTERY_THRESHOLD = 5
@@ -174,6 +175,7 @@ fun TagScoutNavGraph(
 
         // Login screen
         composable(Routes.LOGIN) {
+            SecureScreen()
             val authRepo = remember { AuthRepository() }
             val authViewModel: AuthViewModel = viewModel(
                 factory = AuthViewModelFactory(authRepo)
@@ -205,6 +207,7 @@ fun TagScoutNavGraph(
 
         // Registration screen
         composable(Routes.REGISTER) {
+            SecureScreen()
             val authRepo = remember { AuthRepository() }
             val authViewModel: AuthViewModel = viewModel(
                 factory = AuthViewModelFactory(authRepo)
@@ -239,6 +242,7 @@ fun TagScoutNavGraph(
 
         // Email verification screen
         composable(Routes.EMAIL_VERIFICATION) {
+            SecureScreen()
             val authRepo = remember { AuthRepository() }
             val authViewModel: AuthViewModel = viewModel(
                 factory = AuthViewModelFactory(authRepo)

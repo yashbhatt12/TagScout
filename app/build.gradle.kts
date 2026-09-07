@@ -20,8 +20,15 @@ android {
     }
 
     buildTypes {
+        debug {
+            // Debug builds use the fake scanner — safe for UI work without hardware
+            buildConfigField("boolean", "USE_REAL_HARDWARE", "false")
+        }
         release {
-            isMinifyEnabled = false
+            // Release builds use the real Bluebird scanner
+            buildConfigField("boolean", "USE_REAL_HARDWARE", "true")
+            isMinifyEnabled = true
+            isShrinkResources = true
             proguardFiles(
                 getDefaultProguardFile("proguard-android-optimize.txt"),
                 "proguard-rules.pro"
@@ -37,6 +44,7 @@ android {
     }
     buildFeatures {
         compose = true
+        buildConfig = true
     }
 }
 

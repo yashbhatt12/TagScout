@@ -33,10 +33,13 @@ class TagScoutApplication : Application() {
 
     // RFID Scanner — flip this one flag once the sled is in hand and BluebirdRfidScanner
     // is ready to test. Keeping Fake as the default until then so nothing regresses.
-    private val useRealHardware = true
-
+    // RFID Scanner — determined by build type:
+    //   Debug builds  → FakeRfidScanner (safe for UI work without hardware)
+    //   Release builds → BluebirdRfidScanner (real hardware)
+    // Controlled via BuildConfig.USE_REAL_HARDWARE in app/build.gradle.kts.
+    // No manual editing needed — just Run (debug) vs Build APK (release).
     val rfidScanner: com.snainfotech.tagscout.sdk.RfidScanner by lazy {
-        if (useRealHardware) {
+        if (BuildConfig.USE_REAL_HARDWARE) {
             com.snainfotech.tagscout.sdk.BluebirdRfidScanner(this)
         } else {
             com.snainfotech.tagscout.sdk.FakeRfidScanner()

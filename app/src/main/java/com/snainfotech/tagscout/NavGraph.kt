@@ -33,6 +33,8 @@ import com.snainfotech.tagscout.ui.screens.auth.AuthViewModel
 import com.snainfotech.tagscout.ui.screens.auth.AuthViewModelFactory
 import com.snainfotech.tagscout.ui.screens.auth.EmailVerificationScreen
 import com.snainfotech.tagscout.ui.screens.auth.LoginScreen
+import com.snainfotech.tagscout.ui.screens.auth.MfaEnrollScreen
+import com.snainfotech.tagscout.ui.screens.auth.MfaVerifyScreen
 import com.snainfotech.tagscout.ui.screens.auth.RegistrationScreen
 import com.snainfotech.tagscout.ui.screens.config.DeviceConfigScreen
 import com.snainfotech.tagscout.ui.screens.config.DeviceConfigViewModel
@@ -111,6 +113,8 @@ object Routes {
     const val LOGIN = "login"
     const val REGISTER = "register"
     const val EMAIL_VERIFICATION = "email_verification"
+    const val MFA_ENROLL = "mfa_enroll"
+    const val MFA_VERIFY = "mfa_verify"
     const val HOME = "home"
     const val QUICK_SCAN = "quick_scan"
     const val ABOUT = "about"
@@ -181,26 +185,86 @@ fun TagScoutNavGraph(
                 factory = AuthViewModelFactory(authRepo)
             )
             val authState by authViewModel.state.collectAsState()
+            val activity = LocalContext.current as android.app.Activity
 
-            // Navigate after successful login
             LaunchedEffect(authState.loginComplete) {
                 if (authState.loginComplete) {
                     val dest = if (authRepo.isEmailVerified) Routes.HOME else Routes.EMAIL_VERIFICATION
-                    navController.navigate(dest) {
-                        popUpTo(Routes.LOGIN) { inclusive = true }
-                    }
+                    navController.navigate(dest) { popUpTo(Routes.LOGIN) { inclusive = true } }
                 }
+            }
+            LaunchedEffect(authState.mfaEnrollmentRequired) {
+                if (authState.mfaEnrollmentRequired) { navController.navigate(Routes.MFA_ENROLL) }
+            }
+            LaunchedEffect(authState.mfaChallengeRequired) {
+                if (authState.mfaChallengeRequired) { navController.navigate(Routes.MFA_VERIFY) }
             }
 
             LoginScreen(
                 state = authState,
                 onEmailChange = authViewModel::updateEmail,
                 onPasswordChange = authViewModel::updatePassword,
-                onLoginClick = authViewModel::login,
+                onLoginClick = { authViewModel.login(activity) },
                 onRegisterClick = {
-                    navController.navigate(Routes.REGISTER) {
-                        popUpTo(Routes.LOGIN) { inclusive = true }
+                    navController.navigate(Routes.REGISTER) { popUpTo(Routes.LOGIN) { inclusive = true } }
+                }
+            )
+        }
+
+        // MFA Enrollment (first-time 2FA setup after login)
+        composable(Routes.MFA_ENROLL) {
+            SecureScreen()
+            val authRepo = remember { AuthRepository() }
+            val authViewModel: AuthViewModel = viewModel(factory = AuthViewModelFactory(authRepo))
+            val authState by authViewModel.state.collectAsState()
+            val activity = LocalContext.current as android.app.Activity
+
+            LaunchedEffect(Unit) {
+                authRepo.getUserProfile().onSuccess { profile ->
+                    if (profile.mobile.isNotBlank()) {
+                        val phone = if (profile.mobile.startsWith("+")) profile.mobile else "+91${profile.mobile}"
+                        authViewModel.updateMfaPhoneNumber(phone)
                     }
+                }
+            }
+            LaunchedEffect(authState.loginComplete) {
+                if (authState.loginComplete) {
+                    val dest = if (authRepo.isEmailVerified) Routes.HOME else Routes.EMAIL_VERIFICATION
+                    navController.navigate(dest) { popUpTo(Routes.LOGIN) { inclusive = true } }
+                }
+            }
+
+            MfaEnrollScreen(
+                state = authState,
+                onPhoneNumberChange = authViewModel::updateMfaPhoneNumber,
+                onSmsCodeChange = authViewModel::updateMfaSmsCode,
+                onSendCode = { authViewModel.startMfaEnrollment(activity) },
+                onVerifyCode = authViewModel::completeMfaEnrollment,
+                onSkip = authViewModel::skipMfaEnrollment
+            )
+        }
+
+        // MFA Verify (SMS code entry during login challenge)
+        composable(Routes.MFA_VERIFY) {
+            SecureScreen()
+            val authRepo = remember { AuthRepository() }
+            val authViewModel: AuthViewModel = viewModel(factory = AuthViewModelFactory(authRepo))
+            val authState by authViewModel.state.collectAsState()
+
+            LaunchedEffect(authState.loginComplete) {
+                if (authState.loginComplete) {
+                    val dest = if (authRepo.isEmailVerified) Routes.HOME else Routes.EMAIL_VERIFICATION
+                    navController.navigate(dest) { popUpTo(Routes.LOGIN) { inclusive = true } }
+                }
+            }
+
+            MfaVerifyScreen(
+                state = authState,
+                onSmsCodeChange = authViewModel::updateMfaSmsCode,
+                onVerifyCode = authViewModel::completeMfaChallenge,
+                onCancel = {
+                    authViewModel.logout()
+                    navController.navigate(Routes.LOGIN) { popUpTo(Routes.MFA_VERIFY) { inclusive = true } }
                 }
             )
         }

@@ -102,6 +102,11 @@ import com.snainfotech.tagscout.data.file.InventoryExcelParser
 import com.snainfotech.tagscout.ui.screens.locate.LocateTagScreen
 import com.snainfotech.tagscout.ui.screens.locate.LocateTagViewModel
 import com.snainfotech.tagscout.ui.screens.locate.LocateTagViewModelFactory
+import com.snainfotech.tagscout.data.shop.ShopRepository
+import com.snainfotech.tagscout.ui.screens.shop.CartScreen
+import com.snainfotech.tagscout.ui.screens.shop.ProductCatalogScreen
+import com.snainfotech.tagscout.ui.screens.shop.ShopViewModel
+import com.snainfotech.tagscout.ui.screens.shop.ShopViewModelFactory
 import com.snainfotech.tagscout.ui.components.SecureScreen
 
 private const val LOW_BATTERY_THRESHOLD = 15
@@ -129,6 +134,8 @@ object Routes {
     const val PICK_ORDER = "pick_order"
     const val ORDER_PICKING = "order_picking"
     const val LOCATE_TAG = "locate_tag"
+    const val SHOP = "shop"
+    const val CART = "cart"
 }
 
 @Composable
@@ -139,6 +146,9 @@ fun TagScoutNavGraph(
     val app = LocalContext.current.applicationContext as TagScoutApplication
 
     // Create a SHARED HomeViewModel that all screens can read
+    val shopViewModel: ShopViewModel = viewModel(
+        factory = ShopViewModelFactory(ShopRepository())
+    )
     val sharedHomeViewModel: HomeViewModel = viewModel(
         factory = HomeViewModelFactory(app.deviceRepository)
     )
@@ -373,6 +383,7 @@ fun TagScoutNavGraph(
                     onWriteTagClick = { navController.navigate(Routes.WRITE_TAG) },
                     onKillTagClick = { navController.navigate(Routes.KILL_TAG) },
                     onLocateTagClick = { navController.navigate(Routes.LOCATE_TAG) },
+                    onShopClick = { navController.navigate(Routes.SHOP) },
                     onDeviceConfigClick = { navController.navigate(Routes.DEVICE_CONFIG) }
                 )
 
@@ -1233,6 +1244,53 @@ fun TagScoutNavGraph(
                 onTargetEpcChange = locateViewModel::updateTargetEpc,
                 onStartLocate = locateViewModel::startLocating,
                 onStopLocate = locateViewModel::stopLocating
+            )
+        }
+
+        // ============================================
+        // SHOP / PRODUCT CATALOG
+        // ============================================
+        composable(Routes.SHOP) {
+            val shopState by shopViewModel.state.collectAsState()
+
+            ProductCatalogScreen(
+                state = shopState,
+                onBackClick = { navController.popBackStack() },
+                onCartClick = { navController.navigate(Routes.CART) },
+                onAddToCart = { product, qty -> shopViewModel.addToCart(product, qty) },
+                onDismissMessage = shopViewModel::clearMessage,
+                isInCart = shopViewModel::isInCart,
+                getCartQuantity = shopViewModel::getCartQuantity
+            )
+        }
+
+        composable(Routes.CART) {
+            val shopState by shopViewModel.state.collectAsState()
+            val context = LocalContext.current
+
+            // Fetch user profile for the checkout email
+            val authRepo = remember { AuthRepository() }
+            var userName by rememberSaveable { mutableStateOf("") }
+            var userEmail by rememberSaveable { mutableStateOf(authRepo.currentUser?.email ?: "") }
+            var companyName by rememberSaveable { mutableStateOf("") }
+
+            LaunchedEffect(Unit) {
+                authRepo.getUserProfile().onSuccess { profile ->
+                    userName = profile.name
+                    userEmail = profile.email
+                    companyName = profile.companyName
+                }
+            }
+
+            CartScreen(
+                state = shopState,
+                onBackClick = { navController.popBackStack() },
+                onRemoveItem = shopViewModel::removeFromCart,
+                onUpdateQuantity = shopViewModel::updateCartQuantity,
+                onCheckout = {
+                    shopViewModel.initiateCheckout(userName, userEmail, companyName)
+                },
+                        onDismissMessage = shopViewModel::clearMessage
             )
         }
     }

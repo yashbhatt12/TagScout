@@ -46,6 +46,7 @@ fun HomeScreen(
     onWriteTagClick: () -> Unit = {},
     onKillTagClick: () -> Unit = {},
     onLocateTagClick: () -> Unit = {},
+    onShopClick: () -> Unit = {},
     onDeviceConfigClick: () -> Unit = {}
 ) {
     Column(
@@ -158,6 +159,13 @@ fun HomeScreen(
                 description = "Find a product by its RFID tag",
                 enabled = deviceState.isConnected,
                 onClick = onLocateTagClick,
+            )
+            FeatureButton(
+                icon = R.drawable.ic_shop,
+                title = "Order Supplies",
+                description = "Purchase RFID labels, scanners & printers",
+                enabled = true,
+                onClick = onShopClick,
             )
             FeatureButton(
                 icon = R.drawable.ic_config,

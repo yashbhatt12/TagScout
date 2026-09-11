@@ -150,29 +150,51 @@ class BluebirdRfidScanner(private val context: Context) : RfidScanner {
                 // recursion (the SDK's blocking calls appear to pump this same message
                 // queue while waiting for a reply). Defer to a fresh dispatch instead.
                 handler?.post {
-                    val serial = runCatching { getReader().SD_GetSerialNumber() }.getOrNull().orEmpty()
-                    val firmware = runCatching { getReader().SD_GetVersion() }.getOrNull().orEmpty()
-                    connectionCallback?.invoke(
-                        ConnectionEvent.Connected(
-                            deviceName = name,
-                            address = address,
-                            serialNumber = serial,
-                            firmwareVersion = firmware
+                    // These three SD_* calls are blocking/synchronous on the sled's
+                    // single command channel. The SDK manual documents specific error
+                    // codes for calling one while another hasn't settled yet:
+                    //   OTHER_CMD_RUNNING_ERROR (-4), READER_OR_SERIAL_STATUS_ERROR (-7)
+                    // Firing all three back-to-back with no gap was silently tripping
+                    // one of these on serial/firmware, and runCatching().orEmpty() was
+                    // swallowing the failure into a blank string with no visibility.
+                    // Fix: stagger each call and log the real outcome.
+                    val serial = runCatching { getReader().SD_GetSerialNumber() }
+                        .onFailure { e -> android.util.Log.e("BluebirdRfidScanner", "SD_GetSerialNumber threw", e) }
+                        .getOrNull()
+                    android.util.Log.d("BluebirdRfidScanner", "SD_GetSerialNumber returned: $serial")
+
+                    handler?.postDelayed({
+                        val firmware = runCatching { getReader().SD_GetVersion() }
+                            .onFailure { e -> android.util.Log.e("BluebirdRfidScanner", "SD_GetVersion threw", e) }
+                            .getOrNull()
+                        android.util.Log.d("BluebirdRfidScanner", "SD_GetVersion returned: $firmware")
+
+                        connectionCallback?.invoke(
+                            ConnectionEvent.Connected(
+                                deviceName = name,
+                                address = address,
+                                serialNumber = serial.orEmpty(),
+                                firmwareVersion = firmware.orEmpty()
+                            )
                         )
-                    )
-                    // Fetch the current battery level once, right after connecting.
-                    // The SDK only PUSHES SLED_BATTERY_STATE_CHANGED when the level
-                    // actually changes — on a fresh connection no such event has
-                    // fired yet, so without this proactive query the UI would show
-                    // 0% until the battery happened to tick. Verified against the
-                    // sample app (SD_GetBatteryStatus() returns an int percent).
-                    // NOTE: fetch ONCE on connect, not on a timer — the vendor's
-                    // own code notes that continuous battery polling hurts inventory
-                    // performance, which is why their BatteryPollingHandler is disabled.
-                    val battery = runCatching { getReader().SD_GetBatteryStatus() }.getOrNull()
-                    if (battery != null && battery in 0..100) {
-                        connectionCallback?.invoke(ConnectionEvent.BatteryUpdate(battery))
-                    }
+
+                        // Fetch the current battery level once, right after connecting.
+                        // The SDK only PUSHES SLED_BATTERY_STATE_CHANGED when the level
+                        // actually changes — on a fresh connection no such event has
+                        // fired yet, so without this proactive query the UI would show
+                        // 0% until the battery happened to tick. Fetch ONCE, not on a
+                        // timer — the vendor's own code notes continuous polling hurts
+                        // inventory performance.
+                        handler?.postDelayed({
+                            val battery = runCatching { getReader().SD_GetBatteryStatus() }
+                                .onFailure { e -> android.util.Log.e("BluebirdRfidScanner", "SD_GetBatteryStatus threw", e) }
+                                .getOrNull()
+                            android.util.Log.d("BluebirdRfidScanner", "SD_GetBatteryStatus returned: $battery")
+                            if (battery != null && battery in 0..100) {
+                                connectionCallback?.invoke(ConnectionEvent.BatteryUpdate(battery))
+                            }
+                        }, 300)
+                    }, 300)
                 }
             }
             SDConsts.BTCmdMsg.SLED_BT_ACL_DISCONNECTED -> {

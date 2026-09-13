@@ -47,6 +47,7 @@ fun HomeScreen(
     onKillTagClick: () -> Unit = {},
     onLocateTagClick: () -> Unit = {},
     onShopClick: () -> Unit = {},
+    onWmsClick: () -> Unit = {},
     onDeviceConfigClick: () -> Unit = {}
 ) {
     Column(
@@ -166,6 +167,13 @@ fun HomeScreen(
                 description = "Purchase RFID labels, scanners & printers",
                 enabled = true,
                 onClick = onShopClick,
+            )
+            FeatureButton(
+                icon = R.drawable.ic_inventory,
+                title = "Warehouse Management",
+                description = "Inward, cycle count, pick lists & dispatch",
+                enabled = true,
+                onClick = onWmsClick,
             )
             FeatureButton(
                 icon = R.drawable.ic_config,

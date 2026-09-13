@@ -1,0 +1,7 @@
+node_modules/
+*.local
+# Firebase Functions
+functions/node_modules/
+functions/.env
+functions/.env.local
+functions/npm-debug.log

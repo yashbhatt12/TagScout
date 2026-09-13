@@ -107,6 +107,15 @@ import com.snainfotech.tagscout.ui.screens.shop.CartScreen
 import com.snainfotech.tagscout.ui.screens.shop.ProductCatalogScreen
 import com.snainfotech.tagscout.ui.screens.shop.ShopViewModel
 import com.snainfotech.tagscout.ui.screens.shop.ShopViewModelFactory
+import com.snainfotech.tagscout.data.wms.ProductRepository
+import com.snainfotech.tagscout.data.wms.WarehouseRepository
+import com.snainfotech.tagscout.ui.screens.wms.ProductCatalogScreen
+import com.snainfotech.tagscout.ui.screens.wms.ProductCatalogViewModel
+import com.snainfotech.tagscout.ui.screens.wms.ProductCatalogViewModelFactory
+import com.snainfotech.tagscout.ui.screens.wms.WarehouseSetupScreen
+import com.snainfotech.tagscout.ui.screens.wms.WarehouseSetupViewModel
+import com.snainfotech.tagscout.ui.screens.wms.WarehouseSetupViewModelFactory
+import com.snainfotech.tagscout.ui.screens.wms.WmsMenuScreen
 import com.snainfotech.tagscout.ui.components.SecureScreen
 
 private const val LOW_BATTERY_THRESHOLD = 15
@@ -136,6 +145,11 @@ object Routes {
     const val LOCATE_TAG = "locate_tag"
     const val SHOP = "shop"
     const val CART = "cart"
+
+    // Warehouse Management System
+    const val WMS_MENU = "wms_menu"
+    const val WMS_WAREHOUSE_SETUP = "wms_warehouse_setup"
+    const val WMS_PRODUCT_CATALOG = "wms_product_catalog"
 }
 
 @Composable
@@ -384,6 +398,7 @@ fun TagScoutNavGraph(
                     onKillTagClick = { navController.navigate(Routes.KILL_TAG) },
                     onLocateTagClick = { navController.navigate(Routes.LOCATE_TAG) },
                     onShopClick = { navController.navigate(Routes.SHOP) },
+                    onWmsClick = { navController.navigate(Routes.WMS_MENU) },
                     onDeviceConfigClick = { navController.navigate(Routes.DEVICE_CONFIG) }
                 )
 
@@ -1290,7 +1305,50 @@ fun TagScoutNavGraph(
                 onCheckout = {
                     shopViewModel.initiateCheckout(userName, userEmail, companyName)
                 },
-                        onDismissMessage = shopViewModel::clearMessage
+                onDismissMessage = shopViewModel::clearMessage
+            )
+        }
+
+        // ============================================
+        // WMS — Warehouse Management System
+        // ============================================
+        composable(Routes.WMS_MENU) {
+            WmsMenuScreen(
+                onBackClick = { navController.popBackStack() },
+                onWarehouseSetupClick = { navController.navigate(Routes.WMS_WAREHOUSE_SETUP) },
+                onProductCatalogClick = { navController.navigate(Routes.WMS_PRODUCT_CATALOG) }
+                // The four workflow features (Inward, Cycle Count, Pick, Dispatch)
+                // are disabled placeholders for now — no navigation wired yet.
+            )
+        }
+
+        composable(Routes.WMS_WAREHOUSE_SETUP) {
+            val vm: WarehouseSetupViewModel = viewModel(
+                factory = WarehouseSetupViewModelFactory(WarehouseRepository())
+            )
+            val s by vm.state.collectAsState()
+            WarehouseSetupScreen(
+                state = s,
+                onBackClick = { navController.popBackStack() },
+                onSelectWarehouse = vm::selectWarehouse,
+                onSelectRack = vm::selectRack,
+                onCreateWarehouse = vm::createWarehouse,
+                onCreateRack = vm::createRack,
+                onCreateBin = vm::createBin,
+                onDismissMessage = vm::clearMessage
+            )
+        }
+
+        composable(Routes.WMS_PRODUCT_CATALOG) {
+            val vm: ProductCatalogViewModel = viewModel(
+                factory = ProductCatalogViewModelFactory(ProductRepository())
+            )
+            val s by vm.state.collectAsState()
+            ProductCatalogScreen(
+                state = s,
+                onBackClick = { navController.popBackStack() },
+                onCreateProduct = vm::createProduct,
+                onDismissMessage = vm::clearMessage
             )
         }
     }

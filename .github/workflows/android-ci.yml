@@ -1,0 +1,81 @@
+name: Android CI
+
+# Fires on every push to any branch, and on every pull request.
+# ~3-6 minutes on first run (no cache), ~2-3 minutes afterwards.
+# The resulting debug APK is uploaded as a downloadable artifact so
+# any commit can be tested on a real device without a local build.
+on:
+  push:
+    branches: ['**']
+  pull_request:
+    branches: ['**']
+
+# Cancel in-progress runs if the same branch gets a new push, saving CI minutes.
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  build:
+    name: Build debug APK
+    runs-on: ubuntu-latest
+
+    steps:
+      # 1. Check out the commit that triggered this run.
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      # 2. Set up JDK 17. Note: the app code targets Java 11 (jvmTarget = "11")
+      # but the Android Gradle Plugin itself requires JDK 17 to *run*. JDK 17
+      # is the standard runtime for AGP 8.x on CI.
+      - name: Set up JDK 17
+        uses: actions/setup-java@v4
+        with:
+          distribution: 'temurin'
+          java-version: '17'
+
+      # 3. Cache Gradle downloads and build outputs — subsequent runs are much faster.
+      # Key is invalidated when any gradle file or version catalog changes.
+      - name: Cache Gradle packages
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.gradle/caches
+            ~/.gradle/wrapper
+          key: ${{ runner.os }}-gradle-${{ hashFiles('**/*.gradle*', '**/gradle-wrapper.properties', '**/libs.versions.toml') }}
+          restore-keys: |
+            ${{ runner.os }}-gradle-
+
+      # 4. Make the Gradle wrapper executable. Windows-committed wrappers
+      # frequently lose the +x bit on Linux runners.
+      - name: Grant execute permission for gradlew
+        run: chmod +x ./gradlew
+
+      # 5. Build the debug variant. --no-daemon is preferred on CI (the daemon
+      # is a performance optimization for repeated builds within one session).
+      - name: Build debug APK
+        run: ./gradlew assembleDebug --no-daemon --stacktrace
+
+      # 6. Upload the APK so anyone with repo access can download it from
+      # the workflow run page. 14-day retention keeps storage manageable.
+      - name: Upload debug APK artifact
+        if: success()
+        uses: actions/upload-artifact@v4
+        with:
+          name: tagscout-debug-${{ github.sha }}
+          path: app/build/outputs/apk/debug/app-debug.apk
+          retention-days: 14
+          if-no-files-found: error
+
+      # 7. On failure, upload the Gradle build reports so the failure can be
+      # diagnosed without having to reproduce it locally. Kept for 7 days.
+      - name: Upload build reports on failure
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: build-reports-${{ github.sha }}
+          path: |
+            app/build/reports/
+            app/build/outputs/logs/
+          retention-days: 7
+          if-no-files-found: ignore

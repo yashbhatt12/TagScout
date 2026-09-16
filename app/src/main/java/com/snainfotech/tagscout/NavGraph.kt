@@ -116,6 +116,9 @@ import com.snainfotech.tagscout.ui.screens.wms.WarehouseSetupScreen
 import com.snainfotech.tagscout.ui.screens.wms.WarehouseSetupViewModel
 import com.snainfotech.tagscout.ui.screens.wms.WarehouseSetupViewModelFactory
 import com.snainfotech.tagscout.ui.screens.wms.WmsMenuScreen
+import com.snainfotech.tagscout.ui.screens.wms.WmsDashboardScreen
+import com.snainfotech.tagscout.ui.screens.wms.WmsDashboardViewModel
+import com.snainfotech.tagscout.ui.screens.wms.WmsDashboardViewModelFactory
 import com.snainfotech.tagscout.ui.components.SecureScreen
 
 private const val LOW_BATTERY_THRESHOLD = 15
@@ -150,6 +153,7 @@ object Routes {
     const val WMS_MENU = "wms_menu"
     const val WMS_WAREHOUSE_SETUP = "wms_warehouse_setup"
     const val WMS_PRODUCT_CATALOG = "wms_product_catalog"
+    const val WMS_DASHBOARD = "wms_dashboard"
 }
 
 @Composable
@@ -1316,9 +1320,9 @@ fun TagScoutNavGraph(
             WmsMenuScreen(
                 onBackClick = { navController.popBackStack() },
                 onWarehouseSetupClick = { navController.navigate(Routes.WMS_WAREHOUSE_SETUP) },
-                onProductCatalogClick = { navController.navigate(Routes.WMS_PRODUCT_CATALOG) }
-                // The four workflow features (Inward, Cycle Count, Pick, Dispatch)
-                // are disabled placeholders for now — no navigation wired yet.
+                onProductCatalogClick = { navController.navigate(Routes.WMS_PRODUCT_CATALOG) },
+                onDashboardClick = { navController.navigate(Routes.WMS_DASHBOARD) }
+                // Cycle Count, Pick List, Dispatch remain disabled placeholders.
             )
         }
 
@@ -1348,6 +1352,22 @@ fun TagScoutNavGraph(
                 state = s,
                 onBackClick = { navController.popBackStack() },
                 onCreateProduct = vm::createProduct,
+                onDismissMessage = vm::clearMessage
+            )
+        }
+
+        composable(Routes.WMS_DASHBOARD) {
+            val vm: WmsDashboardViewModel = viewModel(
+                factory = WmsDashboardViewModelFactory()
+            )
+            val s by vm.state.collectAsState()
+            WmsDashboardScreen(
+                state = s,
+                onBackClick = { navController.popBackStack() },
+                onSwitchView = vm::switchView,
+                onSelectWarehouse = vm::selectWarehouse,
+                onSelectRack = vm::selectRack,
+                onSelectBin = vm::selectBin,
                 onDismissMessage = vm::clearMessage
             )
         }

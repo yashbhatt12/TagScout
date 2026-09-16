@@ -34,6 +34,7 @@ fun WmsMenuScreen(
     onBackClick: () -> Unit,
     onWarehouseSetupClick: () -> Unit,
     onProductCatalogClick: () -> Unit,
+    onDashboardClick: () -> Unit = {},
     onInwardClick: () -> Unit = {},
     onCycleCountClick: () -> Unit = {},
     onPickListClick: () -> Unit = {},
@@ -81,6 +82,25 @@ fun WmsMenuScreen(
                 description = "Create and manage products (SKUs)",
                 enabled = true,
                 onClick = onProductCatalogClick
+            )
+
+            Spacer(modifier = Modifier.height(4.dp))
+
+            // ── Overview ─────────────────────────────
+            Text(
+                text = "OVERVIEW",
+                fontSize = 11.sp,
+                fontWeight = FontWeight.Bold,
+                color = MediumGray,
+                modifier = Modifier.padding(start = 4.dp, top = 4.dp, bottom = 2.dp)
+            )
+
+            FeatureButton(
+                icon = R.drawable.ic_scan,
+                title = "Inventory Dashboard",
+                description = "View inventory by product or by location",
+                enabled = true,
+                onClick = onDashboardClick
             )
 
             Spacer(modifier = Modifier.height(4.dp))

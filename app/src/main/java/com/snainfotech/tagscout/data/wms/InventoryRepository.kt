@@ -134,4 +134,71 @@ class InventoryRepository {
             Result.success(Unit)
         } catch (e: Exception) { Result.failure(e) }
     }
+
+    // ── Dashboard reads ────────────────────────────────────────
+
+    /**
+     * Read all SKU aggregates for the company.
+     *
+     * These are maintained by the updateSkuAggregate Cloud Function — the app
+     * only reads. A single query returns everything the by-product dashboard
+     * view needs (no per-product lookups required).
+     *
+     * Returns aggregates sorted by SKU. Zero-quantity aggregates are still
+     * included (the function deletes zero entries from byLocation but may
+     * leave totalQuantity = 0 entries around — filtering happens in the VM).
+     */
+    suspend fun getAllSkuAggregates(): Result<List<InventorySkuAggregate>> {
+        return try {
+            val ref = companyDoc()?.collection("inventory_sku")
+                ?: return Result.failure(Exception("Not logged in"))
+            val snap = ref.get().await()
+            val list = snap.documents.mapNotNull { doc ->
+                @Suppress("UNCHECKED_CAST")
+                val byLoc = (doc.get("byLocation") as? Map<String, Any>)
+                    ?.mapValues { (it.value as? Number)?.toInt() ?: 0 }
+                    ?: emptyMap()
+                InventorySkuAggregate(
+                    productId = doc.getString("productId") ?: doc.id,
+                    sku = doc.getString("sku") ?: "",
+                    totalQuantity = (doc.getLong("totalQuantity") ?: 0L).toInt(),
+                    byLocation = byLoc,
+                    lastComputedAt = doc.getTimestamp("lastComputedAt")
+                )
+            }.sortedBy { it.sku }
+            Result.success(list)
+        } catch (e: Exception) { Result.failure(e) }
+    }
+
+    /**
+     * All units currently in a specific bin. Used by the by-location
+     * dashboard view — pick a bin, see what's in it.
+     *
+     * Filters by currentBinId (unique per bin), not currentBinCode, since
+     * bin codes are meant to be unique but the ID is the guaranteed one.
+     */
+    suspend fun getUnitsInBin(binId: String): Result<List<InventoryUnit>> {
+        return try {
+            val ref = companyDoc()?.collection("inventory_units")
+                ?: return Result.failure(Exception("Not logged in"))
+            val snap = ref.whereEqualTo("currentBinId", binId).get().await()
+            val list = snap.documents.mapNotNull { doc ->
+                InventoryUnit(
+                    epc = doc.id,
+                    productId = doc.getString("productId") ?: "",
+                    sku = doc.getString("sku") ?: "",
+                    serialNumber = doc.getString("serialNumber") ?: "",
+                    currentWarehouseId = doc.getString("currentWarehouseId") ?: "",
+                    currentRackId = doc.getString("currentRackId") ?: "",
+                    currentBinId = doc.getString("currentBinId") ?: "",
+                    currentBinCode = doc.getString("currentBinCode") ?: "",
+                    status = doc.getString("status") ?: "in_stock",
+                    inwardedAt = doc.getTimestamp("inwardedAt"),
+                    lastMovedAt = doc.getTimestamp("lastMovedAt"),
+                    dispatchedAt = doc.getTimestamp("dispatchedAt")
+                )
+            }.sortedBy { it.sku }
+            Result.success(list)
+        } catch (e: Exception) { Result.failure(e) }
+    }
 }

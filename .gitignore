@@ -1,37 +1,49 @@
+﻿# --- Android / Gradle ---
 *.iml
-.gradle
-/local.properties
-/.idea/caches
-/.idea/libraries
-/.idea/modules.xml
-/.idea/workspace.xml
-/.idea/navEditor.xml
-/.idea/assetWizardSettings.xml
-.DS_Store
+.gradle/
 /build
 /captures
+**/build/
 .externalNativeBuild
 .cxx
-local.properties
-# Android Studio
+
+# --- Android Studio / IntelliJ ---
 .idea/
-*.iml
 
-# Build files
-**/build/
-
-# Local config
+# --- Local config (per-machine, never in repo) ---
 local.properties
 
-# OS files
+# --- OS files ---
 .DS_Store
 Thumbs.db
 
-# Logs
+# --- Logs ---
 *.log
 
-# Keystore files (never commit these!)
+# --- Secrets: signing keys ---
 *.jks
 *.keystore
 
-app/google-services.json
+# --- Secrets: Firebase / Google Cloud ---
+# The Android app Firebase config (currently tracked; see notes).
+# To untrack later: uncomment the next line and run
+#   git rm --cached app/google-services.json
+# app/google-services.json
+
+# Google Cloud service account keys - full admin access.
+# NEVER commit these under any circumstances.
+**/serviceAccountKey.json
+*-firebase-adminsdk-*.json
+
+# --- Cloud Functions ---
+functions/node_modules/
+functions/.env
+functions/.env.local
+functions/npm-debug.log
+
+# --- Admin scripts ---
+scripts/node_modules/
+
+# --- Node.js (general catch-all) ---
+node_modules/
+*.local

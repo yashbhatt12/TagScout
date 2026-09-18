@@ -3,6 +3,7 @@ package com.snainfotech.tagscout.data.wms
 import com.google.firebase.Timestamp
 import com.google.firebase.auth.FirebaseAuth
 import com.google.firebase.firestore.FirebaseFirestore
+import com.snainfotech.tagscout.data.auth.AuthReady
 import kotlinx.coroutines.tasks.await
 
 /**
@@ -19,9 +20,10 @@ class ProductRepository {
     private val firestore = FirebaseFirestore.getInstance()
     private val auth = FirebaseAuth.getInstance()
 
-    private fun companyId(): String? = auth.currentUser?.uid
+    /** Uses AuthReady to avoid the startup race where currentUser is briefly null. */
+    private suspend fun companyId(): String? = AuthReady.awaitUid()
 
-    private fun productsRef() = companyId()?.let {
+    private suspend fun productsRef() = companyId()?.let {
         firestore.collection("companies").document(it).collection("products")
     }
 

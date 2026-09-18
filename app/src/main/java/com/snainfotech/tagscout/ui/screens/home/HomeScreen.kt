@@ -41,13 +41,14 @@ fun HomeScreen(
     onConnectDeviceClick: () -> Unit = {},
     onQuickScanClick: () -> Unit = {},
     onInventoryClick: () -> Unit = {},
-    onPickOrderClick: () -> Unit = {},
     onOrderPickingClick: () -> Unit = {},
+    onPickOrderClick: () -> Unit = {},
     onWriteTagClick: () -> Unit = {},
     onKillTagClick: () -> Unit = {},
     onLocateTagClick: () -> Unit = {},
     onShopClick: () -> Unit = {},
     onWmsClick: () -> Unit = {},
+    onTagOperationsClick: () -> Unit = {},
     onDeviceConfigClick: () -> Unit = {}
 ) {
     Column(
@@ -97,8 +98,8 @@ fun HomeScreen(
                 else -> { /* no banner for Connected or Charging */ }
             }
 
-            // Feature buttons
-            // Feature buttons
+            // Feature buttons — reorganized: scan workflows consolidated
+            // under Tag Operations, which opens its own submenu.
             FeatureButton(
                 icon = R.drawable.ic_connect,
                 title = "Connect Device",
@@ -107,73 +108,25 @@ fun HomeScreen(
                 onClick = onConnectDeviceClick
             )
             FeatureButton(
-                icon = R.drawable.ic_scan,
-                title = "Quick Scan",
-                description = "Scan and identify tags",
-                enabled = deviceState.isConnected,
-                onClick = onQuickScanClick
-            )
-
-            FeatureButton(
-                icon = R.drawable.ic_inventory,
-                title = "Inventory by File",
-                description = "Match tags against inventory",
-                enabled = deviceState.isConnected,
-                onClick = onInventoryClick
-            )
-            /*
-            FeatureButton(
-                icon = "📦",
-                title = "Pick Order",
-                description = "Fulfill customer orders",
-                enabled = deviceState.isConnected,
-                onClick = onPickOrderClick
-            )
-             */
-            FeatureButton(
-                icon = R.drawable.ic_pick,
-                title = "Pick List",
-                description = "Pick goods against an order file",
-                enabled = deviceState.isConnected,
-                onClick = onOrderPickingClick
-            )
-            /*
-           FeatureButton(
-                icon = R.drawable.ic_write,
-                title = "Write Tag",
-                description= "Change a tag's EPC",
-                enabled = deviceState.isConnected,
-                onClick= onWriteTagClick,
-            )
-
-            FeatureButton(
-                icon = R.drawable.ic_kill,
-                title = "Kill Tag",
-                description= "Permanently Disable a Tag",
-                enabled = deviceState.isConnected,
-                onClick= onKillTagClick,
-            )
-             */
-            FeatureButton(
-                icon = R.drawable.ic_locate,
-                title = "Locate Tag",
-                description = "Find a product by its RFID tag",
-                enabled = deviceState.isConnected,
-                onClick = onLocateTagClick,
-            )
-            FeatureButton(
-                icon = R.drawable.ic_shop,
-                title = "Order Supplies",
-                description = "Purchase RFID labels, scanners & printers",
+                icon = R.drawable.ic_rfid_tag,
+                title = "Tag Operations",
+                description = "Scan, locate, read and write RFID tags",
                 enabled = true,
-                onClick = onShopClick,
+                onClick = onTagOperationsClick
             )
             FeatureButton(
                 icon = R.drawable.ic_inventory,
                 title = "Warehouse Management",
                 description = "Inward, cycle count, pick lists & dispatch",
                 enabled = true,
-                onClick = onWmsClick,
+                onClick = onWmsClick
+            )
+            FeatureButton(
+                icon = R.drawable.ic_shop,
+                title = "Order Supplies",
+                description = "Purchase RFID labels, scanners & printers",
+                enabled = true,
+                onClick = onShopClick
             )
             FeatureButton(
                 icon = R.drawable.ic_config,

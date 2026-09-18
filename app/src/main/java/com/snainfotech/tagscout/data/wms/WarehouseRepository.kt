@@ -3,6 +3,7 @@ package com.snainfotech.tagscout.data.wms
 import com.google.firebase.Timestamp
 import com.google.firebase.auth.FirebaseAuth
 import com.google.firebase.firestore.FirebaseFirestore
+import com.snainfotech.tagscout.data.auth.AuthReady
 import kotlinx.coroutines.tasks.await
 
 /**
@@ -17,10 +18,19 @@ class WarehouseRepository {
     private val firestore = FirebaseFirestore.getInstance()
     private val auth = FirebaseAuth.getInstance()
 
-    /** For now, one user = one company. Later: read from user profile. */
-    private fun companyId(): String? = auth.currentUser?.uid
+    /**
+     * For now, one user = one company. Later: read from user profile.
+     *
+     * Uses AuthReady.awaitUid() rather than auth.currentUser?.uid directly
+     * to avoid a startup race: FirebaseAuth restores its session lazily on
+     * app start, and code that runs immediately after screen entry (like
+     * ViewModel init blocks) can see a null currentUser even when a valid
+     * session is on disk. AuthReady waits for the first IdTokenListener
+     * fire (usually <1 second) before returning.
+     */
+    private suspend fun companyId(): String? = AuthReady.awaitUid()
 
-    private fun companyDoc() = companyId()?.let {
+    private suspend fun companyDoc() = companyId()?.let {
         firestore.collection("companies").document(it)
     }
 
@@ -149,28 +159,48 @@ class WarehouseRepository {
      * Uses a collection group query so it finds the bin regardless of which
      * rack it lives under — the barcode alone is enough.
      */
+    /**
+     * Find a bin by its printed barcode value. Used by GRN validation to
+     * resolve bin codes from the Excel file, and (in future) when a user
+     * scans a bin barcode to identify their location.
+     *
+     * Implementation: walks warehouses → racks → bins scoped to this company.
+     * Uses only path-scoped queries (no collection-group queries), which
+     * plays nicely with per-company Firestore security rules and avoids
+     * needing a special allow rule for collection-group access.
+     *
+     * At v1 scale (single-digit warehouses, low-double-digit racks each),
+     * the walk is trivially cheap — a handful of small reads.
+     */
     suspend fun findBinByCode(binCode: String): Result<Bin?> {
         return try {
-            val cid = companyId() ?: return Result.failure(Exception("Not logged in"))
-            // Collection-group query scoped to this company by filtering warehouseId.
-            // (Requires a Firestore index on binCode + warehouseId — created lazily.)
-            val snap = firestore.collectionGroup("bins")
-                .whereEqualTo("binCode", binCode.trim())
-                .get().await()
-            val bin = snap.documents.firstOrNull { doc ->
-                // Confirm this bin belongs to the current company by checking its path
-                doc.reference.path.startsWith("companies/$cid/")
-            }?.let { doc ->
-                Bin(
-                    id = doc.id,
-                    binCode = doc.getString("binCode") ?: "",
-                    name = doc.getString("name") ?: "",
-                    rackId = doc.getString("rackId") ?: "",
-                    warehouseId = doc.getString("warehouseId") ?: "",
-                    createdAt = doc.getTimestamp("createdAt")
-                )
+            val company = companyDoc() ?: return Result.failure(Exception("Not logged in"))
+            val target = binCode.trim()
+
+            val warehousesSnap = company.collection("warehouses").get().await()
+            for (whDoc in warehousesSnap.documents) {
+                val racksSnap = whDoc.reference.collection("racks").get().await()
+                for (rackDoc in racksSnap.documents) {
+                    val binsSnap = rackDoc.reference.collection("bins")
+                        .whereEqualTo("binCode", target)
+                        .limit(1)
+                        .get().await()
+                    val hit = binsSnap.documents.firstOrNull()
+                    if (hit != null) {
+                        return Result.success(Bin(
+                            id = hit.id,
+                            binCode = hit.getString("binCode") ?: "",
+                            name = hit.getString("name") ?: "",
+                            rackId = hit.getString("rackId") ?: "",
+                            warehouseId = hit.getString("warehouseId") ?: "",
+                            createdAt = hit.getTimestamp("createdAt")
+                        ))
+                    }
+                }
             }
-            Result.success(bin)
-        } catch (e: Exception) { Result.failure(e) }
+            Result.success(null)
+        } catch (e: Exception) {
+            Result.failure(e)
+        }
     }
 }

@@ -119,7 +119,16 @@ import com.snainfotech.tagscout.ui.screens.wms.WmsMenuScreen
 import com.snainfotech.tagscout.ui.screens.wms.WmsDashboardScreen
 import com.snainfotech.tagscout.ui.screens.wms.WmsDashboardViewModel
 import com.snainfotech.tagscout.ui.screens.wms.WmsDashboardViewModelFactory
+import com.snainfotech.tagscout.ui.screens.wms.CycleCountScreen
+import com.snainfotech.tagscout.ui.screens.wms.CycleCountViewModel
+import com.snainfotech.tagscout.ui.screens.wms.CycleCountViewModelFactory
 import com.snainfotech.tagscout.ui.components.SecureScreen
+import androidx.compose.ui.platform.LocalContext
+import com.snainfotech.tagscout.ui.screens.wms.InwardScreen
+import com.snainfotech.tagscout.ui.screens.wms.InwardViewModel
+import com.snainfotech.tagscout.ui.screens.wms.InwardViewModelFactory
+import com.snainfotech.tagscout.ui.screens.tagops.TagOperationsMenuScreen
+
 
 private const val LOW_BATTERY_THRESHOLD = 15
 private const val CRITICAL_BATTERY_THRESHOLD = 5
@@ -154,6 +163,10 @@ object Routes {
     const val WMS_WAREHOUSE_SETUP = "wms_warehouse_setup"
     const val WMS_PRODUCT_CATALOG = "wms_product_catalog"
     const val WMS_DASHBOARD = "wms_dashboard"
+    const val WMS_CYCLE_COUNT = "wms_cycle_count"
+    const val WMS_INWARD = "wms_inward"
+
+    const val TAG_OPERATIONS = "tag_operations"
 }
 
 @Composable
@@ -382,6 +395,7 @@ fun TagScoutNavGraph(
             var userName by rememberSaveable { mutableStateOf("") }
             var userEmail by rememberSaveable { mutableStateOf(authRepo.currentUser?.email ?: "") }
 
+
             LaunchedEffect(Unit) {
                 authRepo.getUserProfile().onSuccess { profile ->
                     userName = profile.name
@@ -403,7 +417,8 @@ fun TagScoutNavGraph(
                     onLocateTagClick = { navController.navigate(Routes.LOCATE_TAG) },
                     onShopClick = { navController.navigate(Routes.SHOP) },
                     onWmsClick = { navController.navigate(Routes.WMS_MENU) },
-                    onDeviceConfigClick = { navController.navigate(Routes.DEVICE_CONFIG) }
+                    onDeviceConfigClick = { navController.navigate(Routes.DEVICE_CONFIG) },
+                    onTagOperationsClick = { navController.navigate(Routes.TAG_OPERATIONS) }
                 )
 
                 Box(
@@ -1313,6 +1328,17 @@ fun TagScoutNavGraph(
             )
         }
 
+        composable(Routes.TAG_OPERATIONS) {
+            val deviceState by sharedHomeViewModel.deviceState.collectAsState()
+            TagOperationsMenuScreen(
+                deviceConnected = deviceState.isConnected,
+                onBackClick = { navController.popBackStack() },
+                onQuickScanClick = { navController.navigate(Routes.QUICK_SCAN) },
+                onInventoryByFileClick = { navController.navigate(Routes.INVENTORY) },
+                onPickListClick = { navController.navigate(Routes.ORDER_PICKING) },
+                onLocateTagClick = { navController.navigate(Routes.LOCATE_TAG) }
+            )
+        }
         // ============================================
         // WMS — Warehouse Management System
         // ============================================
@@ -1321,7 +1347,9 @@ fun TagScoutNavGraph(
                 onBackClick = { navController.popBackStack() },
                 onWarehouseSetupClick = { navController.navigate(Routes.WMS_WAREHOUSE_SETUP) },
                 onProductCatalogClick = { navController.navigate(Routes.WMS_PRODUCT_CATALOG) },
-                onDashboardClick = { navController.navigate(Routes.WMS_DASHBOARD) }
+                onDashboardClick = { navController.navigate(Routes.WMS_DASHBOARD) },
+                onCycleCountClick = { navController.navigate(Routes.WMS_CYCLE_COUNT) },
+                onInwardClick = { navController.navigate(Routes.WMS_INWARD) },
                 // Cycle Count, Pick List, Dispatch remain disabled placeholders.
             )
         }
@@ -1368,6 +1396,44 @@ fun TagScoutNavGraph(
                 onSelectWarehouse = vm::selectWarehouse,
                 onSelectRack = vm::selectRack,
                 onSelectBin = vm::selectBin,
+                onDismissMessage = vm::clearMessage
+            )
+        }
+        composable(Routes.WMS_CYCLE_COUNT) {
+            val app = LocalContext.current.applicationContext as com.snainfotech.tagscout.TagScoutApplication
+            val vm: CycleCountViewModel = viewModel(
+                factory = CycleCountViewModelFactory(app.rfidScanner)
+            )
+            val s by vm.state.collectAsState()
+            CycleCountScreen(
+                state = s,
+                onBackClick = { navController.popBackStack() },
+                onUpdateReference = vm::updateReference,
+                onProceedToPickBin = vm::proceedToPickBin,
+                onSelectWarehouse = vm::selectWarehouse,
+                onSelectRack = vm::selectRack,
+                onSelectBin = vm::selectBin,
+                onProceedToScanning = vm::proceedToScanning,
+                onStartScanning = vm::startScanning,
+                onPauseScanning = vm::pauseScanning,
+                onStopAndReview = vm::stopAndReview,
+                onBackToPickBin = vm::backToPickBin,
+                onCommit = vm::commitReconciliation,
+                onReset = vm::reset,
+                onDismissMessage = vm::clearMessage
+            )
+        }
+        composable(Routes.WMS_INWARD) {
+            val vm: InwardViewModel = viewModel(factory = InwardViewModelFactory())
+            val s by vm.state.collectAsState()
+            val ctx = LocalContext.current
+            InwardScreen(
+                state = s,
+                onBackClick = { navController.popBackStack() },
+                onGrnReferenceChange = vm::updateGrnReference,
+                onFilePicked = { uri, fileName -> vm.onFilePicked(ctx, uri, fileName) },
+                onConfirm = vm::confirmInward,
+                onReset = vm::reset,
                 onDismissMessage = vm::clearMessage
             )
         }

@@ -117,15 +117,15 @@ fun WmsMenuScreen(
             FeatureButton(
                 icon = R.drawable.ic_inventory,
                 title = "Inward (GRN)",
-                description = "Coming soon — receive goods into inventory",
-                enabled = false,
+                description = "Receive goods into inventory via Excel upload",
+                enabled = true,
                 onClick = onInwardClick
             )
             FeatureButton(
                 icon = R.drawable.ic_scan,
                 title = "Cycle Count",
-                description = "Coming soon — stock take by bin or rack",
-                enabled = false,
+                description = "Bin-level stock reconciliation",
+                enabled = true,
                 onClick = onCycleCountClick
             )
             FeatureButton(

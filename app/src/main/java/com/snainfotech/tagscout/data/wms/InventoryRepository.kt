@@ -3,6 +3,7 @@ package com.snainfotech.tagscout.data.wms
 import com.google.firebase.Timestamp
 import com.google.firebase.auth.FirebaseAuth
 import com.google.firebase.firestore.FirebaseFirestore
+import com.snainfotech.tagscout.data.auth.AuthReady
 import kotlinx.coroutines.tasks.await
 
 /**
@@ -22,10 +23,17 @@ class InventoryRepository {
     private val firestore = FirebaseFirestore.getInstance()
     private val auth = FirebaseAuth.getInstance()
 
-    private fun companyId(): String? = auth.currentUser?.uid
+    /** Uses AuthReady to avoid the startup race where currentUser is briefly null. */
+    private suspend fun companyId(): String? = AuthReady.awaitUid()
+
+    /**
+     * Non-suspend userId for stamping into movement records. Only ever called
+     * from inside methods that have already awaited companyId(), so by that
+     * point the currentUser is guaranteed to be present.
+     */
     private fun userId(): String = auth.currentUser?.uid ?: ""
 
-    private fun companyDoc() = companyId()?.let {
+    private suspend fun companyDoc() = companyId()?.let {
         firestore.collection("companies").document(it)
     }
 

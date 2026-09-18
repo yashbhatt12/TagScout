@@ -67,6 +67,56 @@ class ProductCatalogViewModel(
             )
         }
     }
+
+    /**
+     * Update a product's display fields. SKU is intentionally not editable —
+     * changing it would require rewriting every InventoryUnit and Movement
+     * that references it. If a SKU was typoed and has no inventory yet,
+     * delete-and-recreate is the current workaround.
+     */
+    fun updateProduct(
+        productId: String,
+        title: String,
+        description: String,
+        unitOfMeasure: String
+    ) {
+        if (title.isBlank()) {
+            _state.value = _state.value.copy(message = "Title is required"); return
+        }
+        viewModelScope.launch {
+            repo.updateProduct(productId, title, description, unitOfMeasure).fold(
+                onSuccess = {
+                    _state.value = _state.value.copy(message = "Product updated")
+                    loadProducts()
+                },
+                onFailure = { e ->
+                    _state.value = _state.value.copy(
+                        message = e.message ?: "Could not update product"
+                    )
+                }
+            )
+        }
+    }
+
+    /**
+     * Delete a product from the catalog. Repository blocks the delete if any
+     * InventoryUnit still references it — dispatch first, then delete.
+     */
+    fun deleteProduct(product: Product) {
+        viewModelScope.launch {
+            repo.deleteProduct(product.id).fold(
+                onSuccess = {
+                    _state.value = _state.value.copy(message = "Product deleted")
+                    loadProducts()
+                },
+                onFailure = { e ->
+                    _state.value = _state.value.copy(
+                        message = e.message ?: "Could not delete product"
+                    )
+                }
+            )
+        }
+    }
 }
 
 class ProductCatalogViewModelFactory(

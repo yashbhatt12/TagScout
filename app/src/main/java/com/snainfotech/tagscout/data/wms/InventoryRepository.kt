@@ -2,6 +2,7 @@ package com.snainfotech.tagscout.data.wms
 
 import com.google.firebase.Timestamp
 import com.google.firebase.auth.FirebaseAuth
+import com.google.firebase.firestore.AggregateSource
 import com.google.firebase.firestore.FirebaseFirestore
 import com.snainfotech.tagscout.data.auth.AuthReady
 import kotlinx.coroutines.tasks.await
@@ -61,6 +62,62 @@ class InventoryRepository {
                     dispatchedAt = doc.getTimestamp("dispatchedAt")
                 )
             )
+        } catch (e: Exception) { Result.failure(e) }
+    }
+
+    // ── Delete-guard counts ────────────────────────────────────
+    //
+    // Used before deleting a bin/rack/warehouse/product to decide whether the
+    // delete should be blocked. Uses Firestore's aggregation count() so we
+    // pay for one aggregate read regardless of how many units match — cheap
+    // and future-proof for larger warehouses.
+    //
+    // Note: these are advisory. In single-user single-tenant v1 there's no
+    // realistic race between count-and-delete. When the Admin Console lands
+    // and multiple users share a companyId, we'll want to move the guard
+    // into a Cloud Function or transaction for real atomicity.
+
+    /** How many units are currently sitting in this specific bin. */
+    suspend fun countUnitsInBin(binId: String): Result<Long> {
+        return try {
+            val ref = companyDoc()?.collection("inventory_units")
+                ?: return Result.failure(Exception("Not logged in"))
+            val agg = ref.whereEqualTo("currentBinId", binId)
+                .count().get(AggregateSource.SERVER).await()
+            Result.success(agg.count)
+        } catch (e: Exception) { Result.failure(e) }
+    }
+
+    /** How many units are currently under any bin of this rack. */
+    suspend fun countUnitsInRack(rackId: String): Result<Long> {
+        return try {
+            val ref = companyDoc()?.collection("inventory_units")
+                ?: return Result.failure(Exception("Not logged in"))
+            val agg = ref.whereEqualTo("currentRackId", rackId)
+                .count().get(AggregateSource.SERVER).await()
+            Result.success(agg.count)
+        } catch (e: Exception) { Result.failure(e) }
+    }
+
+    /** How many units are currently anywhere under this warehouse. */
+    suspend fun countUnitsInWarehouse(warehouseId: String): Result<Long> {
+        return try {
+            val ref = companyDoc()?.collection("inventory_units")
+                ?: return Result.failure(Exception("Not logged in"))
+            val agg = ref.whereEqualTo("currentWarehouseId", warehouseId)
+                .count().get(AggregateSource.SERVER).await()
+            Result.success(agg.count)
+        } catch (e: Exception) { Result.failure(e) }
+    }
+
+    /** How many units currently reference this product (by productId). */
+    suspend fun countUnitsForProduct(productId: String): Result<Long> {
+        return try {
+            val ref = companyDoc()?.collection("inventory_units")
+                ?: return Result.failure(Exception("Not logged in"))
+            val agg = ref.whereEqualTo("productId", productId)
+                .count().get(AggregateSource.SERVER).await()
+            Result.success(agg.count)
         } catch (e: Exception) { Result.failure(e) }
     }
 

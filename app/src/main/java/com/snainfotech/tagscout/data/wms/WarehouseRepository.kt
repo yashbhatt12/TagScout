@@ -12,8 +12,14 @@ import kotlinx.coroutines.tasks.await
  * All operations scope under the current user's companyId (= userId for now).
  * When Feature 1 (admin) lands, the companyId lookup will resolve via the
  * user's profile instead of being hard-coded to their uid.
+ *
+ * The optional [inventoryRepository] is used by the delete methods to check
+ * that no inventory units exist under the entity being deleted. It defaults
+ * to a fresh InventoryRepository() so existing no-arg callers keep working.
  */
-class WarehouseRepository {
+class WarehouseRepository(
+    private val inventoryRepository: InventoryRepository = InventoryRepository()
+) {
 
     private val firestore = FirebaseFirestore.getInstance()
     private val auth = FirebaseAuth.getInstance()
@@ -69,6 +75,69 @@ class WarehouseRepository {
         } catch (e: Exception) { Result.failure(e) }
     }
 
+    /**
+     * Update a warehouse's display fields (name, address).
+     *
+     * The document ID is immutable by design — renaming a warehouse doesn't
+     * require touching any child documents or inventory records.
+     */
+    suspend fun updateWarehouse(
+        warehouseId: String,
+        name: String,
+        address: String
+    ): Result<Unit> {
+        return try {
+            val ref = companyDoc()?.collection("warehouses")?.document(warehouseId)
+                ?: return Result.failure(Exception("Not logged in"))
+            val data = hashMapOf<String, Any>(
+                "name" to name.trim(),
+                "address" to address.trim(),
+                "updatedAt" to Timestamp.now()
+            )
+            ref.update(data).await()
+            Result.success(Unit)
+        } catch (e: Exception) { Result.failure(e) }
+    }
+
+    /**
+     * Delete a warehouse and everything under it (cascade racks + bins).
+     *
+     * BLOCKED if any inventory unit currently sits anywhere under the warehouse.
+     * If empty, cascades: bins → racks → warehouse in one atomic batch.
+     *
+     * Movement history for this warehouse is left in place as audit trail —
+     * historical records may point to a warehouse ID that no longer exists.
+     */
+    suspend fun deleteWarehouse(warehouseId: String): Result<Unit> {
+        return try {
+            val units = inventoryRepository.countUnitsInWarehouse(warehouseId)
+                .getOrElse { return Result.failure(it) }
+            if (units > 0L) {
+                return Result.failure(Exception(
+                    "Cannot delete warehouse — $units unit(s) still stored under it. Move or dispatch them first."
+                ))
+            }
+
+            val company = companyDoc()
+                ?: return Result.failure(Exception("Not logged in"))
+            val warehouseRef = company.collection("warehouses").document(warehouseId)
+
+            // Collect every rack and bin under this warehouse.
+            val batch = firestore.batch()
+            val racksSnap = warehouseRef.collection("racks").get().await()
+            for (rackDoc in racksSnap.documents) {
+                val binsSnap = rackDoc.reference.collection("bins").get().await()
+                for (binDoc in binsSnap.documents) {
+                    batch.delete(binDoc.reference)
+                }
+                batch.delete(rackDoc.reference)
+            }
+            batch.delete(warehouseRef)
+            batch.commit().await()
+            Result.success(Unit)
+        } catch (e: Exception) { Result.failure(e) }
+    }
+
     // ── Racks ──────────────────────────────────────────────────
 
     suspend fun getRacks(warehouseId: String): Result<List<Rack>> {
@@ -103,6 +172,54 @@ class WarehouseRepository {
             )
             val doc = ref.add(data).await()
             Result.success(doc.id)
+        } catch (e: Exception) { Result.failure(e) }
+    }
+
+    /** Rename a rack. Rack ID stays fixed. */
+    suspend fun updateRack(
+        warehouseId: String,
+        rackId: String,
+        name: String
+    ): Result<Unit> {
+        return try {
+            val ref = companyDoc()
+                ?.collection("warehouses")?.document(warehouseId)
+                ?.collection("racks")?.document(rackId)
+                ?: return Result.failure(Exception("Not logged in"))
+            ref.update(mapOf<String, Any>("name" to name.trim())).await()
+            Result.success(Unit)
+        } catch (e: Exception) { Result.failure(e) }
+    }
+
+    /**
+     * Delete a rack and every bin under it.
+     *
+     * BLOCKED if any inventory unit sits under this rack.
+     * If empty, cascades bins → rack in one atomic batch.
+     */
+    suspend fun deleteRack(warehouseId: String, rackId: String): Result<Unit> {
+        return try {
+            val units = inventoryRepository.countUnitsInRack(rackId)
+                .getOrElse { return Result.failure(it) }
+            if (units > 0L) {
+                return Result.failure(Exception(
+                    "Cannot delete rack — $units unit(s) still stored under it. Move or dispatch them first."
+                ))
+            }
+
+            val rackRef = companyDoc()
+                ?.collection("warehouses")?.document(warehouseId)
+                ?.collection("racks")?.document(rackId)
+                ?: return Result.failure(Exception("Not logged in"))
+
+            val batch = firestore.batch()
+            val binsSnap = rackRef.collection("bins").get().await()
+            for (binDoc in binsSnap.documents) {
+                batch.delete(binDoc.reference)
+            }
+            batch.delete(rackRef)
+            batch.commit().await()
+            Result.success(Unit)
         } catch (e: Exception) { Result.failure(e) }
     }
 
@@ -149,6 +266,63 @@ class WarehouseRepository {
             )
             val doc = ref.add(data).await()
             Result.success(doc.id)
+        } catch (e: Exception) { Result.failure(e) }
+    }
+
+    /**
+     * Update a bin's display name only.
+     *
+     * binCode is intentionally immutable — it's the human-readable identifier
+     * printed on physical bin labels and denormalized into every InventoryUnit
+     * (currentBinCode) and Movement (fromBinCode/toBinCode) that touches this
+     * bin. Renaming the code would require a bulk rewrite across those
+     * collections; if a bin code is genuinely wrong, delete-and-recreate the
+     * empty bin instead. A proper rename workflow may come in a later version.
+     */
+    suspend fun updateBin(
+        warehouseId: String,
+        rackId: String,
+        binId: String,
+        name: String
+    ): Result<Unit> {
+        return try {
+            val ref = companyDoc()
+                ?.collection("warehouses")?.document(warehouseId)
+                ?.collection("racks")?.document(rackId)
+                ?.collection("bins")?.document(binId)
+                ?: return Result.failure(Exception("Not logged in"))
+            ref.update(mapOf<String, Any>("name" to name.trim())).await()
+            Result.success(Unit)
+        } catch (e: Exception) { Result.failure(e) }
+    }
+
+    /**
+     * Delete a bin.
+     *
+     * BLOCKED if any inventory unit currently has currentBinId = this bin.
+     * Movement history is left in place as audit trail.
+     */
+    suspend fun deleteBin(
+        warehouseId: String,
+        rackId: String,
+        binId: String
+    ): Result<Unit> {
+        return try {
+            val units = inventoryRepository.countUnitsInBin(binId)
+                .getOrElse { return Result.failure(it) }
+            if (units > 0L) {
+                return Result.failure(Exception(
+                    "Cannot delete bin — $units unit(s) still stored here. Move or dispatch them first."
+                ))
+            }
+
+            val ref = companyDoc()
+                ?.collection("warehouses")?.document(warehouseId)
+                ?.collection("racks")?.document(rackId)
+                ?.collection("bins")?.document(binId)
+                ?: return Result.failure(Exception("Not logged in"))
+            ref.delete().await()
+            Result.success(Unit)
         } catch (e: Exception) { Result.failure(e) }
     }
 

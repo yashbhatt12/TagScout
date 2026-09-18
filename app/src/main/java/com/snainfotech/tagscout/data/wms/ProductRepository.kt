@@ -14,8 +14,14 @@ import kotlinx.coroutines.tasks.await
  *
  * NOTE: distinct from the Shop's "products" collection (top-level, read-only
  * catalog of RFID hardware for sale). WMS products are the customer's own SKUs.
+ *
+ * The optional [inventoryRepository] is used by deleteProduct to block deletes
+ * when inventory still references this product. Defaults to a fresh instance
+ * so existing no-arg callers keep working.
  */
-class ProductRepository {
+class ProductRepository(
+    private val inventoryRepository: InventoryRepository = InventoryRepository()
+) {
 
     private val firestore = FirebaseFirestore.getInstance()
     private val auth = FirebaseAuth.getInstance()
@@ -100,6 +106,58 @@ class ProductRepository {
             )
             val doc = ref.add(data).await()
             Result.success(doc.id)
+        } catch (e: Exception) { Result.failure(e) }
+    }
+
+    /**
+     * Update a product's display fields (title, description, unitOfMeasure).
+     *
+     * SKU is intentionally immutable — it's denormalized into every
+     * InventoryUnit and Movement that references the product, and renaming
+     * would require a bulk rewrite across those collections. If a SKU was
+     * typed wrong and hasn't been used yet, delete and recreate the product.
+     */
+    suspend fun updateProduct(
+        productId: String,
+        title: String,
+        description: String,
+        unitOfMeasure: String
+    ): Result<Unit> {
+        return try {
+            val ref = productsRef()?.document(productId)
+                ?: return Result.failure(Exception("Not logged in"))
+            val data = hashMapOf<String, Any>(
+                "title" to title.trim(),
+                "description" to description.trim(),
+                "unitOfMeasure" to unitOfMeasure.trim().ifBlank { "pcs" },
+                "updatedAt" to Timestamp.now()
+            )
+            ref.update(data).await()
+            Result.success(Unit)
+        } catch (e: Exception) { Result.failure(e) }
+    }
+
+    /**
+     * Delete a product from the catalog.
+     *
+     * BLOCKED if any InventoryUnit currently references this product's ID.
+     * Movement history is left in place as audit trail — old records may
+     * point to a product ID that no longer exists.
+     */
+    suspend fun deleteProduct(productId: String): Result<Unit> {
+        return try {
+            val units = inventoryRepository.countUnitsForProduct(productId)
+                .getOrElse { return Result.failure(it) }
+            if (units > 0L) {
+                return Result.failure(Exception(
+                    "Cannot delete product — $units unit(s) in inventory still reference this SKU. Dispatch them first."
+                ))
+            }
+
+            val ref = productsRef()?.document(productId)
+                ?: return Result.failure(Exception("Not logged in"))
+            ref.delete().await()
+            Result.success(Unit)
         } catch (e: Exception) { Result.failure(e) }
     }
 }

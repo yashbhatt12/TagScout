@@ -1367,6 +1367,12 @@ fun TagScoutNavGraph(
                 onCreateWarehouse = vm::createWarehouse,
                 onCreateRack = vm::createRack,
                 onCreateBin = vm::createBin,
+                onUpdateWarehouse = vm::updateWarehouse,
+                onDeleteWarehouse = vm::deleteWarehouse,
+                onUpdateRack = vm::updateRack,
+                onDeleteRack = vm::deleteRack,
+                onUpdateBin = vm::updateBin,
+                onDeleteBin = vm::deleteBin,
                 onDismissMessage = vm::clearMessage
             )
         }
@@ -1380,6 +1386,8 @@ fun TagScoutNavGraph(
                 state = s,
                 onBackClick = { navController.popBackStack() },
                 onCreateProduct = vm::createProduct,
+                onUpdateProduct = vm::updateProduct,
+                onDeleteProduct = vm::deleteProduct,
                 onDismissMessage = vm::clearMessage
             )
         }

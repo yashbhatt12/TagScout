@@ -12,15 +12,22 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.MoreVert
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.CircularProgressIndicator
+import androidx.compose.material3.DropdownMenu
+import androidx.compose.material3.DropdownMenuItem
+import androidx.compose.material3.Icon
+import androidx.compose.material3.IconButton
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.OutlinedTextFieldDefaults
@@ -51,6 +58,9 @@ import com.snainfotech.tagscout.ui.theme.LightGray
 import com.snainfotech.tagscout.ui.theme.MediumGray
 import com.snainfotech.tagscout.ui.theme.Primary
 
+// Destructive-action red, used only for the Delete menu label and confirm button.
+private val DestructiveRed = Color(0xFFD32F2F)
+
 @Composable
 fun WarehouseSetupScreen(
     state: WarehouseSetupState,
@@ -60,14 +70,30 @@ fun WarehouseSetupScreen(
     onCreateWarehouse: (String, String) -> Unit,
     onCreateRack: (String) -> Unit,
     onCreateBin: (String, String) -> Unit,
+    onUpdateWarehouse: (id: String, name: String, address: String) -> Unit,
+    onDeleteWarehouse: (Warehouse) -> Unit,
+    onUpdateRack: (id: String, name: String) -> Unit,
+    onDeleteRack: (Rack) -> Unit,
+    onUpdateBin: (id: String, name: String) -> Unit,
+    onDeleteBin: (Bin) -> Unit,
     onDismissMessage: () -> Unit,
     modifier: Modifier = Modifier
 ) {
+    // Add-dialog visibility flags
     var showAddWarehouseDialog by remember { mutableStateOf(false) }
     var showAddRackDialog by remember { mutableStateOf(false) }
     var showAddBinDialog by remember { mutableStateOf(false) }
 
-    // Add Warehouse dialog
+    // Edit/delete state: non-null value means the corresponding dialog is showing,
+    // for that particular entity. Setting back to null closes the dialog.
+    var editingWarehouse by remember { mutableStateOf<Warehouse?>(null) }
+    var deletingWarehouse by remember { mutableStateOf<Warehouse?>(null) }
+    var editingRack by remember { mutableStateOf<Rack?>(null) }
+    var deletingRack by remember { mutableStateOf<Rack?>(null) }
+    var editingBin by remember { mutableStateOf<Bin?>(null) }
+    var deletingBin by remember { mutableStateOf<Bin?>(null) }
+
+    // ── Add Warehouse dialog ───────────────────────────────────
     if (showAddWarehouseDialog) {
         var name by remember { mutableStateOf("") }
         var address by remember { mutableStateOf("") }
@@ -106,7 +132,7 @@ fun WarehouseSetupScreen(
         )
     }
 
-    // Add Rack dialog
+    // ── Add Rack dialog ────────────────────────────────────────
     if (showAddRackDialog) {
         var rackName by remember { mutableStateOf("") }
         AlertDialog(
@@ -141,7 +167,7 @@ fun WarehouseSetupScreen(
         )
     }
 
-    // Add Bin dialog
+    // ── Add Bin dialog ─────────────────────────────────────────
     if (showAddBinDialog) {
         var binCode by remember { mutableStateOf("") }
         var binName by remember { mutableStateOf("") }
@@ -186,6 +212,177 @@ fun WarehouseSetupScreen(
         )
     }
 
+    // ── Edit Warehouse dialog ──────────────────────────────────
+    editingWarehouse?.let { editing ->
+        var name by remember { mutableStateOf(editing.name) }
+        var address by remember { mutableStateOf(editing.address) }
+        AlertDialog(
+            onDismissRequest = { editingWarehouse = null },
+            title = { Text("Edit Warehouse", fontWeight = FontWeight.SemiBold, color = DarkText) },
+            text = {
+                Column {
+                    OutlinedTextField(
+                        value = name, onValueChange = { name = it },
+                        label = { Text("Warehouse Name") },
+                        singleLine = true, modifier = Modifier.fillMaxWidth(),
+                        shape = RoundedCornerShape(8.dp),
+                        colors = OutlinedTextFieldDefaults.colors(focusedBorderColor = Primary, cursorColor = Primary, focusedLabelColor = Primary)
+                    )
+                    Spacer(modifier = Modifier.height(8.dp))
+                    OutlinedTextField(
+                        value = address, onValueChange = { address = it },
+                        label = { Text("Address (optional)") },
+                        modifier = Modifier.fillMaxWidth(),
+                        shape = RoundedCornerShape(8.dp),
+                        colors = OutlinedTextFieldDefaults.colors(focusedBorderColor = Primary, cursorColor = Primary, focusedLabelColor = Primary)
+                    )
+                }
+            },
+            confirmButton = {
+                Button(
+                    onClick = { onUpdateWarehouse(editing.id, name, address); editingWarehouse = null },
+                    colors = ButtonDefaults.buttonColors(containerColor = Primary)
+                ) { Text("Save") }
+            },
+            dismissButton = {
+                TextButton(onClick = { editingWarehouse = null }) { Text("Cancel", color = MediumGray) }
+            }
+        )
+    }
+
+    // ── Edit Rack dialog ───────────────────────────────────────
+    editingRack?.let { editing ->
+        var rackName by remember { mutableStateOf(editing.name) }
+        AlertDialog(
+            onDismissRequest = { editingRack = null },
+            title = { Text("Edit Rack", fontWeight = FontWeight.SemiBold, color = DarkText) },
+            text = {
+                Column {
+                    OutlinedTextField(
+                        value = rackName, onValueChange = { rackName = it },
+                        label = { Text("Rack Name") },
+                        singleLine = true, modifier = Modifier.fillMaxWidth(),
+                        shape = RoundedCornerShape(8.dp),
+                        colors = OutlinedTextFieldDefaults.colors(focusedBorderColor = Primary, cursorColor = Primary, focusedLabelColor = Primary)
+                    )
+                }
+            },
+            confirmButton = {
+                Button(
+                    onClick = { onUpdateRack(editing.id, rackName); editingRack = null },
+                    colors = ButtonDefaults.buttonColors(containerColor = Primary)
+                ) { Text("Save") }
+            },
+            dismissButton = {
+                TextButton(onClick = { editingRack = null }) { Text("Cancel", color = MediumGray) }
+            }
+        )
+    }
+
+    // ── Edit Bin dialog ────────────────────────────────────────
+    editingBin?.let { editing ->
+        var binName by remember { mutableStateOf(editing.name) }
+        AlertDialog(
+            onDismissRequest = { editingBin = null },
+            title = { Text("Edit Bin", fontWeight = FontWeight.SemiBold, color = DarkText) },
+            text = {
+                Column {
+                    // Bin code is immutable — shown here as context only.
+                    Text(
+                        text = "Bin Code: ${editing.binCode}",
+                        fontSize = 12.sp, color = MediumGray,
+                        modifier = Modifier.padding(bottom = 8.dp)
+                    )
+                    OutlinedTextField(
+                        value = binName, onValueChange = { binName = it },
+                        label = { Text("Display Name") },
+                        singleLine = true, modifier = Modifier.fillMaxWidth(),
+                        shape = RoundedCornerShape(8.dp),
+                        colors = OutlinedTextFieldDefaults.colors(focusedBorderColor = Primary, cursorColor = Primary, focusedLabelColor = Primary)
+                    )
+                }
+            },
+            confirmButton = {
+                Button(
+                    onClick = { onUpdateBin(editing.id, binName); editingBin = null },
+                    colors = ButtonDefaults.buttonColors(containerColor = Primary)
+                ) { Text("Save") }
+            },
+            dismissButton = {
+                TextButton(onClick = { editingBin = null }) { Text("Cancel", color = MediumGray) }
+            }
+        )
+    }
+
+    // ── Delete Warehouse confirmation ──────────────────────────
+    deletingWarehouse?.let { target ->
+        AlertDialog(
+            onDismissRequest = { deletingWarehouse = null },
+            title = { Text("Delete warehouse?", fontWeight = FontWeight.SemiBold, color = DarkText) },
+            text = {
+                Text(
+                    "\"${target.name}\" and all its racks and bins will be permanently deleted. " +
+                            "This cannot be undone. If any inventory is still stored under it, the delete will be blocked."
+                )
+            },
+            confirmButton = {
+                Button(
+                    onClick = { onDeleteWarehouse(target); deletingWarehouse = null },
+                    colors = ButtonDefaults.buttonColors(containerColor = DestructiveRed)
+                ) { Text("Delete") }
+            },
+            dismissButton = {
+                TextButton(onClick = { deletingWarehouse = null }) { Text("Cancel", color = MediumGray) }
+            }
+        )
+    }
+
+    // ── Delete Rack confirmation ───────────────────────────────
+    deletingRack?.let { target ->
+        AlertDialog(
+            onDismissRequest = { deletingRack = null },
+            title = { Text("Delete rack?", fontWeight = FontWeight.SemiBold, color = DarkText) },
+            text = {
+                Text(
+                    "\"${target.name}\" and all its bins will be permanently deleted. " +
+                            "This cannot be undone. If any inventory is still stored under it, the delete will be blocked."
+                )
+            },
+            confirmButton = {
+                Button(
+                    onClick = { onDeleteRack(target); deletingRack = null },
+                    colors = ButtonDefaults.buttonColors(containerColor = DestructiveRed)
+                ) { Text("Delete") }
+            },
+            dismissButton = {
+                TextButton(onClick = { deletingRack = null }) { Text("Cancel", color = MediumGray) }
+            }
+        )
+    }
+
+    // ── Delete Bin confirmation ────────────────────────────────
+    deletingBin?.let { target ->
+        AlertDialog(
+            onDismissRequest = { deletingBin = null },
+            title = { Text("Delete bin?", fontWeight = FontWeight.SemiBold, color = DarkText) },
+            text = {
+                Text(
+                    "Bin \"${target.binCode}\" will be permanently deleted. " +
+                            "This cannot be undone. If any inventory is still stored in it, the delete will be blocked."
+                )
+            },
+            confirmButton = {
+                Button(
+                    onClick = { onDeleteBin(target); deletingBin = null },
+                    colors = ButtonDefaults.buttonColors(containerColor = DestructiveRed)
+                ) { Text("Delete") }
+            },
+            dismissButton = {
+                TextButton(onClick = { deletingBin = null }) { Text("Cancel", color = MediumGray) }
+            }
+        )
+    }
+
     Box(modifier = modifier.fillMaxSize()) {
         Column(
             modifier = Modifier
@@ -221,7 +418,9 @@ fun WarehouseSetupScreen(
                                 title = wh.name,
                                 subtitle = wh.address.ifBlank { null },
                                 selected = state.selectedWarehouse?.id == wh.id,
-                                onClick = { onSelectWarehouse(wh) }
+                                onClick = { onSelectWarehouse(wh) },
+                                onEdit = { editingWarehouse = wh },
+                                onDelete = { deletingWarehouse = wh }
                             )
                         }
                     }
@@ -243,7 +442,9 @@ fun WarehouseSetupScreen(
                                     title = rack.name,
                                     subtitle = null,
                                     selected = state.selectedRack?.id == rack.id,
-                                    onClick = { onSelectRack(rack) }
+                                    onClick = { onSelectRack(rack) },
+                                    onEdit = { editingRack = rack },
+                                    onDelete = { deletingRack = rack }
                                 )
                             }
                         }
@@ -262,7 +463,11 @@ fun WarehouseSetupScreen(
                             EmptyHint("No bins yet in this rack.")
                         } else {
                             state.bins.forEach { bin ->
-                                BinRow(bin)
+                                BinRow(
+                                    bin = bin,
+                                    onEdit = { editingBin = bin },
+                                    onDelete = { deletingBin = bin }
+                                )
                             }
                         }
                     }
@@ -350,7 +555,9 @@ private fun SelectableRow(
     title: String,
     subtitle: String?,
     selected: Boolean,
-    onClick: () -> Unit
+    onClick: () -> Unit,
+    onEdit: () -> Unit,
+    onDelete: () -> Unit
 ) {
     val borderColor = if (selected) Amber else BorderGray
     val bgColor = if (selected) Amber.copy(alpha = 0.08f) else Color.Transparent
@@ -362,7 +569,7 @@ private fun SelectableRow(
             .background(bgColor)
             .border(1.dp, borderColor, RoundedCornerShape(6.dp))
             .clickable(onClick = onClick)
-            .padding(horizontal = 10.dp, vertical = 8.dp),
+            .padding(start = 10.dp, end = 4.dp, top = 4.dp, bottom = 4.dp),
         verticalAlignment = Alignment.CenterVertically
     ) {
         Column(modifier = Modifier.weight(1f)) {
@@ -372,19 +579,27 @@ private fun SelectableRow(
             }
         }
         if (selected) {
-            Text(text = "SELECTED", fontSize = 9.sp, color = Amber, fontWeight = FontWeight.Bold)
+            Text(
+                text = "SELECTED", fontSize = 9.sp, color = Amber, fontWeight = FontWeight.Bold,
+                modifier = Modifier.padding(end = 4.dp)
+            )
         }
+        RowOverflowMenu(onEdit = onEdit, onDelete = onDelete)
     }
 }
 
 @Composable
-private fun BinRow(bin: Bin) {
+private fun BinRow(
+    bin: Bin,
+    onEdit: () -> Unit,
+    onDelete: () -> Unit
+) {
     Row(
         modifier = Modifier
             .fillMaxWidth()
             .padding(vertical = 3.dp)
             .border(1.dp, BorderGray, RoundedCornerShape(6.dp))
-            .padding(horizontal = 10.dp, vertical = 8.dp),
+            .padding(start = 10.dp, end = 4.dp, top = 4.dp, bottom = 4.dp),
         verticalAlignment = Alignment.CenterVertically
     ) {
         Column(modifier = Modifier.weight(1f)) {
@@ -392,6 +607,46 @@ private fun BinRow(bin: Bin) {
             if (bin.name.isNotBlank() && bin.name != bin.binCode) {
                 Text(text = bin.name, fontSize = 10.sp, color = MediumGray)
             }
+        }
+        RowOverflowMenu(onEdit = onEdit, onDelete = onDelete)
+    }
+}
+
+/**
+ * The three-dot (⋮) menu shown at the right of every entity row.
+ *
+ * The IconButton has its own hit target, so tapping the menu does not
+ * bubble up to trigger the row's select-onClick handler.
+ */
+@Composable
+private fun RowOverflowMenu(
+    onEdit: () -> Unit,
+    onDelete: () -> Unit
+) {
+    var expanded by remember { mutableStateOf(false) }
+    Box {
+        IconButton(
+            onClick = { expanded = true },
+            modifier = Modifier.size(32.dp)
+        ) {
+            Icon(
+                imageVector = Icons.Filled.MoreVert,
+                contentDescription = "Options",
+                tint = MediumGray
+            )
+        }
+        DropdownMenu(
+            expanded = expanded,
+            onDismissRequest = { expanded = false }
+        ) {
+            DropdownMenuItem(
+                text = { Text("Edit", color = DarkText) },
+                onClick = { expanded = false; onEdit() }
+            )
+            DropdownMenuItem(
+                text = { Text("Delete", color = DestructiveRed) },
+                onClick = { expanded = false; onDelete() }
+            )
         }
     }
 }

@@ -1,6 +1,7 @@
 package com.snainfotech.tagscout
 
 import android.app.Application
+import com.google.firebase.crashlytics.FirebaseCrashlytics
 import com.snainfotech.tagscout.data.AppDatabase
 import com.snainfotech.tagscout.data.repository.DeviceRepository
 import com.snainfotech.tagscout.data.repository.InventoryScanRepository
@@ -8,6 +9,16 @@ import com.snainfotech.tagscout.data.repository.QuickScanRepository
 import com.snainfotech.tagscout.data.repository.SettingsRepository
 
 class TagScoutApplication : Application() {
+
+    override fun onCreate() {
+        super.onCreate()
+        // Crashlytics: enable reporting only in release builds. Dev-side
+        // crashes and stack traces from active development would otherwise
+        // pollute the production console. Toggle here rather than at the
+        // Gradle level so the plugin stays uniformly applied across variants
+        // (mapping-file uploads etc. are still handled per build type).
+        FirebaseCrashlytics.getInstance().isCrashlyticsCollectionEnabled = !BuildConfig.DEBUG
+    }
 
     // Database (created when first accessed)
     private val database by lazy {

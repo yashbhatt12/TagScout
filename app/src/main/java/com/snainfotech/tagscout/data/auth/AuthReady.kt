@@ -1,6 +1,7 @@
 package com.snainfotech.tagscout.data.auth
 
 import com.google.firebase.auth.FirebaseAuth
+import com.google.firebase.crashlytics.FirebaseCrashlytics
 import kotlinx.coroutines.suspendCancellableCoroutine
 import kotlinx.coroutines.withTimeoutOrNull
 import kotlin.coroutines.resume
@@ -25,10 +26,26 @@ import kotlin.coroutines.resume
  *   ceiling. If auth genuinely hasn't settled in 5 seconds, we return null
  *   and callers treat it as "not logged in" — which by that point is a fair
  *   conclusion (probably a serious network issue or a corrupted session).
+ *
+ * Crashlytics user identifier:
+ *   Whenever awaitUid() resolves a UID we haven't seen this session, we
+ *   also stamp it onto Firebase Crashlytics via setUserId(). This means any
+ *   crash captured later in the session shows the Firebase UID in the
+ *   Crashlytics console, so we can tell which user hit it. It's a no-op in
+ *   debug builds (Crashlytics collection is disabled in Application.onCreate).
  */
 object AuthReady {
 
     private const val TIMEOUT_MS = 5000L
+
+    /**
+     * Tracks the last UID we forwarded to Crashlytics so we don't spam
+     * setUserId on every awaitUid call (repositories call awaitUid dozens
+     * of times per screen). Not a security-sensitive cache — worst case
+     * we set the same UID twice.
+     */
+    @Volatile
+    private var lastSetUid: String? = null
 
     /**
      * Returns the currently-signed-in user's UID, waiting up to 5 seconds
@@ -43,10 +60,13 @@ object AuthReady {
         val auth = FirebaseAuth.getInstance()
 
         // Fast path: if auth is already settled with a user, return immediately.
-        auth.currentUser?.uid?.let { return it }
+        auth.currentUser?.uid?.let { uid ->
+            attachToCrashlytics(uid)
+            return uid
+        }
 
         // Slower path: wait for the IdTokenListener to fire once.
-        return withTimeoutOrNull(TIMEOUT_MS) {
+        val uid = withTimeoutOrNull(TIMEOUT_MS) {
             suspendCancellableCoroutine<String?> { cont ->
                 val listener = object : com.google.firebase.auth.FirebaseAuth.IdTokenListener {
                     override fun onIdTokenChanged(firebaseAuth: FirebaseAuth) {
@@ -64,6 +84,25 @@ object AuthReady {
                     auth.removeIdTokenListener(listener)
                 }
             }
+        }
+        if (uid != null) attachToCrashlytics(uid)
+        return uid
+    }
+
+    /**
+     * Stamp this UID onto Crashlytics so future crashes show who hit them.
+     * Deduped against lastSetUid to avoid repeated no-op writes. Wrapped in
+     * try/catch because Crashlytics initialization can fail in edge cases
+     * (e.g. missing google-services.json in a stripped variant) and we
+     * absolutely never want this to bubble up and crash a caller.
+     */
+    private fun attachToCrashlytics(uid: String) {
+        if (lastSetUid == uid) return
+        try {
+            FirebaseCrashlytics.getInstance().setUserId(uid)
+            lastSetUid = uid
+        } catch (_: Exception) {
+            // Silent: crash-reporting failure must never break the app.
         }
     }
 }

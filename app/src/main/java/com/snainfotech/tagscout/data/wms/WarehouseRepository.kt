@@ -16,6 +16,18 @@ import kotlinx.coroutines.tasks.await
  * The optional [inventoryRepository] is used by the delete methods to check
  * that no inventory units exist under the entity being deleted. It defaults
  * to a fresh InventoryRepository() so existing no-arg callers keep working.
+ *
+ * Uniqueness rules enforced by this repository (all case-insensitive,
+ * trim-tolerant):
+ *   - Warehouse name: unique within the company
+ *   - Rack name:      unique within its parent warehouse
+ *   - Bin code:       unique across the entire company (bin codes must
+ *                     match printed barcodes and are looked up globally)
+ *
+ * These checks are advisory in single-user v1 — same race caveat as the
+ * inventory-guard in the delete methods. When Feature 1 lands and multiple
+ * users share a companyId, uniqueness should move into a Cloud Function or
+ * transaction with server-side lookups.
  */
 class WarehouseRepository(
     private val inventoryRepository: InventoryRepository = InventoryRepository()
@@ -40,6 +52,108 @@ class WarehouseRepository(
         firestore.collection("companies").document(it)
     }
 
+    // ── Uniqueness helpers ────────────────────────────────────
+    //
+    // All comparisons are case-insensitive and trim leading/trailing
+    // whitespace. Original casing is preserved when documents are written.
+
+    /**
+     * Whether another warehouse in this company shares the given name.
+     * Pass excludeId when checking during an update so the entity being
+     * renamed does not collide with itself.
+     */
+    private suspend fun warehouseNameExists(
+        name: String,
+        excludeId: String? = null
+    ): Result<Boolean> {
+        return try {
+            val ref = companyDoc()?.collection("warehouses")
+                ?: return Result.failure(Exception("Not logged in"))
+            val target = name.trim()
+            val snap = ref.get().await()
+            val hit = snap.documents.any { doc ->
+                val existing = doc.getString("name")?.trim().orEmpty()
+                existing.equals(target, ignoreCase = true) && doc.id != excludeId
+            }
+            Result.success(hit)
+        } catch (e: Exception) { Result.failure(e) }
+    }
+
+    /**
+     * Whether another rack in the same warehouse shares the given name.
+     */
+    private suspend fun rackNameExistsInWarehouse(
+        warehouseId: String,
+        name: String,
+        excludeId: String? = null
+    ): Result<Boolean> {
+        return try {
+            val ref = companyDoc()
+                ?.collection("warehouses")?.document(warehouseId)
+                ?.collection("racks")
+                ?: return Result.failure(Exception("Not logged in"))
+            val target = name.trim()
+            val snap = ref.get().await()
+            val hit = snap.documents.any { doc ->
+                val existing = doc.getString("name")?.trim().orEmpty()
+                existing.equals(target, ignoreCase = true) && doc.id != excludeId
+            }
+            Result.success(hit)
+        } catch (e: Exception) { Result.failure(e) }
+    }
+
+    /**
+     * Location of an existing bin found during a collision check. Used to
+     * build an error message that tells the user WHERE the duplicate lives
+     * so they can find it — bin codes are unique across the whole company,
+     * so the collision may be in a warehouse the user isn't currently
+     * looking at.
+     */
+    private data class ExistingBinLocation(
+        val warehouseName: String,
+        val rackName: String
+    )
+
+    /**
+     * Walks warehouses → racks → bins across the whole company looking for a
+     * bin whose code matches [binCode] case-insensitively. Returns where it
+     * lives, or null if no collision.
+     *
+     * Uses the same path-walk pattern as findBinByCode (no collection-group
+     * queries, so no special security rules needed). Cheap at v1 scale.
+     */
+    private suspend fun findBinCodeCollision(
+        binCode: String,
+        excludeBinId: String? = null
+    ): Result<ExistingBinLocation?> {
+        return try {
+            val company = companyDoc()
+                ?: return Result.failure(Exception("Not logged in"))
+            val target = binCode.trim()
+
+            val warehousesSnap = company.collection("warehouses").get().await()
+            for (whDoc in warehousesSnap.documents) {
+                val racksSnap = whDoc.reference.collection("racks").get().await()
+                for (rackDoc in racksSnap.documents) {
+                    val binsSnap = rackDoc.reference.collection("bins").get().await()
+                    val hit = binsSnap.documents.firstOrNull { binDoc ->
+                        val existing = binDoc.getString("binCode")?.trim().orEmpty()
+                        existing.equals(target, ignoreCase = true) && binDoc.id != excludeBinId
+                    }
+                    if (hit != null) {
+                        return Result.success(
+                            ExistingBinLocation(
+                                warehouseName = whDoc.getString("name").orEmpty(),
+                                rackName = rackDoc.getString("name").orEmpty()
+                            )
+                        )
+                    }
+                }
+            }
+            Result.success(null)
+        } catch (e: Exception) { Result.failure(e) }
+    }
+
     // ── Warehouses ─────────────────────────────────────────────
 
     suspend fun getWarehouses(): Result<List<Warehouse>> {
@@ -62,6 +176,14 @@ class WarehouseRepository(
 
     suspend fun createWarehouse(name: String, address: String): Result<String> {
         return try {
+            val nameExists = warehouseNameExists(name)
+                .getOrElse { return Result.failure(it) }
+            if (nameExists) {
+                return Result.failure(Exception(
+                    "A warehouse named '${name.trim()}' already exists"
+                ))
+            }
+
             val ref = companyDoc()?.collection("warehouses")
                 ?: return Result.failure(Exception("Not logged in"))
             val data = hashMapOf(
@@ -87,6 +209,14 @@ class WarehouseRepository(
         address: String
     ): Result<Unit> {
         return try {
+            val nameExists = warehouseNameExists(name, excludeId = warehouseId)
+                .getOrElse { return Result.failure(it) }
+            if (nameExists) {
+                return Result.failure(Exception(
+                    "A warehouse named '${name.trim()}' already exists"
+                ))
+            }
+
             val ref = companyDoc()?.collection("warehouses")?.document(warehouseId)
                 ?: return Result.failure(Exception("Not logged in"))
             val data = hashMapOf<String, Any>(
@@ -161,6 +291,14 @@ class WarehouseRepository(
 
     suspend fun createRack(warehouseId: String, name: String): Result<String> {
         return try {
+            val nameExists = rackNameExistsInWarehouse(warehouseId, name)
+                .getOrElse { return Result.failure(it) }
+            if (nameExists) {
+                return Result.failure(Exception(
+                    "A rack named '${name.trim()}' already exists in this warehouse"
+                ))
+            }
+
             val ref = companyDoc()
                 ?.collection("warehouses")?.document(warehouseId)
                 ?.collection("racks")
@@ -182,6 +320,14 @@ class WarehouseRepository(
         name: String
     ): Result<Unit> {
         return try {
+            val nameExists = rackNameExistsInWarehouse(warehouseId, name, excludeId = rackId)
+                .getOrElse { return Result.failure(it) }
+            if (nameExists) {
+                return Result.failure(Exception(
+                    "A rack named '${name.trim()}' already exists in this warehouse"
+                ))
+            }
+
             val ref = companyDoc()
                 ?.collection("warehouses")?.document(warehouseId)
                 ?.collection("racks")?.document(rackId)
@@ -252,6 +398,15 @@ class WarehouseRepository(
         binCode: String, name: String
     ): Result<String> {
         return try {
+            val collision = findBinCodeCollision(binCode)
+                .getOrElse { return Result.failure(it) }
+            if (collision != null) {
+                return Result.failure(Exception(
+                    "A bin with code '${binCode.trim()}' already exists " +
+                            "(in ${collision.warehouseName} / ${collision.rackName})"
+                ))
+            }
+
             val ref = companyDoc()
                 ?.collection("warehouses")?.document(warehouseId)
                 ?.collection("racks")?.document(rackId)
@@ -278,6 +433,9 @@ class WarehouseRepository(
      * bin. Renaming the code would require a bulk rewrite across those
      * collections; if a bin code is genuinely wrong, delete-and-recreate the
      * empty bin instead. A proper rename workflow may come in a later version.
+     *
+     * No uniqueness check is needed here — the mutable field (name) is not
+     * required to be unique.
      */
     suspend fun updateBin(
         warehouseId: String,
@@ -327,13 +485,6 @@ class WarehouseRepository(
     }
 
     /**
-     * Find a bin by its printed barcode value. Used when a user scans a bin
-     * label to identify their current location.
-     *
-     * Uses a collection group query so it finds the bin regardless of which
-     * rack it lives under — the barcode alone is enough.
-     */
-    /**
      * Find a bin by its printed barcode value. Used by GRN validation to
      * resolve bin codes from the Excel file, and (in future) when a user
      * scans a bin barcode to identify their location.
@@ -343,8 +494,10 @@ class WarehouseRepository(
      * plays nicely with per-company Firestore security rules and avoids
      * needing a special allow rule for collection-group access.
      *
-     * At v1 scale (single-digit warehouses, low-double-digit racks each),
-     * the walk is trivially cheap — a handful of small reads.
+     * NOTE: this lookup is currently case-sensitive by design — GRN Excel
+     * uploads are expected to match bin codes exactly. The write-time
+     * uniqueness check (findBinCodeCollision) is case-insensitive to prevent
+     * confusingly-similar bin codes from being created in the first place.
      */
     suspend fun findBinByCode(binCode: String): Result<Bin?> {
         return try {

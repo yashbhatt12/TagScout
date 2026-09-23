@@ -18,6 +18,11 @@ import kotlinx.coroutines.tasks.await
  * The optional [inventoryRepository] is used by deleteProduct to block deletes
  * when inventory still references this product. Defaults to a fresh instance
  * so existing no-arg callers keep working.
+ *
+ * Uniqueness rule: SKU is unique within the company, case-insensitively.
+ * "sku-1001" and "SKU-1001" are treated as the same. Original casing is
+ * preserved when written. SKU itself is immutable after create, so the
+ * uniqueness check only runs on createProduct.
  */
 class ProductRepository(
     private val inventoryRepository: InventoryRepository = InventoryRepository()
@@ -31,6 +36,27 @@ class ProductRepository(
 
     private suspend fun productsRef() = companyId()?.let {
         firestore.collection("companies").document(it).collection("products")
+    }
+
+    // ── Uniqueness helper ─────────────────────────────────────
+
+    /**
+     * Whether another product in this company already uses the given SKU,
+     * compared case-insensitively after trimming whitespace. Pass excludeId
+     * to skip a specific product (currently unused — SKU is immutable — but
+     * kept symmetric with the warehouse/rack helpers).
+     */
+    private suspend fun skuExists(sku: String, excludeId: String? = null): Result<Boolean> {
+        return try {
+            val ref = productsRef() ?: return Result.failure(Exception("Not logged in"))
+            val target = sku.trim()
+            val snap = ref.get().await()
+            val hit = snap.documents.any { doc ->
+                val existing = doc.getString("sku")?.trim().orEmpty()
+                existing.equals(target, ignoreCase = true) && doc.id != excludeId
+            }
+            Result.success(hit)
+        } catch (e: Exception) { Result.failure(e) }
     }
 
     // ── Read ───────────────────────────────────────────────────
@@ -86,14 +112,15 @@ class ProductRepository(
         unitOfMeasure: String
     ): Result<String> {
         return try {
-            val ref = productsRef() ?: return Result.failure(Exception("Not logged in"))
-
-            // Enforce SKU uniqueness within the company
-            val existing = ref.whereEqualTo("sku", sku.trim()).limit(1).get().await()
-            if (!existing.isEmpty) {
-                return Result.failure(Exception("A product with SKU '${sku.trim()}' already exists"))
+            // Case-insensitive SKU uniqueness within the company.
+            val duplicate = skuExists(sku).getOrElse { return Result.failure(it) }
+            if (duplicate) {
+                return Result.failure(Exception(
+                    "A product with SKU '${sku.trim()}' already exists"
+                ))
             }
 
+            val ref = productsRef() ?: return Result.failure(Exception("Not logged in"))
             val data = hashMapOf(
                 "sku" to sku.trim(),
                 "title" to title.trim(),
@@ -116,6 +143,7 @@ class ProductRepository(
      * InventoryUnit and Movement that references the product, and renaming
      * would require a bulk rewrite across those collections. If a SKU was
      * typed wrong and hasn't been used yet, delete and recreate the product.
+     * No uniqueness check is needed here since SKU cannot change.
      */
     suspend fun updateProduct(
         productId: String,

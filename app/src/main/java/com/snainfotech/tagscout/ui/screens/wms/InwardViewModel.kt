@@ -7,6 +7,7 @@ import androidx.lifecycle.ViewModelProvider
 import androidx.lifecycle.viewModelScope
 import com.snainfotech.tagscout.data.file.GrnExcelParser
 import com.snainfotech.tagscout.data.wms.GrnService
+import com.snainfotech.tagscout.data.wms.ReferenceGenerator
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
@@ -51,6 +52,37 @@ class InwardViewModel(
 
     private val _state = MutableStateFlow(InwardState())
     val state: StateFlow<InwardState> = _state.asStateFlow()
+
+    init {
+        suggestNextGrn()
+    }
+
+    /**
+     * Ask the reference generator for the next GRN number for the current
+     * year and drop it into state as the pre-filled default. The user is
+     * free to edit or replace it via updateGrnReference().
+     *
+     * Failures here are non-fatal: if the suggestion can't be fetched
+     * (network, auth still settling), the field simply stays blank and the
+     * user can type their own reference. No snackbar noise for this — the
+     * placeholder text still shows an example format.
+     *
+     * Only overwrites the current value if it's blank, so calling this
+     * repeatedly (init + after reset) never clobbers something the user is
+     * mid-typing.
+     */
+    private fun suggestNextGrn() {
+        viewModelScope.launch {
+            ReferenceGenerator.suggestNextGrn().fold(
+                onSuccess = { suggestion ->
+                    if (_state.value.grnReference.isBlank()) {
+                        _state.value = _state.value.copy(grnReference = suggestion)
+                    }
+                },
+                onFailure = { /* silent — leave the field blank */ }
+            )
+        }
+    }
 
     fun updateGrnReference(value: String) {
         _state.value = _state.value.copy(grnReference = value)
@@ -165,15 +197,28 @@ class InwardViewModel(
                     commitError = result.error
                 )
             }
+
+            // Advance the reference-number counter on a fully successful commit
+            // only. Partial or failed commits leave the counter alone, so a
+            // retry can reuse the same number without gaps.
+            //
+            // Bump is fire-and-forget: any failure inside ReferenceGenerator
+            // is swallowed there. Worst case, the next suggestion is off by
+            // one and self-corrects on the following bump.
+            if (result is GrnService.CommitResult.Success) {
+                ReferenceGenerator.bumpGrnCounter(s.grnReference)
+            }
         }
     }
 
     /**
      * Reset back to the initial state — used by "Do another GRN" and by
-     * "Reject file, try again" after a validation failure.
+     * "Reject file, try again" after a validation failure. Also re-runs the
+     * reference suggestion so the field is pre-filled for the next GRN.
      */
     fun reset() {
         _state.value = InwardState()
+        suggestNextGrn()
     }
 }
 

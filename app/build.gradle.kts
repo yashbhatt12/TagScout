@@ -1,3 +1,6 @@
+import java.util.Properties
+import java.io.FileInputStream
+
 plugins {
     alias(libs.plugins.android.application)
     alias(libs.plugins.kotlin.android)
@@ -9,6 +12,26 @@ plugins {
 android {
     namespace = "com.snainfotech.tagscout"
     compileSdk = 35
+
+    // Load release-signing credentials from keystore.properties in the project
+    // root. The file is gitignored — never commit it. Losing the keystore or
+    // its passwords means the app can never be updated on Play Store again.
+    val keystorePropertiesFile = rootProject.file("keystore.properties")
+    val keystoreProperties = Properties()
+    if (keystorePropertiesFile.exists()) {
+        keystoreProperties.load(FileInputStream(keystorePropertiesFile))
+    }
+
+    signingConfigs {
+        create("release") {
+            if (keystorePropertiesFile.exists()) {
+                storeFile = file(keystoreProperties["storeFile"] as String)
+                storePassword = keystoreProperties["storePassword"] as String
+                keyAlias = keystoreProperties["keyAlias"] as String
+                keyPassword = keystoreProperties["keyPassword"] as String
+            }
+        }
+    }
 
     defaultConfig {
         applicationId = "com.snainfotech.tagscout"
@@ -28,6 +51,7 @@ android {
         release {
             // Release builds use the real Bluebird scanner
             buildConfigField("boolean", "USE_REAL_HARDWARE", "true")
+            signingConfig = signingConfigs.getByName("release")
             isMinifyEnabled = true
             isShrinkResources = true
             proguardFiles(

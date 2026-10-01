@@ -47,3 +47,5 @@ scripts/node_modules/
 # --- Node.js (general catch-all) ---
 node_modules/
 *.local
+
+keystore.properties

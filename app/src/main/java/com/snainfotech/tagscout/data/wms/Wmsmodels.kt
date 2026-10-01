@@ -83,7 +83,12 @@ data class Product(
  * status values:
  *   "in_stock"    — sitting in a bin, available
  *   "picked"      — allocated to a pick list but not yet dispatched
- *   "dispatched"  — left the warehouse
+ *   "dispatched"  — left the warehouse via outbound shipping
+ *   "sold"        — sold at a retail counter (jewellery/retail flow)
+ *
+ * Retail / jewellery fields (category, itemCode, price, soldAt, soldBy)
+ * are nullable and populated only for items enrolled via the Jewellery flow.
+ * Existing WMS inventory_units documents keep working with these fields null.
  */
 data class InventoryUnit(
     val epc: String = "",               // the RFID tag EPC (also the document ID)
@@ -97,7 +102,14 @@ data class InventoryUnit(
     val status: String = "in_stock",
     val inwardedAt: Timestamp? = null,
     val lastMovedAt: Timestamp? = null,
-    val dispatchedAt: Timestamp? = null
+    val dispatchedAt: Timestamp? = null,
+
+    // ── Retail / jewellery fields (nullable; only set via Jewellery flow) ──
+    val category: String? = null,       // "jewellery" marks items enrolled via Jewellery
+    val itemCode: String? = null,       // customer's internal item code, e.g. "DR-2451"
+    val price: Double? = null,          // selling price in INR
+    val soldAt: Timestamp? = null,      // set when checkout marks the piece sold
+    val soldBy: String? = null          // userId of cashier who marked sold
 )
 
 /**

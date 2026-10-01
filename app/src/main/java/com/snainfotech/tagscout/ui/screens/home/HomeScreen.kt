@@ -48,6 +48,7 @@ fun HomeScreen(
     onLocateTagClick: () -> Unit = {},
     onShopClick: () -> Unit = {},
     onWmsClick: () -> Unit = {},
+    onJewelleryClick: () -> Unit = {},
     onTagOperationsClick: () -> Unit = {},
     onDeviceConfigClick: () -> Unit = {}
 ) {
@@ -120,6 +121,13 @@ fun HomeScreen(
                 description = "Inward, cycle count, pick lists & dispatch",
                 enabled = true,
                 onClick = onWmsClick
+            )
+            FeatureButton(
+                icon = R.drawable.ic_jewellery,
+                title = "Jewellery",
+                description = "Enroll, checkout and cycle count jewellery pieces",
+                enabled = true,
+                onClick = onJewelleryClick
             )
             FeatureButton(
                 icon = R.drawable.ic_shop,

@@ -50,6 +50,10 @@ import com.snainfotech.tagscout.ui.screens.config.ResetSuccessDialog
 import com.snainfotech.tagscout.ui.screens.connect.ConnectDeviceScreen
 import com.snainfotech.tagscout.ui.screens.connect.ConnectDeviceViewModel
 import com.snainfotech.tagscout.ui.screens.home.HomeScreen
+import com.snainfotech.tagscout.data.manager.ManagerRepository
+import com.snainfotech.tagscout.ui.screens.manager.ManagerAlertsScreen
+import com.snainfotech.tagscout.ui.screens.manager.ManagerAlertsViewModel
+import com.snainfotech.tagscout.ui.screens.manager.ManagerAlertsViewModelFactory
 import com.snainfotech.tagscout.ui.screens.home.HomeViewModel
 import com.snainfotech.tagscout.ui.screens.quickscan.ClearConfirmationDialog
 import com.snainfotech.tagscout.ui.screens.quickscan.QuickScanScreen
@@ -177,6 +181,9 @@ object Routes {
     const val JEWELLERY_MENU = "jewellery_menu"
     const val JEWELLERY_ENROLL = "jewellery_enroll"
     const val JEWELLERY_CHECKOUT = "jewellery_checkout"
+
+    // Manager Alerts (unsold-piece-at-portal notifications)
+    const val MANAGER_ALERTS = "manager_alerts"
 }
 
 @Composable
@@ -428,6 +435,7 @@ fun TagScoutNavGraph(
                     onShopClick = { navController.navigate(Routes.SHOP) },
                     onWmsClick = { navController.navigate(Routes.WMS_MENU) },
                     onJewelleryClick = { navController.navigate(Routes.JEWELLERY_MENU) },
+                    onManagerAlertsClick = { navController.navigate(Routes.MANAGER_ALERTS) },
                     onDeviceConfigClick = { navController.navigate(Routes.DEVICE_CONFIG) },
                     onTagOperationsClick = { navController.navigate(Routes.TAG_OPERATIONS) }
                 )
@@ -1414,6 +1422,23 @@ fun TagScoutNavGraph(
                         }
                     }
                 }
+            )
+        }
+        // ============================================
+        // MANAGER ALERTS — unsold piece at portal
+        // ============================================
+        composable(Routes.MANAGER_ALERTS) {
+            val vm: ManagerAlertsViewModel = viewModel(
+                factory = ManagerAlertsViewModelFactory(ManagerRepository())
+            )
+            val s by vm.state.collectAsState()
+
+            ManagerAlertsScreen(
+                state = s,
+                onBackClick = { navController.popBackStack() },
+                onAlertClick = { alertId -> vm.markRead(alertId) },
+                onClearAllClick = { vm.markAllRead() },
+                onMessageDismissed = { vm.dismissMessage() }
             )
         }
         composable(Routes.WMS_WAREHOUSE_SETUP) {

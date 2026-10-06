@@ -128,6 +128,13 @@ import com.snainfotech.tagscout.ui.screens.wms.InwardScreen
 import com.snainfotech.tagscout.ui.screens.wms.InwardViewModel
 import com.snainfotech.tagscout.ui.screens.wms.InwardViewModelFactory
 import com.snainfotech.tagscout.ui.screens.tagops.TagOperationsMenuScreen
+import com.snainfotech.tagscout.ui.screens.jewellery.JewelleryMenuScreen
+import com.snainfotech.tagscout.ui.screens.jewellery.JewelleryEnrollmentScreen
+import com.snainfotech.tagscout.ui.screens.jewellery.JewelleryCheckoutScreen
+import androidx.compose.runtime.rememberCoroutineScope
+import kotlinx.coroutines.flow.firstOrNull
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.withTimeoutOrNull
 
 
 private const val LOW_BATTERY_THRESHOLD = 15
@@ -167,6 +174,9 @@ object Routes {
     const val WMS_INWARD = "wms_inward"
 
     const val TAG_OPERATIONS = "tag_operations"
+    const val JEWELLERY_MENU = "jewellery_menu"
+    const val JEWELLERY_ENROLL = "jewellery_enroll"
+    const val JEWELLERY_CHECKOUT = "jewellery_checkout"
 }
 
 @Composable
@@ -417,6 +427,7 @@ fun TagScoutNavGraph(
                     onLocateTagClick = { navController.navigate(Routes.LOCATE_TAG) },
                     onShopClick = { navController.navigate(Routes.SHOP) },
                     onWmsClick = { navController.navigate(Routes.WMS_MENU) },
+                    onJewelleryClick = { navController.navigate(Routes.JEWELLERY_MENU) },
                     onDeviceConfigClick = { navController.navigate(Routes.DEVICE_CONFIG) },
                     onTagOperationsClick = { navController.navigate(Routes.TAG_OPERATIONS) }
                 )
@@ -1354,6 +1365,57 @@ fun TagScoutNavGraph(
             )
         }
 
+        // ============================================
+        // Jewellery — Retail module
+        // ============================================
+        composable(Routes.JEWELLERY_MENU) {
+            JewelleryMenuScreen(
+                onBackClick = { navController.popBackStack() },
+                onEnrollClick = { navController.navigate(Routes.JEWELLERY_ENROLL) },
+                onCheckoutClick = { navController.navigate(Routes.JEWELLERY_CHECKOUT) },
+                // Cycle Count will reuse the existing WMS cycle count flow in a later file.
+            )
+        }
+
+        composable(Routes.JEWELLERY_ENROLL) {
+            val app = LocalContext.current.applicationContext as com.snainfotech.tagscout.TagScoutApplication
+            val scope = rememberCoroutineScope()
+            JewelleryEnrollmentScreen(
+                onBackClick = { navController.popBackStack() },
+                onScanTriggered = { onEpc ->
+                    // One-shot scan: start, take first tag (10 s timeout), stop.
+                    scope.launch {
+                        val tag = withTimeoutOrNull(10_000L) {
+                            app.rfidScanner.startScanning().firstOrNull()
+                        }
+                        app.rfidScanner.stopScanning()
+                        if (tag != null) {
+                            onEpc(tag.epc)
+                        }
+                    }
+                }
+            )
+        }
+
+        composable(Routes.JEWELLERY_CHECKOUT) {
+            val app = LocalContext.current.applicationContext as com.snainfotech.tagscout.TagScoutApplication
+            val scope = rememberCoroutineScope()
+            JewelleryCheckoutScreen(
+                onBackClick = { navController.popBackStack() },
+                onScanTriggered = { onEpc ->
+                    // One-shot scan: start, take first tag (10 s timeout), stop.
+                    scope.launch {
+                        val tag = withTimeoutOrNull(10_000L) {
+                            app.rfidScanner.startScanning().firstOrNull()
+                        }
+                        app.rfidScanner.stopScanning()
+                        if (tag != null) {
+                            onEpc(tag.epc)
+                        }
+                    }
+                }
+            )
+        }
         composable(Routes.WMS_WAREHOUSE_SETUP) {
             val vm: WarehouseSetupViewModel = viewModel(
                 factory = WarehouseSetupViewModelFactory(WarehouseRepository())

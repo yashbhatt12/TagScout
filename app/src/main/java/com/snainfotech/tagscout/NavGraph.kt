@@ -135,6 +135,9 @@ import com.snainfotech.tagscout.ui.screens.tagops.TagOperationsMenuScreen
 import com.snainfotech.tagscout.ui.screens.jewellery.JewelleryMenuScreen
 import com.snainfotech.tagscout.ui.screens.jewellery.JewelleryEnrollmentScreen
 import com.snainfotech.tagscout.ui.screens.jewellery.JewelleryCheckoutScreen
+import com.snainfotech.tagscout.ui.screens.jewellery.JewelleryCheckoutViewModel
+import com.snainfotech.tagscout.ui.screens.jewellery.JewelleryCheckoutViewModelFactory
+import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.rememberCoroutineScope
 import kotlinx.coroutines.flow.firstOrNull
 import kotlinx.coroutines.launch
@@ -1407,21 +1410,43 @@ fun TagScoutNavGraph(
 
         composable(Routes.JEWELLERY_CHECKOUT) {
             val app = LocalContext.current.applicationContext as com.snainfotech.tagscout.TagScoutApplication
-            val scope = rememberCoroutineScope()
-            JewelleryCheckoutScreen(
-                onBackClick = { navController.popBackStack() },
-                onScanTriggered = { onEpc ->
-                    // One-shot scan: start, take first tag (10 s timeout), stop.
-                    scope.launch {
-                        val tag = withTimeoutOrNull(10_000L) {
-                            app.rfidScanner.startScanning().firstOrNull()
-                        }
-                        app.rfidScanner.stopScanning()
-                        if (tag != null) {
-                            onEpc(tag.epc)
-                        }
+            val vm: JewelleryCheckoutViewModel = viewModel(factory = JewelleryCheckoutViewModelFactory())
+            val checkoutState by vm.state.collectAsState()
+
+            // Low antenna power for close-range reads only — avoids stray tags
+            // elsewhere in the shop triggering a lookup. Set once on entry;
+            // the scanner lifecycle below drives start/stop based on phase.
+            LaunchedEffect(Unit) {
+                app.rfidScanner.setAntennaPower(1)
+            }
+
+            // Keep the scanner running whenever the screen is waiting for a
+            // tag; stop it in every other phase. The collect block is
+            // automatically cancelled when isWaitingForTag flips to false
+            // or when the composable leaves the composition.
+            LaunchedEffect(checkoutState.isWaitingForTag) {
+                if (checkoutState.isWaitingForTag) {
+                    app.rfidScanner.startScanning().collect { tag ->
+                        vm.onEpcScanned(tag.epc)
                     }
+                } else {
+                    app.rfidScanner.stopScanning()
                 }
+            }
+
+            // Hard safety net: on screen exit, stop the scanner regardless
+            // of phase. Prevents the sled continuing to drain battery if
+            // the user back-navigates mid-flow.
+            DisposableEffect(Unit) {
+                onDispose { app.rfidScanner.stopScanning() }
+            }
+
+            JewelleryCheckoutScreen(
+                state = checkoutState,
+                onBackClick = { navController.popBackStack() },
+                onMarkSoldClick = { vm.confirmSold() },
+                onScanAnotherClick = { vm.clearScan() },
+                onMessageDismissed = { vm.dismissMessage() }
             )
         }
         // ============================================

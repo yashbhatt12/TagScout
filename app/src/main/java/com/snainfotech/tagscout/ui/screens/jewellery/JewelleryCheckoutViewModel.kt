@@ -16,45 +16,58 @@ import kotlinx.coroutines.launch
 import kotlinx.coroutines.tasks.await
 
 /**
+ * Checkout flow phases.
+ *
+ * Scanner lifecycle is driven off this: the NavGraph wrapper keeps the RFID
+ * scanner running whenever phase == WAITING and stops it otherwise. The
+ * screen itself doesn't talk to the scanner at all — it only observes phase
+ * and shows the appropriate UI.
+ */
+enum class CheckoutPhase {
+    WAITING,         // Scanner is running on low antenna power, waiting for a tag.
+    LOOKING_UP,      // Firestore query in flight.
+    FOUND,           // Valid in_stock jewellery piece ready to sell.
+    NOT_FOUND,       // EPC not in inventory_units.
+    NOT_JEWELLERY,   // EPC exists but not category=jewellery.
+    ALREADY_SOLD,    // Jewellery piece but status already "sold".
+    WRONG_STATUS,    // Jewellery piece but status is picked/dispatched/etc.
+    SAVING,          // Mark-sold batch is in flight.
+    SOLD             // Success — big confirmation shown to cashier.
+}
+
+/**
  * State for the Jewellery Checkout / Mark Sold screen.
  *
- * scannedEpc    — populated by a successful scan.
- * lookupStatus  — what happened when we tried to resolve the EPC in Firestore.
- * foundPiece    — the InventoryUnit when lookupStatus is FOUND, null otherwise.
- * isSaving      — true while the sold batch is in flight.
- * errorMessage  — one-shot error for display.
- * successMessage — one-shot success for display.
+ * phase           — drives both the UI and the scanner lifecycle.
+ * scannedEpc      — populated by a successful scan, cleared on reset.
+ * foundPiece      — the InventoryUnit when phase == FOUND or SOLD.
+ * errorMessage    — one-shot error for the Snackbar.
  */
 data class JewelleryCheckoutState(
+    val phase: CheckoutPhase = CheckoutPhase.WAITING,
     val scannedEpc: String = "",
-    val lookupStatus: LookupStatus = LookupStatus.IDLE,
     val foundPiece: InventoryUnit? = null,
-    val isSaving: Boolean = false,
-    val errorMessage: String? = null,
-    val successMessage: String? = null
-)
+    val errorMessage: String? = null
+) {
+    /** True while the scanner should be running on low antenna power. */
+    val isWaitingForTag: Boolean get() = phase == CheckoutPhase.WAITING
 
-/** What happened when we tried to look up the scanned EPC. */
-enum class LookupStatus {
-    IDLE,           // Nothing scanned yet
-    LOOKING_UP,     // Query in flight
-    FOUND,          // Found a valid in_stock jewellery piece — ready to confirm
-    NOT_FOUND,      // EPC not in inventory_units — unenrolled tag
-    NOT_JEWELLERY,  // EPC exists but is not category=jewellery (it's a WMS unit)
-    ALREADY_SOLD,   // EPC exists, is jewellery, but status already "sold"
-    WRONG_STATUS    // EPC exists, is jewellery, but status is something unexpected (picked/dispatched/etc.)
+    /** True while a mark-sold network call is in flight. */
+    val isSaving: Boolean get() = phase == CheckoutPhase.SAVING
 }
 
 /**
  * Jewellery Checkout ViewModel.
  *
  * Flow:
- *   1. Cashier scans the piece at the counter.
- *   2. ViewModel looks up the EPC in inventory_units/{epc}.
- *   3. Based on what's there, we show one of: piece details (ready to confirm),
- *      "already sold", "not enrolled", or "wrong type".
- *   4. On Confirm, we mark the piece sold + write a movement in one batch.
- *   5. On success, screen clears for the next piece.
+ *   1. Screen opens → phase=WAITING → NavGraph starts scanner on low power.
+ *   2. Cashier places piece on reader → scanner emits tag → onEpcScanned().
+ *   3. NavGraph observes phase != WAITING and stops the scanner.
+ *   4. Lookup runs → phase moves to FOUND / NOT_FOUND / ALREADY_SOLD / etc.
+ *   5. On tap of "Mark Sold" → confirmation dialog (owned by the screen).
+ *   6. On dialog confirm → confirmSold() → batch write → phase=SOLD.
+ *   7. Cashier taps "Sell another piece" → clearScan() → phase=WAITING,
+ *      scanner restarts, ready for the next piece.
  */
 class JewelleryCheckoutViewModel : ViewModel() {
 
@@ -64,35 +77,48 @@ class JewelleryCheckoutViewModel : ViewModel() {
     private val _state = MutableStateFlow(JewelleryCheckoutState())
     val state: StateFlow<JewelleryCheckoutState> = _state.asStateFlow()
 
-    /** Called by the screen when a tag has been scanned by the handheld sled. */
+    /**
+     * Called by the screen when a tag has been detected by the sled.
+     *
+     * Idempotent per phase: if we're already past WAITING (e.g. a stray
+     * second tag arrived in the same window before the scanner fully
+     * stopped), we ignore it to avoid clobbering an in-progress lookup
+     * or an already-shown result.
+     */
     fun onEpcScanned(epc: String) {
+        if (_state.value.phase != CheckoutPhase.WAITING) return
+
         val cleaned = epc.uppercase().trim()
         _state.update {
             JewelleryCheckoutState(
-                scannedEpc = cleaned,
-                lookupStatus = LookupStatus.LOOKING_UP
+                phase = CheckoutPhase.LOOKING_UP,
+                scannedEpc = cleaned
             )
         }
         lookupPiece(cleaned)
     }
 
-    /** User tapped Cancel / Scan Different / Clear — reset to idle. */
+    /**
+     * Reset back to WAITING so the scanner restarts for the next piece.
+     * Called when the cashier taps "Scan another piece" / "Sell another",
+     * and used internally after an error.
+     */
     fun clearScan() {
-        _state.update { JewelleryCheckoutState() }
+        _state.update { JewelleryCheckoutState(phase = CheckoutPhase.WAITING) }
     }
 
-    /** Dismisses error/success messages without affecting other state. */
+    /** Dismisses the error snackbar without changing phase. */
     fun dismissMessage() {
-        _state.update { it.copy(errorMessage = null, successMessage = null) }
+        _state.update { it.copy(errorMessage = null) }
     }
 
-    /** Private: fetch the InventoryUnit document and classify the result. */
+    /** Fetches the InventoryUnit and classifies the result into a phase. */
     private fun lookupPiece(epc: String) {
         val userId = auth.currentUser?.uid
         if (userId == null) {
             _state.update {
                 it.copy(
-                    lookupStatus = LookupStatus.IDLE,
+                    phase = CheckoutPhase.WAITING,
                     errorMessage = "Not signed in — please log in again."
                 )
             }
@@ -106,9 +132,7 @@ class JewelleryCheckoutViewModel : ViewModel() {
                     .get().await()
 
                 if (!doc.exists()) {
-                    _state.update {
-                        it.copy(lookupStatus = LookupStatus.NOT_FOUND, foundPiece = null)
-                    }
+                    _state.update { it.copy(phase = CheckoutPhase.NOT_FOUND, foundPiece = null) }
                     return@launch
                 }
 
@@ -116,27 +140,25 @@ class JewelleryCheckoutViewModel : ViewModel() {
                 if (unit == null) {
                     _state.update {
                         it.copy(
-                            lookupStatus = LookupStatus.IDLE,
+                            phase = CheckoutPhase.WAITING,
                             errorMessage = "Could not parse piece data."
                         )
                     }
                     return@launch
                 }
 
-                val status = when {
-                    unit.category != "jewellery" -> LookupStatus.NOT_JEWELLERY
-                    unit.status == "sold" -> LookupStatus.ALREADY_SOLD
-                    unit.status == "in_stock" -> LookupStatus.FOUND
-                    else -> LookupStatus.WRONG_STATUS
+                val nextPhase = when {
+                    unit.category != "jewellery" -> CheckoutPhase.NOT_JEWELLERY
+                    unit.status == "sold" -> CheckoutPhase.ALREADY_SOLD
+                    unit.status == "in_stock" -> CheckoutPhase.FOUND
+                    else -> CheckoutPhase.WRONG_STATUS
                 }
 
-                _state.update {
-                    it.copy(lookupStatus = status, foundPiece = unit)
-                }
+                _state.update { it.copy(phase = nextPhase, foundPiece = unit) }
             } catch (e: Exception) {
                 _state.update {
                     it.copy(
-                        lookupStatus = LookupStatus.IDLE,
+                        phase = CheckoutPhase.WAITING,
                         errorMessage = "Lookup failed: ${e.message ?: "unknown error"}"
                     )
                 }
@@ -145,13 +167,14 @@ class JewelleryCheckoutViewModel : ViewModel() {
     }
 
     /**
-     * Marks the currently-shown piece as sold.
-     * Writes status change + outward movement in a single batch.
+     * Mark the currently-shown piece as sold.
+     * Writes status change + outward movement in a single batch, then moves
+     * to phase=SOLD so the screen can show the big confirmation.
      */
     fun confirmSold() {
         val current = _state.value
         val piece = current.foundPiece
-        if (piece == null || current.lookupStatus != LookupStatus.FOUND) {
+        if (piece == null || current.phase != CheckoutPhase.FOUND) {
             _state.update { it.copy(errorMessage = "No piece ready to mark sold.") }
             return
         }
@@ -162,7 +185,7 @@ class JewelleryCheckoutViewModel : ViewModel() {
             return
         }
 
-        _state.update { it.copy(isSaving = true, errorMessage = null) }
+        _state.update { it.copy(phase = CheckoutPhase.SAVING, errorMessage = null) }
 
         viewModelScope.launch {
             try {
@@ -172,7 +195,6 @@ class JewelleryCheckoutViewModel : ViewModel() {
 
                 val now = Timestamp.now()
 
-                // Partial update to the InventoryUnit — only the sold-related fields change.
                 val unitUpdate: Map<String, Any> = mapOf(
                     "status" to "sold",
                     "soldAt" to now,
@@ -200,15 +222,22 @@ class JewelleryCheckoutViewModel : ViewModel() {
                     batch.set(movementRef, movement)
                 }.await()
 
+                // Keep foundPiece so the SOLD screen can show item details.
+                // Reflect the status change locally so the UI copy is accurate.
+                val soldPiece = piece.copy(
+                    status = "sold",
+                    soldAt = now,
+                    soldBy = userId,
+                    lastMovedAt = now
+                )
                 _state.update {
-                    JewelleryCheckoutState(
-                        successMessage = "Sold ${piece.itemCode} (₹${piece.price?.toInt() ?: 0})"
-                    )
+                    it.copy(phase = CheckoutPhase.SOLD, foundPiece = soldPiece)
                 }
             } catch (e: Exception) {
+                // On failure, drop back to FOUND so the cashier can retry.
                 _state.update {
                     it.copy(
-                        isSaving = false,
+                        phase = CheckoutPhase.FOUND,
                         errorMessage = "Failed to mark sold: ${e.message ?: "unknown error"}"
                     )
                 }

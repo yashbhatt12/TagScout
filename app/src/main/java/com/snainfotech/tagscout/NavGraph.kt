@@ -137,6 +137,8 @@ import com.snainfotech.tagscout.ui.screens.jewellery.JewelleryEnrollmentScreen
 import com.snainfotech.tagscout.ui.screens.jewellery.JewelleryCheckoutScreen
 import com.snainfotech.tagscout.ui.screens.jewellery.JewelleryCheckoutViewModel
 import com.snainfotech.tagscout.ui.screens.jewellery.JewelleryCheckoutViewModelFactory
+import com.snainfotech.tagscout.ui.screens.jewellery.JewelleryEnrollmentViewModel
+import com.snainfotech.tagscout.ui.screens.jewellery.JewelleryEnrollmentViewModelFactory
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.rememberCoroutineScope
 import kotlinx.coroutines.flow.firstOrNull
@@ -1380,8 +1382,10 @@ fun TagScoutNavGraph(
         // Jewellery — Retail module
         // ============================================
         composable(Routes.JEWELLERY_MENU) {
+            val deviceState by sharedHomeViewModel.deviceState.collectAsState()
             JewelleryMenuScreen(
                 onBackClick = { navController.popBackStack() },
+                isReaderConnected = deviceState.isConnected,
                 onEnrollClick = { navController.navigate(Routes.JEWELLERY_ENROLL) },
                 onCheckoutClick = { navController.navigate(Routes.JEWELLERY_CHECKOUT) },
                 // Cycle Count will reuse the existing WMS cycle count flow in a later file.
@@ -1390,21 +1394,48 @@ fun TagScoutNavGraph(
 
         composable(Routes.JEWELLERY_ENROLL) {
             val app = LocalContext.current.applicationContext as com.snainfotech.tagscout.TagScoutApplication
-            val scope = rememberCoroutineScope()
-            JewelleryEnrollmentScreen(
-                onBackClick = { navController.popBackStack() },
-                onScanTriggered = { onEpc ->
-                    // One-shot scan: start, take first tag (10 s timeout), stop.
-                    scope.launch {
-                        val tag = withTimeoutOrNull(10_000L) {
-                            app.rfidScanner.startScanning().firstOrNull()
-                        }
-                        app.rfidScanner.stopScanning()
-                        if (tag != null) {
-                            onEpc(tag.epc)
-                        }
-                    }
+            val vm: JewelleryEnrollmentViewModel = viewModel(factory = JewelleryEnrollmentViewModelFactory())
+            val enrollState by vm.state.collectAsState()
+            val deviceState by sharedHomeViewModel.deviceState.collectAsState()
+
+            // Lower antenna only after a sled is connected. Calling into the
+            // Bluebird SDK without an active Bluetooth session crashes it.
+            LaunchedEffect(deviceState.isConnected) {
+                if (deviceState.isConnected) {
+                    runCatching { app.rfidScanner.setAntennaPower(1) }
+                        .onFailure { android.util.Log.e("JewelleryEnroll", "setAntennaPower failed", it) }
                 }
+            }
+
+            // Scanner runs iff waiting-for-tag AND connected. Flow collection
+            // auto-cancels when either key flips.
+            LaunchedEffect(enrollState.isWaitingForTag, deviceState.isConnected) {
+                if (enrollState.isWaitingForTag && deviceState.isConnected) {
+                    runCatching {
+                        app.rfidScanner.startScanning().collect { tag ->
+                            vm.onEpcScanned(tag.epc)
+                        }
+                    }.onFailure {
+                        android.util.Log.e("JewelleryEnroll", "startScanning failed", it)
+                    }
+                } else {
+                    runCatching { app.rfidScanner.stopScanning() }
+                }
+            }
+
+            // Safety net on exit — guaranteed scanner stop regardless of phase.
+            DisposableEffect(Unit) {
+                onDispose { runCatching { app.rfidScanner.stopScanning() } }
+            }
+
+            JewelleryEnrollmentScreen(
+                state = enrollState,
+                onBackClick = { navController.popBackStack() },
+                onItemCodeChanged = { vm.onItemCodeChanged(it) },
+                onPriceChanged = { vm.onPriceChanged(it) },
+                onSaveClick = { vm.save() },
+                onScanAnotherClick = { vm.clearScan() },
+                onMessageDismissed = { vm.dismissMessage() }
             )
         }
 
@@ -1412,33 +1443,42 @@ fun TagScoutNavGraph(
             val app = LocalContext.current.applicationContext as com.snainfotech.tagscout.TagScoutApplication
             val vm: JewelleryCheckoutViewModel = viewModel(factory = JewelleryCheckoutViewModelFactory())
             val checkoutState by vm.state.collectAsState()
+            val deviceState by sharedHomeViewModel.deviceState.collectAsState()
 
-            // Low antenna power for close-range reads only — avoids stray tags
-            // elsewhere in the shop triggering a lookup. Set once on entry;
-            // the scanner lifecycle below drives start/stop based on phase.
-            LaunchedEffect(Unit) {
-                app.rfidScanner.setAntennaPower(1)
-            }
-
-            // Keep the scanner running whenever the screen is waiting for a
-            // tag; stop it in every other phase. The collect block is
-            // automatically cancelled when isWaitingForTag flips to false
-            // or when the composable leaves the composition.
-            LaunchedEffect(checkoutState.isWaitingForTag) {
-                if (checkoutState.isWaitingForTag) {
-                    app.rfidScanner.startScanning().collect { tag ->
-                        vm.onEpcScanned(tag.epc)
-                    }
-                } else {
-                    app.rfidScanner.stopScanning()
+            // Lower the antenna once a sled is actually connected. Doing this
+            // without a connection crashes the Bluebird SDK — it tries to open
+            // a Bluetooth session that doesn't exist. Also wrapped in try/catch
+            // because the SDK can throw if the connection drops between the
+            // isConnected read and this call.
+            LaunchedEffect(deviceState.isConnected) {
+                if (deviceState.isConnected) {
+                    runCatching { app.rfidScanner.setAntennaPower(1) }
+                        .onFailure { android.util.Log.e("JewelleryCheckout", "setAntennaPower failed", it) }
                 }
             }
 
-            // Hard safety net: on screen exit, stop the scanner regardless
-            // of phase. Prevents the sled continuing to drain battery if
-            // the user back-navigates mid-flow.
+            // Keep the scanner running whenever the screen is waiting for a tag
+            // AND a sled is connected. Flow collection auto-cancels when either
+            // key flips, which also triggers the scanner's own cleanup.
+            LaunchedEffect(checkoutState.isWaitingForTag, deviceState.isConnected) {
+                if (checkoutState.isWaitingForTag && deviceState.isConnected) {
+                    runCatching {
+                        app.rfidScanner.startScanning().collect { tag ->
+                            vm.onEpcScanned(tag.epc)
+                        }
+                    }.onFailure {
+                        android.util.Log.e("JewelleryCheckout", "startScanning failed", it)
+                    }
+                } else {
+                    runCatching { app.rfidScanner.stopScanning() }
+                }
+            }
+
+            // Safety net on exit — stop the scanner regardless of what phase or
+            // connection state we leave in. Swallows exceptions so an SDK error
+            // never prevents screen teardown.
             DisposableEffect(Unit) {
-                onDispose { app.rfidScanner.stopScanning() }
+                onDispose { runCatching { app.rfidScanner.stopScanning() } }
             }
 
             JewelleryCheckoutScreen(

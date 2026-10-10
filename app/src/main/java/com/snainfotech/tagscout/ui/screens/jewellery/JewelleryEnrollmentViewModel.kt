@@ -16,35 +16,68 @@ import kotlinx.coroutines.launch
 import kotlinx.coroutines.tasks.await
 
 /**
+ * Enrollment flow phases.
+ *
+ * Scanner lifecycle: NavGraph keeps the sled scanning on low antenna power
+ * whenever phase == WAITING and stops it otherwise. Mirrors the Checkout
+ * flow so cashier staff see consistent UX across both screens.
+ */
+enum class EnrollmentPhase {
+    WAITING,         // Scanner running on low antenna power, waiting for a tag.
+    LOOKING_UP,      // Verifying the tag isn't already enrolled.
+    NEW_PIECE,       // Fresh tag — form shown for item code + price.
+    DUPLICATE,       // Tag already exists in inventory_units.
+    SAVING,          // Batch write in flight.
+    ENROLLED         // Success — big confirmation shown.
+}
+
+/**
  * State for the Jewellery Enrollment screen.
  *
- * scannedEpc  — populated when the user triggers a scan; empty before any scan.
- * itemCode    — free-text input, customer's own item code (e.g. "DR-2451").
- * price       — free-text input, parsed to Double on save.
- * isSaving    — true while the Firestore batch write is in flight.
- * errorMessage — one-shot error for display (cleared after dismiss).
- * successMessage — one-shot success for display (cleared after dismiss or next scan).
+ * phase            — drives both the UI and the scanner lifecycle.
+ * scannedEpc       — populated on first scan, preserved into NEW_PIECE / ENROLLED.
+ * itemCode / price — form inputs, bound to the NEW_PIECE form.
+ * existingPiece    — populated in DUPLICATE phase so the user can see what the
+ *                    tag is already assigned to.
+ * savedPiece       — populated in ENROLLED phase for the success card.
+ * errorMessage     — one-shot error for the Snackbar.
  */
 data class JewelleryEnrollmentState(
+    val phase: EnrollmentPhase = EnrollmentPhase.WAITING,
     val scannedEpc: String = "",
     val itemCode: String = "",
     val price: String = "",
-    val isSaving: Boolean = false,
-    val errorMessage: String? = null,
-    val successMessage: String? = null
-)
+    val existingPiece: InventoryUnit? = null,
+    val savedPiece: InventoryUnit? = null,
+    val errorMessage: String? = null
+) {
+    /** True while the scanner should be running on low antenna power. */
+    val isWaitingForTag: Boolean get() = phase == EnrollmentPhase.WAITING
+
+    /** True while a save network call is in flight. */
+    val isSaving: Boolean get() = phase == EnrollmentPhase.SAVING
+
+    /** Can Save be tapped? Only in NEW_PIECE with both fields populated. */
+    val canSave: Boolean get() =
+        phase == EnrollmentPhase.NEW_PIECE &&
+                itemCode.isNotBlank() &&
+                price.isNotBlank() &&
+                price.toDoubleOrNull()?.let { it > 0 } == true
+}
 
 /**
  * Jewellery enrollment ViewModel.
  *
  * Flow:
- *   1. User triggers a scan — scannedEpc populated by the screen's RFID callback.
- *   2. User enters itemCode and price.
- *   3. User taps Save — validates, checks EPC uniqueness, writes InventoryUnit + Movement in one batch.
- *   4. On success, form resets so the next piece can be scanned immediately.
- *
- * All writes land under /companies/{companyId}/... where companyId = userId
- * (single-tenant until Feature 1 admin console lands).
+ *   1. Screen opens → phase=WAITING → NavGraph starts scanner on low power.
+ *   2. Cashier places piece on reader → scanner emits tag → onEpcScanned().
+ *   3. phase=LOOKING_UP → check if EPC already in inventory_units.
+ *      → If exists: phase=DUPLICATE with existingPiece populated.
+ *      → If new:   phase=NEW_PIECE with scannedEpc populated and form ready.
+ *   4. Cashier enters itemCode and price → canSave becomes true.
+ *   5. Cashier taps Save → phase=SAVING → batch write.
+ *   6. On success: phase=ENROLLED with savedPiece populated.
+ *   7. Cashier taps "Enroll another" → clearScan() → back to WAITING.
  */
 class JewelleryEnrollmentViewModel : ViewModel() {
 
@@ -54,61 +87,110 @@ class JewelleryEnrollmentViewModel : ViewModel() {
     private val _state = MutableStateFlow(JewelleryEnrollmentState())
     val state: StateFlow<JewelleryEnrollmentState> = _state.asStateFlow()
 
-    /** Called by the screen when a tag has been scanned by the handheld sled. */
+    /**
+     * Called by the screen when a tag has been detected by the sled.
+     *
+     * Idempotent per phase: calls while not in WAITING are ignored to protect
+     * against a stray second read arriving in the ~50 ms window between
+     * phase change and scanner shutdown.
+     */
     fun onEpcScanned(epc: String) {
+        if (_state.value.phase != EnrollmentPhase.WAITING) return
+
+        val cleaned = epc.uppercase().trim()
         _state.update {
-            it.copy(
-                scannedEpc = epc.uppercase().trim(),
-                errorMessage = null,
-                successMessage = null
+            JewelleryEnrollmentState(
+                phase = EnrollmentPhase.LOOKING_UP,
+                scannedEpc = cleaned
             )
         }
+        checkDuplicate(cleaned)
     }
 
     /** User edited the item code field. */
     fun onItemCodeChanged(itemCode: String) {
+        if (_state.value.phase != EnrollmentPhase.NEW_PIECE) return
         _state.update { it.copy(itemCode = itemCode, errorMessage = null) }
     }
 
-    /** User edited the price field. */
+    /** User edited the price field — sanitised to digits + single decimal. */
     fun onPriceChanged(price: String) {
-        // Only accept digits and single decimal point — defensive input handling.
+        if (_state.value.phase != EnrollmentPhase.NEW_PIECE) return
         val sanitized = price.filterIndexed { index, ch ->
             ch.isDigit() || (ch == '.' && !price.substring(0, index).contains('.'))
         }
         _state.update { it.copy(price = sanitized, errorMessage = null) }
     }
 
-    /** Clears the form after a successful save or if user wants to start over. */
-    fun clearForm() {
-        _state.update {
-            JewelleryEnrollmentState()
-        }
+    /**
+     * Reset back to WAITING so the scanner restarts for the next piece.
+     * Called after a successful save ("Enroll another") or user-triggered
+     * reset from any non-WAITING state.
+     */
+    fun clearScan() {
+        _state.update { JewelleryEnrollmentState(phase = EnrollmentPhase.WAITING) }
     }
 
-    /** Dismisses the current error or success message without clearing form. */
+    /** Dismisses the error snackbar without changing phase. */
     fun dismissMessage() {
-        _state.update { it.copy(errorMessage = null, successMessage = null) }
+        _state.update { it.copy(errorMessage = null) }
+    }
+
+    /** Checks whether the scanned EPC already has an InventoryUnit document. */
+    private fun checkDuplicate(epc: String) {
+        val userId = auth.currentUser?.uid
+        if (userId == null) {
+            _state.update {
+                it.copy(
+                    phase = EnrollmentPhase.WAITING,
+                    errorMessage = "Not signed in — please log in again."
+                )
+            }
+            return
+        }
+
+        viewModelScope.launch {
+            try {
+                val doc = db.collection("companies").document(userId)
+                    .collection("inventory_units").document(epc)
+                    .get().await()
+
+                if (doc.exists()) {
+                    val existing = doc.toObject(InventoryUnit::class.java)
+                    _state.update {
+                        it.copy(
+                            phase = EnrollmentPhase.DUPLICATE,
+                            existingPiece = existing
+                        )
+                    }
+                } else {
+                    _state.update {
+                        it.copy(phase = EnrollmentPhase.NEW_PIECE)
+                    }
+                }
+            } catch (e: Exception) {
+                _state.update {
+                    it.copy(
+                        phase = EnrollmentPhase.WAITING,
+                        errorMessage = "Lookup failed: ${e.message ?: "unknown error"}"
+                    )
+                }
+            }
+        }
     }
 
     /**
-     * Validates input, checks EPC uniqueness, writes InventoryUnit + Movement
-     * in a single Firestore batch. On success, resets the form for the next piece.
+     * Save the current form as a new InventoryUnit + inward Movement in one
+     * atomic batch. Uses the EPC as the document ID so uniqueness is
+     * guaranteed at the DB level (even in the unlikely race where another
+     * device enrolls the same tag between our checkDuplicate and this write).
      */
-    fun savePiece() {
-        val current = _state.value
+    fun save() {
+        val s = _state.value
+        if (!s.canSave) return
 
-        // ── Validation ────────────────────────────────────────────────────
-        if (current.scannedEpc.isBlank()) {
-            _state.update { it.copy(errorMessage = "Scan a tag first.") }
-            return
-        }
-        if (current.itemCode.isBlank()) {
-            _state.update { it.copy(errorMessage = "Item code is required.") }
-            return
-        }
-        val priceValue = current.price.toDoubleOrNull()
-        if (priceValue == null || priceValue <= 0.0) {
+        val priceValue = s.price.toDoubleOrNull()
+        if (priceValue == null || priceValue <= 0) {
             _state.update { it.copy(errorMessage = "Enter a valid price.") }
             return
         }
@@ -119,79 +201,56 @@ class JewelleryEnrollmentViewModel : ViewModel() {
             return
         }
 
-        _state.update { it.copy(isSaving = true, errorMessage = null) }
+        _state.update { it.copy(phase = EnrollmentPhase.SAVING, errorMessage = null) }
 
         viewModelScope.launch {
             try {
                 val companyRef = db.collection("companies").document(userId)
-                val unitRef = companyRef.collection("inventory_units").document(current.scannedEpc)
+                val unitRef = companyRef.collection("inventory_units").document(s.scannedEpc)
+                val movementRef = companyRef.collection("movements").document()
 
-                // ── Uniqueness check — EPC must not already exist ─────────
-                val existing = unitRef.get().await()
-                if (existing.exists()) {
-                    _state.update {
-                        it.copy(
-                            isSaving = false,
-                            errorMessage = "Tag ${current.scannedEpc} is already enrolled."
-                        )
-                    }
-                    return@launch
-                }
-
-                // ── Build the InventoryUnit ───────────────────────────────
                 val now = Timestamp.now()
+                val cleanedItemCode = s.itemCode.trim()
+
                 val unit = InventoryUnit(
-                    epc = current.scannedEpc,
-                    productId = "",                 // no SKU model for jewellery pieces
-                    sku = "",
-                    serialNumber = "",
-                    currentWarehouseId = "",
-                    currentRackId = "",
-                    currentBinId = "",
-                    currentBinCode = "",
+                    epc = s.scannedEpc,
                     status = "in_stock",
                     inwardedAt = now,
                     lastMovedAt = now,
-                    dispatchedAt = null,
                     category = "jewellery",
-                    itemCode = current.itemCode.trim(),
-                    price = priceValue,
-                    soldAt = null,
-                    soldBy = null
+                    itemCode = cleanedItemCode,
+                    price = priceValue
                 )
 
-                // ── Build the Movement (append-only ledger entry) ─────────
-                val movementRef = companyRef.collection("movements").document()
                 val movement = Movement(
                     id = movementRef.id,
                     type = "inward",
                     productId = "",
                     sku = "",
-                    epc = current.scannedEpc,
+                    epc = s.scannedEpc,
                     quantity = 1,
                     referenceType = "jewellery_enrollment",
-                    referenceId = current.itemCode.trim(),
+                    referenceId = cleanedItemCode,
                     userId = userId,
                     timestamp = now,
                     notes = "Enrolled via Jewellery flow"
                 )
 
-                // ── Write both in one atomic batch ────────────────────────
                 db.runBatch { batch ->
                     batch.set(unitRef, unit)
                     batch.set(movementRef, movement)
                 }.await()
 
                 _state.update {
-                    JewelleryEnrollmentState(
-                        successMessage = "Enrolled ${current.itemCode.trim()} (₹${priceValue.toInt()})"
-                    )
+                    it.copy(phase = EnrollmentPhase.ENROLLED, savedPiece = unit)
                 }
             } catch (e: Exception) {
+                // On failure, drop back to NEW_PIECE so the cashier can retry
+                // without re-scanning.
                 _state.update {
                     it.copy(
-                        isSaving = false,
-                        errorMessage = "Failed to save: ${e.message ?: "unknown error"}"
+                        phase = EnrollmentPhase.NEW_PIECE,
+                        errorMessage = "Failed to enroll: ${e.message ?: "unknown error"}"
                     )
                 }
             }
@@ -199,7 +258,7 @@ class JewelleryEnrollmentViewModel : ViewModel() {
     }
 }
 
-/** Factory needed because the ViewModel has no args — kept for consistency with other WMS factories. */
+/** Factory kept for consistency with other WMS ViewModels. */
 class JewelleryEnrollmentViewModelFactory : ViewModelProvider.Factory {
     @Suppress("UNCHECKED_CAST")
     override fun <T : ViewModel> create(modelClass: Class<T>): T {

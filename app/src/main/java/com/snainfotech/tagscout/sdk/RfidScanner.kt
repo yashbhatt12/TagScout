@@ -155,6 +155,12 @@ interface RfidScanner {
     // Set antenna power (1-10 typically)
     fun setAntennaPower(power: Int)
 
+    // Set buzzer level on the sled.
+    // Levels: 0 = LOW, 1 = MEDIUM, 2 = HIGH.
+    // Vendor-neutral integer so other sleds can map to their own ranges.
+    // Implementations should trigger an audible confirmation tone at the
+    // new level — the user depends on this to verify the change took effect.
+    fun setBuzzerLevel(level: Int)
     // Is currently scanning?
     fun isScanning(): Boolean
 

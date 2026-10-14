@@ -74,7 +74,7 @@ fun BottomButtonBar(
                 modifier = Modifier.weight(1f)
             )
             ScanButtonState.PAUSED -> ActionButton(
-                text = if (isCriticalBatteryLocked) "🔋 Charging Needed" else "▶ Resume",
+                text = if (isCriticalBatteryLocked) "🔋 Charging Needed" else "▶ Play",
                 enabled = !isCriticalBatteryLocked,
                 enabledColor = SuccessGreen,
                 onClick = onPlayPauseClick,

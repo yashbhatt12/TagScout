@@ -89,14 +89,15 @@ class ConnectDeviceViewModelFactory(
 
 }
 
-// Factory: Creates the DeviceConfigViewModel (no parameters needed)
+// Factory: Creates the DeviceConfigViewModel (needs settings + scanner for buzzer)
 class DeviceConfigViewModelFactory(
-    private val settingsRepository: com.snainfotech.tagscout.data.repository.SettingsRepository
+    private val settingsRepository: com.snainfotech.tagscout.data.repository.SettingsRepository,
+    private val rfidScanner: com.snainfotech.tagscout.sdk.RfidScanner
 ) : ViewModelProvider.Factory {
     override fun <T : ViewModel> create(modelClass: Class<T>): T {
         if (modelClass.isAssignableFrom(com.snainfotech.tagscout.ui.screens.config.DeviceConfigViewModel::class.java)) {
             @Suppress("UNCHECKED_CAST")
-            return com.snainfotech.tagscout.ui.screens.config.DeviceConfigViewModel(settingsRepository) as T
+            return com.snainfotech.tagscout.ui.screens.config.DeviceConfigViewModel(settingsRepository, rfidScanner) as T
         }
         throw IllegalArgumentException("Unknown ViewModel class")
     }

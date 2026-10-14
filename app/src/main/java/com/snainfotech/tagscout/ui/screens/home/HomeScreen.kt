@@ -127,7 +127,7 @@ fun HomeScreen(
                 icon = R.drawable.ic_jewellery,
                 title = "Jewellery",
                 description = "Enroll, checkout and cycle count jewellery pieces",
-                enabled = true,
+                enabled = deviceState.isConnected,
                 onClick = onJewelleryClick
             )
             // Manager Alerts — unsold-piece-at-portal notifications.

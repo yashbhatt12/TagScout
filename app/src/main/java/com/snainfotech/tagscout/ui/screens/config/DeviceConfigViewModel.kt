@@ -47,7 +47,8 @@ data class DeviceConfigState(
 )
 
 class DeviceConfigViewModel(
-    private val settingsRepository: SettingsRepository
+    private val settingsRepository: SettingsRepository,
+    private val rfidScanner: com.snainfotech.tagscout.sdk.RfidScanner
 ) : ViewModel() {
 
     private val _state = MutableStateFlow(DeviceConfigState())
@@ -74,6 +75,16 @@ class DeviceConfigViewModel(
     // ============================================
     fun setBuzzerLevel(level: BuzzerLevel) {
         settingsRepository.setBuzzerLevel(level.label)   // Save to disk
+
+        // Apply to the sled. Map our 3-value enum to the vendor-neutral
+        // 0/1/2 integer the RfidScanner interface uses.
+        val sdkLevel = when (level) {
+            BuzzerLevel.LOW -> 0
+            BuzzerLevel.MEDIUM -> 1
+            BuzzerLevel.HIGH -> 2
+        }
+        rfidScanner.setBuzzerLevel(sdkLevel)
+
         _state.value = _state.value.copy(
             buzzerLevel = level,
             showSettingChangedToast = "✓ Buzzer level changed to ${level.label}"

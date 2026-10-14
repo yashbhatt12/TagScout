@@ -85,7 +85,44 @@ class AuthRepository {
         } catch (e: FirebaseAuthMultiFactorException) {
             LoginResult.MfaRequired(e.resolver)
         } catch (e: Exception) {
-            LoginResult.Failure(e.message ?: "Login failed")
+            LoginResult.Failure(friendlyLoginError(e))
+        }
+    }
+
+    /**
+     * Map Firebase Auth exceptions to user-friendly messages. Raw exception
+     * messages from Firebase are either confusing ("The password is invalid
+     * or the user does not have a password") or security-adverse (telling
+     * the user whether the email exists lets attackers enumerate accounts).
+     *
+     * This maps the common cases to short, non-informative messages and
+     * falls through to a generic error for anything we don't recognise.
+     */
+    private fun friendlyLoginError(e: Exception): String {
+        val raw = (e.message ?: "").lowercase()
+        return when {
+            raw.contains("password is invalid") ||
+                    raw.contains("invalid-credential") ||
+                    raw.contains("wrong-password") ||
+                    raw.contains("invalid_login_credentials") ->
+                "Wrong email or password"
+            raw.contains("no user record") ||
+                    raw.contains("user-not-found") ->
+                "Wrong email or password"
+            raw.contains("user-disabled") ||
+                    raw.contains("disabled") ->
+                "This account has been disabled"
+            raw.contains("too-many-requests") ||
+                    raw.contains("too many unsuccessful") ->
+                "Too many attempts. Try again in a few minutes."
+            raw.contains("network") ||
+                    raw.contains("timeout") ||
+                    raw.contains("unreachable") ->
+                "Network error. Check your connection and try again."
+            raw.contains("invalid-email") ||
+                    raw.contains("badly formatted") ->
+                "Invalid email address"
+            else -> "Login failed. Please try again."
         }
     }
 

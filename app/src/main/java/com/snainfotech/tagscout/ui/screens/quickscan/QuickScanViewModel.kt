@@ -12,7 +12,7 @@ import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.launch
 import com.snainfotech.tagscout.data.repository.SettingsRepository
-
+import kotlinx.coroutines.flow.catch
 // A single tag that was detected during scanning
 data class DetectedTag(
     val epc: String,                // Tag's unique ID (like "3004A1B2C3D4E5F6")
@@ -208,21 +208,36 @@ class QuickScanViewModel(
             }
         }
     }
-    // Listens to the SDK for detected tags and adds them to state
+    // Listens to the SDK for detected tags and adds them to state.
+    // If the sled dies mid-scan the SDK's Flow typically throws, which without
+    // a catch block propagates into viewModelScope and crashes the app on the
+    // next navigation. .catch converts the failure into a graceful disconnect.
     private fun startSdkScan() {
         sdkJob?.cancel()  // Cancel any previous scan
         sdkJob = viewModelScope.launch {
-            scanner.startScanning().collect { scannedTag ->
-                addDetectedTag(scannedTag.epc, scannedTag.rssi)
+            try {
+                scanner.startScanning()
+                    .catch { e ->
+                        android.util.Log.e("QuickScanViewModel", "SDK scan flow failed", e)
+                        handleDeviceDisconnected()
+                    }
+                    .collect { scannedTag ->
+                        addDetectedTag(scannedTag.epc, scannedTag.rssi)
+                    }
+            } catch (e: Exception) {
+                android.util.Log.e("QuickScanViewModel", "startSdkScan outer threw", e)
+                handleDeviceDisconnected()
             }
         }
     }
-    // Called when the ViewModel is destroyed (e.g., user closes app)
+    // Called when the ViewModel is destroyed (e.g. user closes app, navigates
+    // away). Any of these cleanup calls could throw if the sled is already
+    // dead; wrap each so navigation never crashes due to SDK state issues.
     override fun onCleared() {
         super.onCleared()
-        timerJob?.cancel()
-        sdkJob?.cancel()
-        scanner.stopScanning()
+        runCatching { timerJob?.cancel() }
+        runCatching { sdkJob?.cancel() }
+        runCatching { scanner.stopScanning() }
     }
     // ============================================
     // LOW BATTERY HANDLING
@@ -271,10 +286,13 @@ class QuickScanViewModel(
     // ============================================
 
     fun handleDeviceDisconnected() {
-        // Auto-pause the scan
-        timerJob?.cancel()
-        sdkJob?.cancel()
-        scanner.stopScanning()
+        // Defensive — the sled is likely in an unknown state (BT session dropped,
+        // powered off, out of range). Each cleanup call could throw if the SDK's
+        // state is corrupt; wrap each one so a single failure doesn't abort the
+        // rest and leave the ViewModel half-stopped.
+        runCatching { timerJob?.cancel() }
+        runCatching { sdkJob?.cancel() }
+        runCatching { scanner.stopScanning() }
 
         _state.value = _state.value.copy(
             isScanning = false,

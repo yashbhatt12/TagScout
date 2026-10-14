@@ -35,6 +35,7 @@ data class ConnectDeviceState(
     val savedDevices: List<DiscoveredDevice> = emptyList(),
     val newDevices: List<DiscoveredDevice> = emptyList(),
     val currentlyConnectedId: String? = null,
+    val connectingDeviceId: String? = null,   // Device actively being connected to
     val searchQuery: String = "",
     val showPermissionRationale: Boolean = false,
     val showPermissionDeniedDialog: Boolean = false,
@@ -51,6 +52,7 @@ class ConnectDeviceViewModel(
     val state: StateFlow<ConnectDeviceState> = _state.asStateFlow()
 
     private var searchJob: Job? = null
+
 
     init {
         observeSavedDevices()
@@ -82,7 +84,6 @@ class ConnectDeviceViewModel(
             }
         }
     }
-
     // Called from outside to sync with shared connected device state
     fun syncWithConnectedDevice(connectedDeviceId: String?) {
         val updatedSaved = _state.value.savedDevices.map { device ->
@@ -95,7 +96,10 @@ class ConnectDeviceViewModel(
 
         _state.value = _state.value.copy(
             savedDevices = updatedSaved,
-            currentlyConnectedId = connectedDeviceId
+            currentlyConnectedId = connectedDeviceId,
+            // Connection has completed (or shifted) — clear the "connecting"
+            // spinner on whichever row was waiting.
+            connectingDeviceId = null
         )
     }
 
@@ -139,18 +143,28 @@ class ConnectDeviceViewModel(
     // Called when user taps a device to connect to it
     fun connectToDevice(device: DiscoveredDevice) {
         viewModelScope.launch {
+            // Mark this device as being connected to — the screen uses this to
+            // render a spinner on the row, so the user sees something happening
+            // during the 2-3 seconds the SDK takes to establish the Bluetooth
+            // session. Cleared once ConnectionEvent.Connected arrives or if
+            // we abort early (limit reached, exception, etc.).
+            _state.value = _state.value.copy(connectingDeviceId = device.id)
+
             // If it's not saved, try to save it (with limit check)
             if (!device.isSaved) {
                 val saved = deviceRepository.saveNewDevice(
                     deviceId = device.id,
                     deviceName = device.name,
-                    serialNumber = "SN-${device.id}",
-                    firmwareVersion = "v5.90.00.02"
+                    serialNumber = "",
+                    firmwareVersion = ""
                 )
 
                 if (!saved) {
-                    // Limit reached — show dialog
-                    _state.value = _state.value.copy(showLimitReachedDialog = true)
+                    // Limit reached — show dialog, clear connecting state
+                    _state.value = _state.value.copy(
+                        showLimitReachedDialog = true,
+                        connectingDeviceId = null
+                    )
                     return@launch
                 }
 

@@ -47,11 +47,12 @@ import com.snainfotech.tagscout.ui.theme.SuccessText
 fun DeviceListItem(
     device: DiscoveredDevice,
     isCurrentlyConnected: Boolean = false,
+    isConnecting: Boolean = false,
     onClick: () -> Unit,
     onLongPress: () -> Unit = {},
     modifier: Modifier = Modifier
 ) {
-    val isInteractive = device.status != DeviceStatus.OUT_OF_RANGE
+    val isInteractive = device.status != DeviceStatus.OUT_OF_RANGE && !isConnecting
     val isFaded = device.status == DeviceStatus.OUT_OF_RANGE
 
     Card(
@@ -137,12 +138,21 @@ fun DeviceListItem(
                 }
             }
 
-            // Status badge on the right
-            StatusBadge(
-                status = device.status,
-                isSaved = device.isSaved,
-                isCurrentlyConnected = isCurrentlyConnected
-            )
+            // Right-side indicator: spinner while connecting, otherwise the
+            // normal status badge (TAP TO CONNECT / CONNECTED / etc).
+            if (isConnecting) {
+                androidx.compose.material3.CircularProgressIndicator(
+                    modifier = Modifier.width(20.dp).height(20.dp),
+                    strokeWidth = 2.dp,
+                    color = Primary
+                )
+            } else {
+                StatusBadge(
+                    status = device.status,
+                    isSaved = device.isSaved,
+                    isCurrentlyConnected = isCurrentlyConnected
+                )
+            }
         }
     }
 }

@@ -38,18 +38,21 @@ import com.snainfotech.tagscout.ui.components.DeviceStatusComponent
 import com.snainfotech.tagscout.ui.screens.home.ConnectionStatus
 import com.snainfotech.tagscout.ui.theme.BorderGray
 import com.snainfotech.tagscout.ui.theme.DarkText
+import com.snainfotech.tagscout.ui.theme.Disabled
+import com.snainfotech.tagscout.ui.theme.DisabledText
 import com.snainfotech.tagscout.ui.theme.ErrorRed
+import com.snainfotech.tagscout.ui.theme.InfoBg
+import com.snainfotech.tagscout.ui.theme.InfoText
 import com.snainfotech.tagscout.ui.theme.LightGray
 import com.snainfotech.tagscout.ui.theme.MediumGray
 import com.snainfotech.tagscout.ui.theme.Primary
 import com.snainfotech.tagscout.ui.theme.SuccessBg
-import com.snainfotech.tagscout.ui.theme.SuccessGreen
 import com.snainfotech.tagscout.ui.theme.SuccessText
-import com.snainfotech.tagscout.ui.theme.Disabled
-import com.snainfotech.tagscout.ui.theme.DisabledText
-import com.snainfotech.tagscout.ui.theme.InfoBg
-import com.snainfotech.tagscout.ui.theme.InfoText
 
+import androidx.compose.material3.Snackbar
+import androidx.compose.material3.SnackbarHost
+import androidx.compose.material3.SnackbarHostState
+import androidx.compose.runtime.LaunchedEffect
 @Composable
 fun DeviceConfigScreen(
     state: DeviceConfigState,
@@ -66,11 +69,23 @@ fun DeviceConfigScreen(
     onCheckFirmwareClick: () -> Unit = {},
     modifier: Modifier = Modifier
 ) {
-    Column(
-        modifier = modifier
-            .fillMaxSize()
-            .background(LightGray)
-    ) {
+    val snackbarHostState = remember { SnackbarHostState() }
+
+    // Show a Snackbar whenever the ViewModel pushes a confirmation message.
+    // The ViewModel also clears the string after 2s on its own; the Snackbar
+    // dismisses itself around the same time via Material's short duration.
+    LaunchedEffect(state.showSettingChangedToast) {
+        if (state.showSettingChangedToast.isNotEmpty()) {
+            snackbarHostState.showSnackbar(state.showSettingChangedToast)
+        }
+    }
+
+    Box(modifier = modifier.fillMaxSize()) {
+        Column(
+            modifier = Modifier
+                .fillMaxSize()
+                .background(LightGray)
+        ) {
         // Header
         AppHeader(
             title = "TagScout",
@@ -85,7 +100,7 @@ fun DeviceConfigScreen(
             isConnected = isConnected,
             deviceName = deviceName,
             serialNumber = serialNumber,
-            firmwareVersion = state.firmwareVersion,
+            firmwareVersion = firmwareVersion,
             batteryPercent = batteryPercent,
             connectionStatus = if (isConnected) ConnectionStatus.CONNECTED else ConnectionStatus.DISCONNECTED
         )
@@ -147,24 +162,6 @@ fun DeviceConfigScreen(
                 )
             }
 
-            // === SUCCESS TOAST (auto-dismissing) ===
-            if (state.showSettingChangedToast.isNotEmpty()) {
-                Box(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .clip(RoundedCornerShape(8.dp))
-                        .background(SuccessBg)
-                        .padding(12.dp)
-                ) {
-                    Text(
-                        text = state.showSettingChangedToast,
-                        color = SuccessText,
-                        fontSize = 12.sp,
-                        fontWeight = FontWeight.Medium
-                    )
-                }
-            }
-
             // === RESET DEVICE ===
             SettingGroup(
                 icon = "🔄",
@@ -194,7 +191,7 @@ fun DeviceConfigScreen(
             SettingGroup(
                 icon = "📥",
                 label = "Update Firmware",
-                description = "Current: ${state.firmwareVersion}"
+                description = "Current: $firmwareVersion"
             ) {
                 Button(
                     onClick = onCheckFirmwareClick,
@@ -217,6 +214,12 @@ fun DeviceConfigScreen(
 
             Spacer(modifier = Modifier.height(20.dp))
         }
+        }
+
+        SnackbarHost(
+            hostState = snackbarHostState,
+            modifier = Modifier.align(Alignment.BottomCenter)
+        ) { data -> Snackbar(snackbarData = data) }
     }
 }
 

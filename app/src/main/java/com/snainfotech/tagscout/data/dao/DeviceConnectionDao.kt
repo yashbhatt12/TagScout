@@ -31,4 +31,8 @@ interface DeviceConnectionDao {
 
     @Query("SELECT COUNT(*) FROM device_connections WHERE isSaved = 1")
     suspend fun countSavedDevices(): Int
+
+    @Query("DELETE FROM device_connections")
+    suspend fun deleteAll()
+
 }

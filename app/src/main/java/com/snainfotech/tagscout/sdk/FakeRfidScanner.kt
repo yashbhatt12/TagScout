@@ -82,6 +82,11 @@ class FakeRfidScanner : RfidScanner {
         currentPower = power.coerceIn(1, 10)
     }
 
+    override fun setBuzzerLevel(level: Int) {
+        // No-op in the fake implementation. Just log so tests can confirm the
+        // call reached the SDK layer.
+        android.util.Log.d("FakeRfidScanner", "setBuzzerLevel($level)")
+    }
     override fun isScanning(): Boolean = scanning
 
     // ============================================

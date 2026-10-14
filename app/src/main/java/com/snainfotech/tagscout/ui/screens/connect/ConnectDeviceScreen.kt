@@ -150,6 +150,7 @@ fun ConnectDeviceScreen(
                     DeviceListItem(
                         device = device,
                         isCurrentlyConnected = device.id == state.currentlyConnectedId,
+                        isConnecting = device.id == state.connectingDeviceId,
                         onClick = { onDeviceClick(device) },
                         onLongPress = { onDeviceLongPress(device) }
                     )
@@ -167,6 +168,7 @@ fun ConnectDeviceScreen(
                         DeviceListItem(
                             device = device,
                             isCurrentlyConnected = device.id == state.currentlyConnectedId,
+                            isConnecting = device.id == state.connectingDeviceId,
                             onClick = { onDeviceClick(device) },
                             onLongPress = { onDeviceLongPress(device) }
                         )
@@ -180,6 +182,7 @@ fun ConnectDeviceScreen(
                         DeviceListItem(
                             device = device,
                             isCurrentlyConnected = false,
+                            isConnecting = device.id == state.connectingDeviceId,
                             onClick = { onDeviceClick(device) }
                         )
                     }

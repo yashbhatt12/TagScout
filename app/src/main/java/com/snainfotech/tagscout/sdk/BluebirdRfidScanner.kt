@@ -150,53 +150,11 @@ class BluebirdRfidScanner(private val context: Context) : RfidScanner {
                 // recursion (the SDK's blocking calls appear to pump this same message
                 // queue while waiting for a reply). Defer to a fresh dispatch instead.
                 handler?.post {
-                    // These three SD_* calls are blocking/synchronous on the sled's
-                    // single command channel. The SDK manual documents specific error
-                    // codes for calling one while another hasn't settled yet:
-                    //   OTHER_CMD_RUNNING_ERROR (-4), READER_OR_SERIAL_STATUS_ERROR (-7)
-                    // Firing all three back-to-back with no gap was silently tripping
-                    // one of these on serial/firmware, and runCatching().orEmpty() was
-                    // swallowing the failure into a blank string with no visibility.
-                    // Fix: stagger each call and log the real outcome.
-                    val serial = runCatching { getReader().SD_GetSerialNumber() }
-                        .onFailure { e -> android.util.Log.e("BluebirdRfidScanner", "SD_GetSerialNumber threw", e) }
-                        .getOrNull()
-                    android.util.Log.d("BluebirdRfidScanner", "SD_GetSerialNumber returned: $serial")
 
-                    handler?.postDelayed({
-                        val firmware = runCatching { getReader().SD_GetVersion() }
-                            .onFailure { e -> android.util.Log.e("BluebirdRfidScanner", "SD_GetVersion threw", e) }
-                            .getOrNull()
-                        android.util.Log.d("BluebirdRfidScanner", "SD_GetVersion returned: $firmware")
-
-                        connectionCallback?.invoke(
-                            ConnectionEvent.Connected(
-                                deviceName = name,
-                                address = address,
-                                serialNumber = serial.orEmpty(),
-                                firmwareVersion = firmware.orEmpty()
-                            )
-                        )
-
-                        // Fetch the current battery level once, right after connecting.
-                        // The SDK only PUSHES SLED_BATTERY_STATE_CHANGED when the level
-                        // actually changes — on a fresh connection no such event has
-                        // fired yet, so without this proactive query the UI would show
-                        // 0% until the battery happened to tick. Fetch ONCE, not on a
-                        // timer — the vendor's own code notes continuous polling hurts
-                        // inventory performance.
-                        handler?.postDelayed({
-                            val battery = runCatching { getReader().SD_GetBatteryStatus() }
-                                .onFailure { e -> android.util.Log.e("BluebirdRfidScanner", "SD_GetBatteryStatus threw", e) }
-                                .getOrNull()
-                            android.util.Log.d("BluebirdRfidScanner", "SD_GetBatteryStatus returned: $battery")
-                            if (battery != null && battery in 0..100) {
-                                connectionCallback?.invoke(ConnectionEvent.BatteryUpdate(battery))
-                            }
-                        }, 300)
-                    }, 300)
                 }
+
             }
+
             SDConsts.BTCmdMsg.SLED_BT_ACL_DISCONNECTED -> {
                 connectionCallback?.invoke(ConnectionEvent.Disconnected)
                 pendingDisconnectConfirm?.invoke()
@@ -206,13 +164,11 @@ class BluebirdRfidScanner(private val context: Context) : RfidScanner {
             }
         }
     }
-
     private fun handleSdMessage(msg: Message) {
         if (msg.arg1 == SDConsts.SDCmdMsg.SLED_BATTERY_STATE_CHANGED) {
             connectionCallback?.invoke(ConnectionEvent.BatteryUpdate(msg.arg2))
         }
     }
-
     private fun handleRfMessage(msg: Message) {
         when (msg.arg1) {
             SDConsts.RFCmdMsg.INVENTORY, SDConsts.RFCmdMsg.READ -> {
@@ -295,6 +251,21 @@ class BluebirdRfidScanner(private val context: Context) : RfidScanner {
         if (result != SDConsts.RFResult.SUCCESS) {
             android.util.Log.e("BluebirdRfidScanner", "RF_SetRadioPowerState($power) failed with code $result")
         }
+    }
+
+    override fun setBuzzerLevel(level: Int) {
+        // Map the vendor-neutral integer (0/1/2) to Bluebird's SDBuzzerLevel.
+        // Default to MEDIUM for any out-of-range input.
+        val sdkLevel = when (level) {
+            0 -> SDConsts.SDBuzzerLevel.LOW
+            1 -> SDConsts.SDBuzzerLevel.MID
+            2 -> SDConsts.SDBuzzerLevel.HIGH
+            else -> SDConsts.SDBuzzerLevel.MID
+        }
+        val result = runCatching { getReader().SD_SetBuzzerLevel(sdkLevel) }
+            .onFailure { e -> android.util.Log.e("BluebirdRfidScanner", "SD_SetBuzzerLevel threw", e) }
+            .getOrNull()
+        android.util.Log.d("BluebirdRfidScanner", "SD_SetBuzzerLevel($level → $sdkLevel) returned: $result")
     }
 
     override fun isScanning(): Boolean = scanningCallback != null
@@ -551,5 +522,35 @@ class BluebirdRfidScanner(private val context: Context) : RfidScanner {
 
     override fun disconnect() {
         getReader().BT_Disconnect()
+    }
+    /**
+     * Calls a blocking Bluebird SDK method once; if it returns null or empty,
+     * retries once after a 500 ms delay. Logs each attempt's outcome so SDK
+     * failures aren't silently swallowed. The callback fires with the first
+     * non-empty result, or an empty string if both attempts failed.
+     */
+    private fun fetchStringWithRetry(
+        label: String,
+        delayMs: Long = 500,
+        call: () -> String?,
+        onResult: (String) -> Unit
+    ) {
+        val first = runCatching { call() }
+            .onFailure { e -> android.util.Log.e("BluebirdRfidScanner", "$label threw (attempt 1)", e) }
+            .getOrNull()
+        android.util.Log.d("BluebirdRfidScanner", "$label returned (attempt 1): $first")
+
+        if (!first.isNullOrEmpty()) {
+            onResult(first)
+            return
+        }
+
+        handler?.postDelayed({
+            val second = runCatching { call() }
+                .onFailure { e -> android.util.Log.e("BluebirdRfidScanner", "$label threw (attempt 2)", e) }
+                .getOrNull()
+            android.util.Log.d("BluebirdRfidScanner", "$label returned (attempt 2): $second")
+            onResult(second.orEmpty())
+        }, delayMs)
     }
 }

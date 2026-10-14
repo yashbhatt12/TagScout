@@ -105,4 +105,18 @@ class DeviceRepository(private val deviceConnectionDao: DeviceConnectionDao) {
     suspend fun getLatestConnectionForDevice(deviceId: String): DeviceConnectionEntity? {
         return deviceConnectionDao.getLatestConnectionForDevice(deviceId)
     }
+
+    /**
+     * Clear every saved device from local storage. Called on logout to prevent
+     * one user's paired sleds from being visible to the next user who signs in
+     * on the same phone. Fire-and-forget — any failure is logged but doesn't
+     * block logout.
+     */
+    suspend fun clearAll() {
+        try {
+            deviceConnectionDao.deleteAll()
+        } catch (e: Exception) {
+            android.util.Log.e("DeviceRepository", "clearAll failed", e)
+        }
+    }
 }

@@ -1,14 +1,22 @@
 package com.snainfotech.tagscout
 
+import android.content.Intent
+import android.net.Uri
+import android.provider.Settings
 import androidx.activity.compose.BackHandler
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.padding
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -19,16 +27,22 @@ import androidx.navigation.NavHostController
 import androidx.navigation.compose.NavHost
 import androidx.navigation.compose.composable
 import androidx.navigation.compose.rememberNavController
-import androidx.activity.compose.rememberLauncherForActivityResult
-import androidx.compose.runtime.saveable.rememberSaveable
-import com.snainfotech.tagscout.ui.screens.inventory.InventoryItem
-import com.snainfotech.tagscout.ui.screens.inventory.InventoryScanScreen
-import com.snainfotech.tagscout.ui.screens.inventory.InventoryScanViewModel
-import com.snainfotech.tagscout.ui.screens.inventory.InventoryScanViewModelFactory
-import com.snainfotech.tagscout.ui.components.AppMenu
-import com.snainfotech.tagscout.ui.components.ExitConfirmationDialog
-import com.snainfotech.tagscout.ui.screens.about.AboutScreen
 import com.snainfotech.tagscout.data.auth.AuthRepository
+import com.snainfotech.tagscout.data.file.InventoryExcelParser
+import com.snainfotech.tagscout.data.file.OrderPickingExcelParser
+import com.snainfotech.tagscout.data.file.QuickScanExcelParser
+import com.snainfotech.tagscout.data.manager.ManagerRepository
+import com.snainfotech.tagscout.data.shop.ShopRepository
+import com.snainfotech.tagscout.data.wms.ProductRepository
+import com.snainfotech.tagscout.data.wms.WarehouseRepository
+import com.snainfotech.tagscout.ui.components.AppMenu
+import com.snainfotech.tagscout.ui.components.BluetoothPermissionDeniedDialog
+import com.snainfotech.tagscout.ui.components.BluetoothPermissionRationaleDialog
+import com.snainfotech.tagscout.ui.components.DeviceDisconnectedDialog
+import com.snainfotech.tagscout.ui.components.ExitConfirmationDialog
+import com.snainfotech.tagscout.ui.components.PreSaveWarningDialog
+import com.snainfotech.tagscout.ui.components.SecureScreen
+import com.snainfotech.tagscout.ui.screens.about.AboutScreen
 import com.snainfotech.tagscout.ui.screens.auth.AuthViewModel
 import com.snainfotech.tagscout.ui.screens.auth.AuthViewModelFactory
 import com.snainfotech.tagscout.ui.screens.auth.EmailVerificationScreen
@@ -49,37 +63,26 @@ import com.snainfotech.tagscout.ui.screens.config.ResetProgressDialog
 import com.snainfotech.tagscout.ui.screens.config.ResetSuccessDialog
 import com.snainfotech.tagscout.ui.screens.connect.ConnectDeviceScreen
 import com.snainfotech.tagscout.ui.screens.connect.ConnectDeviceViewModel
+import com.snainfotech.tagscout.ui.screens.connect.DeleteDeviceConfirmationDialog
+import com.snainfotech.tagscout.ui.screens.connect.DeviceLimitReachedDialog
 import com.snainfotech.tagscout.ui.screens.home.HomeScreen
-import com.snainfotech.tagscout.data.manager.ManagerRepository
+import com.snainfotech.tagscout.ui.screens.home.HomeViewModel
+import com.snainfotech.tagscout.ui.screens.inventory.InventoryScanScreen
+import com.snainfotech.tagscout.ui.screens.inventory.InventoryScanViewModel
+import com.snainfotech.tagscout.ui.screens.inventory.InventoryScanViewModelFactory
+import com.snainfotech.tagscout.ui.screens.jewellery.JewelleryCheckoutScreen
+import com.snainfotech.tagscout.ui.screens.jewellery.JewelleryCheckoutViewModel
+import com.snainfotech.tagscout.ui.screens.jewellery.JewelleryCheckoutViewModelFactory
+import com.snainfotech.tagscout.ui.screens.jewellery.JewelleryEnrollmentScreen
+import com.snainfotech.tagscout.ui.screens.jewellery.JewelleryEnrollmentViewModel
+import com.snainfotech.tagscout.ui.screens.jewellery.JewelleryEnrollmentViewModelFactory
+import com.snainfotech.tagscout.ui.screens.jewellery.JewelleryMenuScreen
+import com.snainfotech.tagscout.ui.screens.locate.LocateTagScreen
+import com.snainfotech.tagscout.ui.screens.locate.LocateTagViewModel
+import com.snainfotech.tagscout.ui.screens.locate.LocateTagViewModelFactory
 import com.snainfotech.tagscout.ui.screens.manager.ManagerAlertsScreen
 import com.snainfotech.tagscout.ui.screens.manager.ManagerAlertsViewModel
 import com.snainfotech.tagscout.ui.screens.manager.ManagerAlertsViewModelFactory
-import com.snainfotech.tagscout.ui.screens.home.HomeViewModel
-import com.snainfotech.tagscout.ui.screens.quickscan.ClearConfirmationDialog
-import com.snainfotech.tagscout.ui.screens.quickscan.QuickScanScreen
-import com.snainfotech.tagscout.ui.screens.quickscan.QuickScanViewModel
-import com.snainfotech.tagscout.ui.screens.quickscan.SaveScanDialog
-import com.snainfotech.tagscout.ui.screens.quickscan.TimeWarningDialog
-import com.snainfotech.tagscout.ui.screens.connect.DeleteDeviceConfirmationDialog
-import com.snainfotech.tagscout.ui.screens.connect.DeviceLimitReachedDialog
-import com.snainfotech.tagscout.ui.screens.quickscan.LowBatteryDialog
-import com.snainfotech.tagscout.ui.components.DeviceDisconnectedDialog
-import com.snainfotech.tagscout.ui.screens.quickscan.CriticalBatteryDialog
-import com.snainfotech.tagscout.ui.screens.quickscan.SaveScanDialog
-import com.snainfotech.tagscout.ui.screens.tagops.WriteTagScreen
-import com.snainfotech.tagscout.ui.screens.tagops.WriteTagViewModel
-import com.snainfotech.tagscout.ui.screens.tagops.WriteTagViewModelFactory
-import com.snainfotech.tagscout.ui.screens.tagops.WritePhase
-import com.snainfotech.tagscout.ui.screens.tagops.KillPhase
-import com.snainfotech.tagscout.ui.screens.tagops.KillTagScreen
-import com.snainfotech.tagscout.ui.screens.tagops.KillTagViewModel
-import com.snainfotech.tagscout.ui.screens.tagops.KillTagViewModelFactory
-import com.snainfotech.tagscout.ui.screens.pickorder.PickOrderScreen
-import com.snainfotech.tagscout.ui.screens.pickorder.PickOrderViewModel
-import com.snainfotech.tagscout.ui.screens.pickorder.PickOrderViewModelFactory
-import com.snainfotech.tagscout.ui.screens.pickorder.generateMockPickOrder
-import com.snainfotech.tagscout.ui.screens.pickorder.generateMockFilename
-import com.snainfotech.tagscout.data.file.OrderPickingExcelParser
 import com.snainfotech.tagscout.ui.screens.orderpicking.ClearOrderWarningDialog
 import com.snainfotech.tagscout.ui.screens.orderpicking.ConfirmPickDialog
 import com.snainfotech.tagscout.ui.screens.orderpicking.OrderFileErrorDialog
@@ -88,62 +91,51 @@ import com.snainfotech.tagscout.ui.screens.orderpicking.OrderPickingViewModel
 import com.snainfotech.tagscout.ui.screens.orderpicking.OrderPickingViewModelFactory
 import com.snainfotech.tagscout.ui.screens.orderpicking.OrderSaveErrorDialog
 import com.snainfotech.tagscout.ui.screens.orderpicking.OrderSaveSuccessDialog
-import com.snainfotech.tagscout.ui.screens.orderpicking.generateMockOrderPickingItems
-import com.snainfotech.tagscout.ui.screens.orderpicking.generateMockOrderFilename
-import java.text.SimpleDateFormat
-import java.util.Date
-import java.util.Locale
-import android.content.Intent
-import android.net.Uri
-import android.provider.Settings
-import androidx.activity.compose.rememberLauncherForActivityResult
-import androidx.activity.result.contract.ActivityResultContracts
-import com.snainfotech.tagscout.PermissionHelper
-import com.snainfotech.tagscout.ui.components.BluetoothPermissionDeniedDialog
-import com.snainfotech.tagscout.ui.components.BluetoothPermissionRationaleDialog
-import com.snainfotech.tagscout.ui.components.PreSaveWarningDialog
-import com.snainfotech.tagscout.data.file.InventoryExcelParser
-import com.snainfotech.tagscout.ui.screens.locate.LocateTagScreen
-import com.snainfotech.tagscout.ui.screens.locate.LocateTagViewModel
-import com.snainfotech.tagscout.ui.screens.locate.LocateTagViewModelFactory
-import com.snainfotech.tagscout.data.shop.ShopRepository
+import com.snainfotech.tagscout.ui.screens.pickorder.PickOrderScreen
+import com.snainfotech.tagscout.ui.screens.pickorder.PickOrderViewModel
+import com.snainfotech.tagscout.ui.screens.pickorder.PickOrderViewModelFactory
+import com.snainfotech.tagscout.ui.screens.pickorder.generateMockFilename
+import com.snainfotech.tagscout.ui.screens.pickorder.generateMockPickOrder
+import com.snainfotech.tagscout.ui.screens.quickscan.ClearConfirmationDialog
+import com.snainfotech.tagscout.ui.screens.quickscan.CriticalBatteryDialog
+import com.snainfotech.tagscout.ui.screens.quickscan.LowBatteryDialog
+import com.snainfotech.tagscout.ui.screens.quickscan.QuickScanScreen
+import com.snainfotech.tagscout.ui.screens.quickscan.QuickScanViewModel
+import com.snainfotech.tagscout.ui.screens.quickscan.SaveScanDialog
+import com.snainfotech.tagscout.ui.screens.quickscan.TimeWarningDialog
 import com.snainfotech.tagscout.ui.screens.shop.CartScreen
 import com.snainfotech.tagscout.ui.screens.shop.ProductCatalogScreen
 import com.snainfotech.tagscout.ui.screens.shop.ShopViewModel
 import com.snainfotech.tagscout.ui.screens.shop.ShopViewModelFactory
-import com.snainfotech.tagscout.data.wms.ProductRepository
-import com.snainfotech.tagscout.data.wms.WarehouseRepository
+import com.snainfotech.tagscout.ui.screens.tagops.KillPhase
+import com.snainfotech.tagscout.ui.screens.tagops.KillTagScreen
+import com.snainfotech.tagscout.ui.screens.tagops.KillTagViewModel
+import com.snainfotech.tagscout.ui.screens.tagops.KillTagViewModelFactory
+import com.snainfotech.tagscout.ui.screens.tagops.TagOperationsMenuScreen
+import com.snainfotech.tagscout.ui.screens.tagops.WritePhase
+import com.snainfotech.tagscout.ui.screens.tagops.WriteTagScreen
+import com.snainfotech.tagscout.ui.screens.tagops.WriteTagViewModel
+import com.snainfotech.tagscout.ui.screens.tagops.WriteTagViewModelFactory
+import com.snainfotech.tagscout.ui.screens.wms.CycleCountScreen
+import com.snainfotech.tagscout.ui.screens.wms.CycleCountViewModel
+import com.snainfotech.tagscout.ui.screens.wms.CycleCountViewModelFactory
+import com.snainfotech.tagscout.ui.screens.wms.InwardScreen
+import com.snainfotech.tagscout.ui.screens.wms.InwardViewModel
+import com.snainfotech.tagscout.ui.screens.wms.InwardViewModelFactory
 import com.snainfotech.tagscout.ui.screens.wms.ProductCatalogScreen
 import com.snainfotech.tagscout.ui.screens.wms.ProductCatalogViewModel
 import com.snainfotech.tagscout.ui.screens.wms.ProductCatalogViewModelFactory
 import com.snainfotech.tagscout.ui.screens.wms.WarehouseSetupScreen
 import com.snainfotech.tagscout.ui.screens.wms.WarehouseSetupViewModel
 import com.snainfotech.tagscout.ui.screens.wms.WarehouseSetupViewModelFactory
-import com.snainfotech.tagscout.ui.screens.wms.WmsMenuScreen
 import com.snainfotech.tagscout.ui.screens.wms.WmsDashboardScreen
 import com.snainfotech.tagscout.ui.screens.wms.WmsDashboardViewModel
 import com.snainfotech.tagscout.ui.screens.wms.WmsDashboardViewModelFactory
-import com.snainfotech.tagscout.ui.screens.wms.CycleCountScreen
-import com.snainfotech.tagscout.ui.screens.wms.CycleCountViewModel
-import com.snainfotech.tagscout.ui.screens.wms.CycleCountViewModelFactory
-import com.snainfotech.tagscout.ui.components.SecureScreen
-import androidx.compose.ui.platform.LocalContext
-import com.snainfotech.tagscout.ui.screens.wms.InwardScreen
-import com.snainfotech.tagscout.ui.screens.wms.InwardViewModel
-import com.snainfotech.tagscout.ui.screens.wms.InwardViewModelFactory
-import com.snainfotech.tagscout.ui.screens.tagops.TagOperationsMenuScreen
-import com.snainfotech.tagscout.ui.screens.jewellery.JewelleryMenuScreen
-import com.snainfotech.tagscout.ui.screens.jewellery.JewelleryEnrollmentScreen
-import com.snainfotech.tagscout.ui.screens.jewellery.JewelleryCheckoutScreen
-import com.snainfotech.tagscout.ui.screens.jewellery.JewelleryCheckoutViewModel
-import com.snainfotech.tagscout.ui.screens.jewellery.JewelleryCheckoutViewModelFactory
-import com.snainfotech.tagscout.ui.screens.jewellery.JewelleryEnrollmentViewModel
-import com.snainfotech.tagscout.ui.screens.jewellery.JewelleryEnrollmentViewModelFactory
-import androidx.compose.runtime.DisposableEffect
-import androidx.compose.runtime.rememberCoroutineScope
-import kotlinx.coroutines.flow.firstOrNull
+import com.snainfotech.tagscout.ui.screens.wms.WmsMenuScreen
 import kotlinx.coroutines.launch
-import kotlinx.coroutines.withTimeoutOrNull
+import java.text.SimpleDateFormat
+import java.util.Date
+import java.util.Locale
 
 
 private const val LOW_BATTERY_THRESHOLD = 15
@@ -229,6 +221,7 @@ fun TagScoutNavGraph(
                     !authRepo.isLoggedIn -> Routes.LOGIN
                     !authRepo.isEmailVerified -> Routes.EMAIL_VERIFICATION
                     !authRepo.isSessionFresh -> {
+                        app.deviceRepository.clearAll()
                         authRepo.logout()
                         Routes.LOGIN
                     }
@@ -310,6 +303,7 @@ fun TagScoutNavGraph(
         // MFA Verify (SMS code entry during login challenge)
         composable(Routes.MFA_VERIFY) {
             SecureScreen()
+            val scope = rememberCoroutineScope()
             val authRepo = remember { AuthRepository() }
             val authViewModel: AuthViewModel = viewModel(factory = AuthViewModelFactory(authRepo))
             val authState by authViewModel.state.collectAsState()
@@ -326,6 +320,7 @@ fun TagScoutNavGraph(
                 onSmsCodeChange = authViewModel::updateMfaSmsCode,
                 onVerifyCode = authViewModel::completeMfaChallenge,
                 onCancel = {
+                    scope.launch { app.deviceRepository.clearAll() }
                     authViewModel.logout()
                     navController.navigate(Routes.LOGIN) { popUpTo(Routes.MFA_VERIFY) { inclusive = true } }
                 }
@@ -370,6 +365,7 @@ fun TagScoutNavGraph(
         // Email verification screen
         composable(Routes.EMAIL_VERIFICATION) {
             SecureScreen()
+            val scope = rememberCoroutineScope()
             val authRepo = remember { AuthRepository() }
             val authViewModel: AuthViewModel = viewModel(
                 factory = AuthViewModelFactory(authRepo)
@@ -392,6 +388,7 @@ fun TagScoutNavGraph(
                 onCheckVerified = authViewModel::checkEmailVerified,
                 onResendEmail = authViewModel::resendVerificationEmail,
                 onLogout = {
+                    scope.launch { app.deviceRepository.clearAll() }
                     authViewModel.logout()
                     navController.navigate(Routes.LOGIN) {
                         popUpTo(Routes.EMAIL_VERIFICATION) { inclusive = true }
@@ -406,7 +403,7 @@ fun TagScoutNavGraph(
 
         composable(Routes.HOME) {
             val deviceState by sharedHomeViewModel.deviceState.collectAsState()
-
+            val scope = rememberCoroutineScope()
             var menuExpanded by rememberSaveable { mutableStateOf(false) }
             var showExitDialog by rememberSaveable { mutableStateOf(false) }
             val context = LocalContext.current
@@ -457,6 +454,7 @@ fun TagScoutNavGraph(
                         userEmail = userEmail,
                         onAboutClick = { navController.navigate(Routes.ABOUT) },
                         onLogoutClick = {
+                            scope.launch { app.deviceRepository.clearAll() }
                             AuthRepository().logout()
                             navController.navigate(Routes.LOGIN) {
                                 popUpTo(0) { inclusive = true }
@@ -482,13 +480,14 @@ fun TagScoutNavGraph(
         // QUICK SCAN SCREEN
         // ============================================
         composable(Routes.QUICK_SCAN) {
+
             val quickScanViewModel: QuickScanViewModel = viewModel(
                 factory = QuickScanViewModelFactory(app.quickScanRepository, app.rfidScanner, app.settingsRepository)
             )
 
             val scanState by quickScanViewModel.state.collectAsState()
             val deviceState by sharedHomeViewModel.deviceState.collectAsState()
-
+            val context = LocalContext.current
             // Block system back button when scanning
             BackHandler(enabled = scanState.isScanning) {
                 // Do nothing — user must pause first
@@ -536,7 +535,9 @@ fun TagScoutNavGraph(
                 batteryPercent = deviceState.batteryPercent,
                 onBackClick = { navController.popBackStack() },
                 onMenuClick = { /* TODO: Show menu */ },
-                onDeviceStatusClick = { navController.navigate(Routes.DEVICE_CONFIG) },
+                onDeviceStatusClick = {
+                    if (!scanState.isScanning) navController.navigate(Routes.DEVICE_CONFIG)
+                },
                 onAntennaChange = { quickScanViewModel.setAntennaStrength(it) },
                 onPlayPauseClick = {
                     when {
@@ -557,13 +558,50 @@ fun TagScoutNavGraph(
                     }
                 )
             }
+            // System file picker — launches on Save confirm. Writes the real
+            // .xlsx of detected tags to the user's chosen location, then saves
+            // a summary row to the local DB for the Quick Scan history, then
+            // clears the in-memory scan. Mirrors the Inventory save flow.
+            val quickScanSaveLauncher = rememberLauncherForActivityResult(
+                contract = ActivityResultContracts.CreateDocument(
+                    "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+                )
+            ) { uri ->
+                if (uri != null) {
+                    val displayName = extractFileName(uri.toString())
+                    try {
+                        context.contentResolver.openOutputStream(uri)?.use { output ->
+                            QuickScanExcelParser.write(output, scanState.detectedTags)
+                        }
+                        quickScanViewModel.saveScan(displayName)
+                        quickScanViewModel.clearAllData()
+                        android.widget.Toast.makeText(
+                            context,
+                            "Quick Scan saved",
+                            android.widget.Toast.LENGTH_SHORT
+                        ).show()
+                    } catch (e: Exception) {
+                        android.widget.Toast.makeText(
+                            context,
+                            "Could not save the file: ${e.message ?: e.javaClass.simpleName}",
+                            android.widget.Toast.LENGTH_LONG
+                        ).show()
+                    }
+                }
+            }
+
             if (showSaveDialog) {
                 SaveScanDialog(
+                    defaultPrefix = "quickscan",
                     onDismiss = { showSaveDialog = false },
                     onSave = { filename, _ ->
-                        quickScanViewModel.saveScan(filename)
-                        quickScanViewModel.clearAllData()
                         showSaveDialog = false
+                        val stamp = SimpleDateFormat("yyyyMMdd_HHmm", Locale.getDefault())
+                            .format(Date())
+                        val baseName = filename.ifBlank { "quickscan_$stamp" }
+                        val fullName =
+                            if (baseName.endsWith(".xlsx")) baseName else "$baseName.xlsx"
+                        quickScanSaveLauncher.launch(fullName)
                     }
                 )
             }
@@ -581,8 +619,12 @@ fun TagScoutNavGraph(
             if (scanState.showTimeWarning) {
                 TimeWarningDialog(
                     onStopScan = {
+                        // Stop means "I'm done" — pause the scan then jump
+                        // directly into Save so the user can't accidentally
+                        // Resume. If they wanted to continue they'd tap Extend.
                         quickScanViewModel.dismissTimeWarning()
                         quickScanViewModel.pauseScanning()
+                        showPreSaveWarning = true
                     },
                     onExtend = { quickScanViewModel.extendTimer() }
                 )
@@ -747,7 +789,7 @@ fun TagScoutNavGraph(
         // ============================================
         composable(Routes.DEVICE_CONFIG) {
             val configViewModel: DeviceConfigViewModel = viewModel(
-                factory = DeviceConfigViewModelFactory(app.settingsRepository)
+                factory = DeviceConfigViewModelFactory(app.settingsRepository, app.rfidScanner)
             )
 
             val configState by configViewModel.state.collectAsState()
@@ -761,6 +803,7 @@ fun TagScoutNavGraph(
                 serialNumber = deviceState.serialNumber,
                 batteryPercent = deviceState.batteryPercent,
                 isConnected = deviceState.isConnected,
+                firmwareVersion = deviceState.firmwareVersion,
                 onBackClick = { navController.popBackStack() },
                 onMenuClick = { /* TODO */ },
                 onBuzzerChange = { level -> configViewModel.setBuzzerLevel(level) },

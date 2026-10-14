@@ -24,7 +24,7 @@
         android:required="false" />
     <application
         android:name=".TagScoutApplication"
-        android:allowBackup="true"
+        android:allowBackup="false"
         android:networkSecurityConfig="@xml/network_security_config"
         android:dataExtractionRules="@xml/data_extraction_rules"
         android:fullBackupContent="@xml/backup_rules"

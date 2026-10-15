@@ -37,12 +37,8 @@ enum class OperationState {
 data class DeviceConfigState(
     val buzzerLevel: BuzzerLevel = BuzzerLevel.MEDIUM,
     val sleepTimeout: SleepTimeout = SleepTimeout.FIVE_MINUTES,
-    val firmwareVersion: String = "v5.90.00.02",
     val resetState: OperationState = OperationState.IDLE,
     val resetProgress: Int = 0,           // 0-100%
-    val firmwareUpdateState: OperationState = OperationState.IDLE,
-    val firmwareUpdateProgress: Int = 0,  // 0-100%
-    val newFirmwareVersion: String = "",  // Version available
     val showSettingChangedToast: String = "" // Empty = no toast, otherwise the toast text
 )
 
@@ -56,7 +52,6 @@ class DeviceConfigViewModel(
     init {
         loadSavedSettings()
     }
-
     private fun loadSavedSettings() {
         val savedBuzzerLabel = settingsRepository.getBuzzerLevel()
         val savedSleepLabel = settingsRepository.getSleepTimeout()
@@ -92,6 +87,13 @@ class DeviceConfigViewModel(
         clearToastAfterDelay()
     }
 
+    fun disconnect() {
+        rfidScanner.disconnect()
+        // The sled's BT_ACL_DISCONNECTED event will fire asynchronously and
+        // update HomeViewModel's deviceState via ConnectionEvent.Disconnected.
+        // The UI reacts off that state change (navigates away, hides sled
+        // info) rather than off this call directly.
+    }
     // ============================================
     // AUTO SLEEP TIMEOUT
     // ============================================
@@ -150,69 +152,6 @@ class DeviceConfigViewModel(
         _state.value = _state.value.copy(
             resetState = OperationState.IDLE,
             resetProgress = 0
-        )
-    }
-
-    // ============================================
-    // FIRMWARE UPDATE FLOW
-    // ============================================
-    fun checkForFirmwareUpdate() {
-        viewModelScope.launch {
-            // Show checking spinner briefly
-            _state.value = _state.value.copy(
-                firmwareUpdateState = OperationState.IN_PROGRESS,
-                firmwareUpdateProgress = 0
-            )
-
-            // Simulate network check (1.5 seconds)
-            kotlinx.coroutines.delay(1500)
-
-            // Randomly decide: 50/50 whether an update is available
-            // (In real SDK integration, this would come from the device)
-            val updateAvailable = kotlin.random.Random.nextBoolean()
-
-            if (updateAvailable) {
-                _state.value = _state.value.copy(
-                    firmwareUpdateState = OperationState.CONFIRMING,
-                    newFirmwareVersion = "v5.92.00.01"
-                )
-            } else {
-                _state.value = _state.value.copy(
-                    firmwareUpdateState = OperationState.UP_TO_DATE
-                )
-            }
-        }
-    }
-
-    fun confirmFirmwareUpdate() {
-        _state.value = _state.value.copy(
-            firmwareUpdateState = OperationState.IN_PROGRESS,
-            firmwareUpdateProgress = 0
-        )
-
-        viewModelScope.launch {
-            // Simulate firmware update with progress
-            for (progress in 0..100 step 2) {
-                _state.value = _state.value.copy(firmwareUpdateProgress = progress)
-                delay(100)
-            }
-
-            _state.value = _state.value.copy(
-                firmwareUpdateState = OperationState.SUCCESS,
-                firmwareVersion = _state.value.newFirmwareVersion
-            )
-
-            // Auto-dismiss success after 3 seconds
-            delay(3000)
-            dismissFirmwareUpdate()
-        }
-    }
-
-    fun dismissFirmwareUpdate() {
-        _state.value = _state.value.copy(
-            firmwareUpdateState = OperationState.IDLE,
-            firmwareUpdateProgress = 0,
-            newFirmwareVersion = ""
         )
     }
 }

@@ -52,11 +52,6 @@ import com.snainfotech.tagscout.ui.screens.auth.MfaVerifyScreen
 import com.snainfotech.tagscout.ui.screens.auth.RegistrationScreen
 import com.snainfotech.tagscout.ui.screens.config.DeviceConfigScreen
 import com.snainfotech.tagscout.ui.screens.config.DeviceConfigViewModel
-import com.snainfotech.tagscout.ui.screens.config.FirmwareCheckingDialog
-import com.snainfotech.tagscout.ui.screens.config.FirmwareUpToDateDialog
-import com.snainfotech.tagscout.ui.screens.config.FirmwareUpdateAvailableDialog
-import com.snainfotech.tagscout.ui.screens.config.FirmwareUpdateProgressDialog
-import com.snainfotech.tagscout.ui.screens.config.FirmwareUpdateSuccessDialog
 import com.snainfotech.tagscout.ui.screens.config.OperationState
 import com.snainfotech.tagscout.ui.screens.config.ResetConfirmationDialog
 import com.snainfotech.tagscout.ui.screens.config.ResetProgressDialog
@@ -805,11 +800,16 @@ fun TagScoutNavGraph(
                 isConnected = deviceState.isConnected,
                 firmwareVersion = deviceState.firmwareVersion,
                 onBackClick = { navController.popBackStack() },
+                onDisconnectClick = {
+                    configViewModel.disconnect()
+                    // Return to Home — status strip there will reflect the
+                    // disconnect once ConnectionEvent.Disconnected arrives.
+                    navController.popBackStack()
+                },
                 onMenuClick = { /* TODO */ },
                 onBuzzerChange = { level -> configViewModel.setBuzzerLevel(level) },
                 onSleepTimeoutChange = { timeout -> configViewModel.setSleepTimeout(timeout) },
-                onResetClick = { configViewModel.startResetConfirmation() },
-                onCheckFirmwareClick = { configViewModel.checkForFirmwareUpdate() }
+                onResetClick = { configViewModel.startResetConfirmation() }
             )
 
             // === Reset dialogs ===
@@ -825,31 +825,6 @@ fun TagScoutNavGraph(
                 else -> { /* IDLE or UP_TO_DATE: nothing for reset */ }
             }
 
-            // === Firmware update dialogs ===
-            when (configState.firmwareUpdateState) {
-                OperationState.IN_PROGRESS -> {
-                    if (configState.firmwareUpdateProgress == 0 && configState.newFirmwareVersion.isEmpty()) {
-                        FirmwareCheckingDialog()
-                    } else {
-                        FirmwareUpdateProgressDialog(progress = configState.firmwareUpdateProgress)
-                    }
-                }
-                OperationState.CONFIRMING -> FirmwareUpdateAvailableDialog(
-                    currentVersion = configState.firmwareVersion,
-                    newVersion = configState.newFirmwareVersion,
-                    onDismiss = { configViewModel.dismissFirmwareUpdate() },
-                    onUpdate = { configViewModel.confirmFirmwareUpdate() }
-                )
-                OperationState.SUCCESS -> FirmwareUpdateSuccessDialog(
-                    newVersion = configState.firmwareVersion,
-                    onDismiss = { configViewModel.dismissFirmwareUpdate() }
-                )
-                OperationState.UP_TO_DATE -> FirmwareUpToDateDialog(
-                    currentVersion = configState.firmwareVersion,
-                    onDismiss = { configViewModel.dismissFirmwareUpdate() }
-                )
-                OperationState.IDLE -> { /* nothing */ }
-            }
         }
         composable(Routes.INVENTORY) {
             val inventoryViewModel: InventoryScanViewModel = viewModel(

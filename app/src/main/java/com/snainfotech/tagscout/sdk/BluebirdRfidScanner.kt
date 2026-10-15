@@ -268,6 +268,7 @@ class BluebirdRfidScanner(private val context: Context) : RfidScanner {
         android.util.Log.d("BluebirdRfidScanner", "SD_SetBuzzerLevel($level → $sdkLevel) returned: $result")
     }
 
+
     override fun isScanning(): Boolean = scanningCallback != null
 
     // ============================================

@@ -19,8 +19,12 @@ import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
+import androidx.compose.material3.Snackbar
+import androidx.compose.material3.SnackbarHost
+import androidx.compose.material3.SnackbarHostState
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -46,13 +50,8 @@ import com.snainfotech.tagscout.ui.theme.InfoText
 import com.snainfotech.tagscout.ui.theme.LightGray
 import com.snainfotech.tagscout.ui.theme.MediumGray
 import com.snainfotech.tagscout.ui.theme.Primary
-import com.snainfotech.tagscout.ui.theme.SuccessBg
-import com.snainfotech.tagscout.ui.theme.SuccessText
+import com.snainfotech.tagscout.ui.theme.WarningOrange
 
-import androidx.compose.material3.Snackbar
-import androidx.compose.material3.SnackbarHost
-import androidx.compose.material3.SnackbarHostState
-import androidx.compose.runtime.LaunchedEffect
 @Composable
 fun DeviceConfigScreen(
     state: DeviceConfigState,
@@ -66,9 +65,10 @@ fun DeviceConfigScreen(
     onBuzzerChange: (BuzzerLevel) -> Unit = {},
     onSleepTimeoutChange: (SleepTimeout) -> Unit = {},
     onResetClick: () -> Unit = {},
-    onCheckFirmwareClick: () -> Unit = {},
+    onDisconnectClick: () -> Unit = {},
     modifier: Modifier = Modifier
 ) {
+    var showDisconnectConfirm by remember { mutableStateOf(false) }
     val snackbarHostState = remember { SnackbarHostState() }
 
     // Show a Snackbar whenever the ViewModel pushes a confirmation message.
@@ -123,7 +123,7 @@ fun DeviceConfigScreen(
                         .padding(12.dp)
                 ) {
                     Text(
-                        text = "ℹ️ Device must be connected to reset or update firmware. Connect a device first to enable these actions.",
+                        text = "ℹ️ Device must be connected to change settings. Connect a device first to enable these actions.",
                         color = InfoText,
                         fontSize = 12.sp,
                         fontWeight = FontWeight.Medium
@@ -162,6 +162,31 @@ fun DeviceConfigScreen(
                 )
             }
 
+            // === DISCONNECT ===
+            SettingGroup(
+                icon = "🔌",
+                label = "Disconnect",
+                description = "End this session without removing the pairing"
+            ) {
+                Button(
+                    onClick = { showDisconnectConfirm = true },
+                    enabled = isConnected,
+                    modifier = Modifier.fillMaxWidth(),
+                    colors = ButtonDefaults.buttonColors(
+                        containerColor = WarningOrange,
+                        disabledContainerColor = Disabled,
+                        disabledContentColor = DisabledText
+                    ),
+                    shape = RoundedCornerShape(8.dp)
+                ) {
+                    Text(
+                        text = "Disconnect",
+                        fontSize = 14.sp,
+                        fontWeight = FontWeight.SemiBold
+                    )
+                }
+            }
+
             // === RESET DEVICE ===
             SettingGroup(
                 icon = "🔄",
@@ -187,31 +212,6 @@ fun DeviceConfigScreen(
                 }
             }
 
-            // === UPDATE FIRMWARE ===
-            SettingGroup(
-                icon = "📥",
-                label = "Update Firmware",
-                description = "Current: $firmwareVersion"
-            ) {
-                Button(
-                    onClick = onCheckFirmwareClick,
-                    enabled = isConnected,
-                    modifier = Modifier.fillMaxWidth(),
-                    colors = ButtonDefaults.buttonColors(
-                        containerColor = Primary,
-                        disabledContainerColor = Disabled,
-                        disabledContentColor = DisabledText
-                    ),
-                    shape = RoundedCornerShape(8.dp)
-                ) {
-                    Text(
-                        text = "Check for Updates",
-                        fontSize = 14.sp,
-                        fontWeight = FontWeight.SemiBold
-                    )
-                }
-            }
-
             Spacer(modifier = Modifier.height(20.dp))
         }
         }
@@ -220,6 +220,32 @@ fun DeviceConfigScreen(
             hostState = snackbarHostState,
             modifier = Modifier.align(Alignment.BottomCenter)
         ) { data -> Snackbar(snackbarData = data) }
+    }
+
+    if (showDisconnectConfirm) {
+        androidx.compose.material3.AlertDialog(
+            onDismissRequest = { showDisconnectConfirm = false },
+            title = { Text("Disconnect from $deviceName?") },
+            text = {
+                Text(
+                    "The sled will stop responding until you reconnect. " +
+                            "The pairing is kept — you won't have to search for the device again."
+                )
+            },
+            confirmButton = {
+                androidx.compose.material3.TextButton(
+                    onClick = {
+                        showDisconnectConfirm = false
+                        onDisconnectClick()
+                    }
+                ) { Text("Disconnect") }
+            },
+            dismissButton = {
+                androidx.compose.material3.TextButton(
+                    onClick = { showDisconnectConfirm = false }
+                ) { Text("Cancel") }
+            }
+        )
     }
 }
 

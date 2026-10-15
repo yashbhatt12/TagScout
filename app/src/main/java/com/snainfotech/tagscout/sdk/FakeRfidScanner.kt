@@ -87,6 +87,8 @@ class FakeRfidScanner : RfidScanner {
         // call reached the SDK layer.
         android.util.Log.d("FakeRfidScanner", "setBuzzerLevel($level)")
     }
+
+
     override fun isScanning(): Boolean = scanning
 
     // ============================================

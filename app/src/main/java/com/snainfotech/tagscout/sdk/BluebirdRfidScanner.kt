@@ -149,10 +149,50 @@ class BluebirdRfidScanner(private val context: Context) : RfidScanner {
                 // here — calling them from directly inside handleMessage caused infinite
                 // recursion (the SDK's blocking calls appear to pump this same message
                 // queue while waiting for a reply). Defer to a fresh dispatch instead.
+                //
+                // Bluebird's SD_* calls are blocking on the sled's single command
+                // channel. Back-to-back calls can trip OTHER_CMD_RUNNING_ERROR (-4)
+                // or READER_OR_SERIAL_STATUS_ERROR (-7) and return null silently.
+                // We (a) stagger with 500 ms between calls, and (b) retry once after
+                // another 500 ms if the first attempt returned null/empty.
+                // See fetchStringWithRetry().
+                //
+                // Flow: serial → wait → firmware → fire Connected → wait → battery.
                 handler?.post {
+                    fetchStringWithRetry(
+                        label = "SD_GetSerialNumber",
+                        call = { getReader().SD_GetSerialNumber() }
+                    ) { serial ->
+                        handler?.postDelayed({
+                            fetchStringWithRetry(
+                                label = "SD_GetVersion",
+                                call = { getReader().SD_GetVersion() }
+                            ) { firmware ->
+                                connectionCallback?.invoke(
+                                    ConnectionEvent.Connected(
+                                        deviceName = name,
+                                        address = address,
+                                        serialNumber = serial,
+                                        firmwareVersion = firmware
+                                    )
+                                )
 
+                                // Fetch battery once — SDK only PUSHES the battery
+                                // state when it changes, so a fresh connection would
+                                // show 0% until the next tick without this.
+                                handler?.postDelayed({
+                                    val battery = runCatching { getReader().SD_GetBatteryStatus() }
+                                        .onFailure { e -> android.util.Log.e("BluebirdRfidScanner", "SD_GetBatteryStatus threw", e) }
+                                        .getOrNull()
+                                    android.util.Log.d("BluebirdRfidScanner", "SD_GetBatteryStatus returned: $battery")
+                                    if (battery != null && battery in 0..100) {
+                                        connectionCallback?.invoke(ConnectionEvent.BatteryUpdate(battery))
+                                    }
+                                }, 500)
+                            }
+                        }, 500)
+                    }
                 }
-
             }
 
             SDConsts.BTCmdMsg.SLED_BT_ACL_DISCONNECTED -> {
@@ -541,8 +581,8 @@ class BluebirdRfidScanner(private val context: Context) : RfidScanner {
             .getOrNull()
         android.util.Log.d("BluebirdRfidScanner", "$label returned (attempt 1): $first")
 
-        if (!first.isNullOrEmpty()) {
-            onResult(first)
+        if (isUsable(first)) {
+            onResult(first!!)
             return
         }
 
@@ -551,7 +591,19 @@ class BluebirdRfidScanner(private val context: Context) : RfidScanner {
                 .onFailure { e -> android.util.Log.e("BluebirdRfidScanner", "$label threw (attempt 2)", e) }
                 .getOrNull()
             android.util.Log.d("BluebirdRfidScanner", "$label returned (attempt 2): $second")
-            onResult(second.orEmpty())
+            onResult(if (isUsable(second)) second!! else "")
         }, delayMs)
+    }
+
+    /**
+     * The Bluebird SDK sometimes returns the literal string "Error" (and
+     * occasionally other sentinels) instead of null when a call fails.
+     * Treat these as "no value" so we retry / show empty rather than
+     * displaying the garbage to the user.
+     */
+    private fun isUsable(value: String?): Boolean {
+        if (value.isNullOrBlank()) return false
+        val lower = value.trim().lowercase()
+        return lower != "error" && lower != "null" && lower != "n/a"
     }
 }

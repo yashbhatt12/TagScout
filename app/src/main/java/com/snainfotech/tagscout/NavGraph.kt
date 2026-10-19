@@ -704,8 +704,13 @@ fun TagScoutNavGraph(
                 },
                 onSearchQueryChange = { connectViewModel.updateSearchQuery(it) },
                 onDeviceClick = { device ->
-                    val currentConnectedId = deviceState.serialNumber.removePrefix("SN-")
-                    val isAlreadyConnected = deviceState.isConnected && currentConnectedId == device.id
+                    // Use ConnectDeviceViewModel's own currentlyConnectedId
+                    // (set from the device's BT address, not the fake "SN-"
+                    // prefix we used to use). deviceState.serialNumber is now
+                    // the real sled serial — a different value entirely.
+                    val isAlreadyConnected =
+                        deviceState.isConnected &&
+                                connectState.currentlyConnectedId == device.id
 
                     if (isAlreadyConnected) {
                         navController.navigate(Routes.DEVICE_CONFIG)

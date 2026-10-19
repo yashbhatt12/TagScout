@@ -224,6 +224,11 @@ class QuickScanViewModel(
                     .collect { scannedTag ->
                         addDetectedTag(scannedTag.epc, scannedTag.rssi)
                     }
+            } catch (e: kotlinx.coroutines.CancellationException) {
+                // Normal — pause/stop/onCleared cancelled this job. Re-throw
+                // so the coroutine machinery sees the cancellation; swallowing
+                // it would leave the parent scope confused.
+                throw e
             } catch (e: Exception) {
                 android.util.Log.e("QuickScanViewModel", "startSdkScan outer threw", e)
                 handleDeviceDisconnected()

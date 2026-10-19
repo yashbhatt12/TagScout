@@ -34,91 +34,102 @@ import com.snainfotech.tagscout.ui.theme.MediumGray
 import com.snainfotech.tagscout.ui.theme.Primary
 import com.snainfotech.tagscout.ui.theme.SuccessGreen
 import com.snainfotech.tagscout.ui.theme.WarningOrange
+import androidx.compose.ui.text.style.TextOverflow
+import com.snainfotech.tagscout.ui.theme.SuccessBg
+import com.snainfotech.tagscout.ui.theme.ErrorBg
+import com.snainfotech.tagscout.ui.theme.WarningBg
+import com.snainfotech.tagscout.ui.theme.InfoBg
 
 @Composable
 fun DeviceStatusComponent(
     isConnected: Boolean,
     deviceName: String,
     serialNumber: String,
-    firmwareVersion: String,
+    firmwareVersion: String,  // Kept for API compatibility; not displayed.
     batteryPercent: Int,
     connectionStatus: ConnectionStatus,
     onClick: (() -> Unit)? = null,
     modifier: Modifier = Modifier
 ) {
-    // In the redesign the bar itself stays a neutral light surface; the status
-    // color lives on the dot (and the battery bar), not the whole background.
-    val (dotColor, statusText) = when (connectionStatus) {
-        ConnectionStatus.CONNECTED -> SuccessGreen to "Connected"
-        ConnectionStatus.DISCONNECTED -> ErrorRed to "No Device Connected"
-        ConnectionStatus.LOW_BATTERY -> WarningOrange to "Low Battery"
-        ConnectionStatus.CHARGING -> Primary to "Charging"
+    // Background and dot colour tied to connection state. The background
+    // change is deliberate — it makes the sled's state obvious at a glance
+    // without the user having to read the strip.
+    val background = when (connectionStatus) {
+        ConnectionStatus.CONNECTED    -> SuccessBg
+        ConnectionStatus.DISCONNECTED -> ErrorBg
+        ConnectionStatus.LOW_BATTERY  -> WarningBg
+        ConnectionStatus.CHARGING     -> InfoBg
+    }
+    val dotColor = when (connectionStatus) {
+        ConnectionStatus.CONNECTED    -> SuccessGreen
+        ConnectionStatus.DISCONNECTED -> ErrorRed
+        ConnectionStatus.LOW_BATTERY  -> WarningOrange
+        ConnectionStatus.CHARGING     -> Primary
     }
 
-    Column(
+    Row(
         modifier = modifier
             .fillMaxWidth()
-            .background(Color(0xFFEDF2FA))
+            .background(background)
             .then(
                 if (onClick != null && isConnected) Modifier.clickable { onClick() }
                 else Modifier
             )
-            .padding(horizontal = 16.dp, vertical = 10.dp)
+            .padding(horizontal = 16.dp, vertical = 8.dp),
+        verticalAlignment = Alignment.CenterVertically
     ) {
-        // Row 1: dot + device name + status  |  battery % + bar
-        Row(
-            modifier = Modifier.fillMaxWidth(),
-            verticalAlignment = Alignment.CenterVertically,
-            horizontalArrangement = Arrangement.SpaceBetween
-        ) {
-            Row(verticalAlignment = Alignment.CenterVertically) {
-                Box(
-                    modifier = Modifier
-                        .size(9.dp)
-                        .clip(CircleShape)
-                        .background(dotColor)
-                )
-                Spacer(modifier = Modifier.width(8.dp))
-                Text(
-                    text = if (isConnected) "$deviceName · $statusText" else statusText,
-                    color = DarkText,
-                    fontSize = 13.sp,
-                    fontWeight = FontWeight.SemiBold
-                )
-            }
+        // Status dot
+        Box(
+            modifier = Modifier
+                .size(9.dp)
+                .clip(CircleShape)
+                .background(dotColor)
+        )
+        Spacer(modifier = Modifier.width(8.dp))
 
-            if (isConnected) {
-                Row(verticalAlignment = Alignment.CenterVertically) {
-                    Text(
-                        text = "$batteryPercent%",
-                        color = MediumGray,
-                        fontSize = 12.sp,
-                        fontWeight = FontWeight.SemiBold
-                    )
-                    Spacer(modifier = Modifier.width(6.dp))
-                    BatteryBar(percent = batteryPercent)
-                }
-            }
-        }
-
-        Spacer(modifier = Modifier.height(4.dp))
-
-        // Row 2: serial + firmware (monospace, muted)
-        Row(
-            modifier = Modifier.fillMaxWidth(),
-            horizontalArrangement = Arrangement.SpaceBetween
-        ) {
+        if (isConnected) {
+            // Device name — primary identity
             Text(
-                text = if (isConnected) "Serial: $serialNumber" else "Serial: —",
-                color = MediumGray,
-                fontSize = 10.sp,
-                fontFamily = FontFamily.Monospace
+                text = deviceName,
+                color = DarkText,
+                fontSize = 13.sp,
+                fontWeight = FontWeight.SemiBold,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis
             )
+            // Serial — secondary, monospace. Takes only its own width; the
+            // flex spacer after it pushes the battery to the right edge.
+            if (serialNumber.isNotBlank()) {
+                Spacer(modifier = Modifier.width(10.dp))
+                Text(
+                    text = serialNumber,
+                    color = MediumGray,
+                    fontSize = 10.sp,
+                    fontFamily = FontFamily.Monospace,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis
+                )
+            }
+
+            // Flex spacer — eats all remaining space so battery sticks to the right.
+            Spacer(modifier = Modifier.weight(1f))
+
+            // Battery — right-aligned
             Text(
-                text = if (isConnected) "FW: $firmwareVersion" else "FW: —",
+                text = "$batteryPercent%",
                 color = MediumGray,
-                fontSize = 10.sp,
-                fontFamily = FontFamily.Monospace
+                fontSize = 12.sp,
+                fontWeight = FontWeight.SemiBold
+            )
+            Spacer(modifier = Modifier.width(6.dp))
+            BatteryBar(percent = batteryPercent)
+        } else {
+            // Disconnected — just the message, no serial / battery to show
+            Text(
+                text = "No Device Connected",
+                color = DarkText,
+                fontSize = 13.sp,
+                fontWeight = FontWeight.SemiBold
             )
         }
     }

@@ -100,28 +100,45 @@ class AuthRepository {
      */
     private fun friendlyLoginError(e: Exception): String {
         val raw = (e.message ?: "").lowercase()
+        // Log the raw exception so we can see what Firebase actually returned
+        // and expand the mapping below for anything we miss. Appears in logcat
+        // under tag "AuthRepository" at WARN level.
+        android.util.Log.w("AuthRepository", "Login failed with raw message: '$raw' (class: ${e.javaClass.simpleName})")
+
         return when {
+            // Wrong password OR non-existent user — modern Firebase consolidated
+            // both into "invalid credential" / "invalid login credentials" so
+            // callers can't distinguish them (which is correct for security).
             raw.contains("password is invalid") ||
                     raw.contains("invalid-credential") ||
+                    raw.contains("invalid credential") ||
+                    raw.contains("malformed or has expired") ||
                     raw.contains("wrong-password") ||
-                    raw.contains("invalid_login_credentials") ->
-                "Wrong email or password"
-            raw.contains("no user record") ||
-                    raw.contains("user-not-found") ->
+                    raw.contains("wrong password") ||
+                    raw.contains("invalid_login_credentials") ||
+                    raw.contains("invalid login credentials") ||
+                    raw.contains("no user record") ||
+                    raw.contains("user-not-found") ||
+                    raw.contains("there is no user") ->
                 "Wrong email or password"
             raw.contains("user-disabled") ||
-                    raw.contains("disabled") ->
+                    raw.contains("account has been disabled") ->
                 "This account has been disabled"
             raw.contains("too-many-requests") ||
-                    raw.contains("too many unsuccessful") ->
+                    raw.contains("too many") ||
+                    raw.contains("try again later") ->
                 "Too many attempts. Try again in a few minutes."
             raw.contains("network") ||
                     raw.contains("timeout") ||
-                    raw.contains("unreachable") ->
+                    raw.contains("unreachable") ||
+                    raw.contains("unable to resolve host") ->
                 "Network error. Check your connection and try again."
             raw.contains("invalid-email") ||
-                    raw.contains("badly formatted") ->
+                    raw.contains("badly formatted") ||
+                    raw.contains("email address is badly") ->
                 "Invalid email address"
+            raw.contains("email-already-in-use") ->
+                "An account with this email already exists"
             else -> "Login failed. Please try again."
         }
     }

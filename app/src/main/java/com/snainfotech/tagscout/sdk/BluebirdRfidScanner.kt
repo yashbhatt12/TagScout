@@ -283,7 +283,20 @@ class BluebirdRfidScanner(private val context: Context) : RfidScanner {
     }
 
     override fun stopScanning() {
-        runCatching { getReader().RF_StopInventory() }
+        // RF_StopInventory is a blocking JNI call. If the sled's BT session is
+        // dead (user powered it off mid-scan), the call can block for seconds
+        // waiting for a response that never comes — which triggers Android's
+        // ANR dialog if run on the main thread.
+        //
+        // Dispatch it to the SDK's background HandlerThread so callers return
+        // immediately. The fallback runs it inline if the handler was torn
+        // down, preserving the previous behavior in that edge case.
+        val h = handler
+        if (h != null) {
+            h.post { runCatching { getReader().RF_StopInventory() } }
+        } else {
+            runCatching { getReader().RF_StopInventory() }
+        }
     }
 
     override fun setAntennaPower(power: Int) {

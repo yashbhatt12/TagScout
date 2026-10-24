@@ -5,6 +5,7 @@ import androidx.lifecycle.ViewModelProvider
 import androidx.lifecycle.viewModelScope
 import com.snainfotech.tagscout.data.wms.Bin
 import com.snainfotech.tagscout.data.wms.CycleCountService
+import com.snainfotech.tagscout.data.wms.InventoryRepository
 import com.snainfotech.tagscout.data.wms.Rack
 import com.snainfotech.tagscout.data.wms.Warehouse
 import com.snainfotech.tagscout.data.wms.WarehouseRepository
@@ -60,7 +61,8 @@ data class CycleCountState(
 class CycleCountViewModel(
     private val scanner: RfidScanner,
     private val warehouseRepository: WarehouseRepository = WarehouseRepository(),
-    private val service: CycleCountService = CycleCountService()
+    private val service: CycleCountService = CycleCountService(),
+    private val inventoryRepository: InventoryRepository = InventoryRepository()
 ) : ViewModel() {
 
     private val _state = MutableStateFlow(CycleCountState())
@@ -110,10 +112,13 @@ class CycleCountViewModel(
         viewModelScope.launch {
             warehouseRepository.getWarehouses().fold(
                 onSuccess = { list ->
+                    val withInventory = list.filter { w ->
+                        inventoryRepository.countUnitsInWarehouse(w.id).getOrDefault(0L) > 0L
+                    }
                     _state.value = _state.value.copy(
                         isLoading = false,
-                        warehouses = list,
-                        selectedWarehouse = _state.value.selectedWarehouse ?: list.firstOrNull()
+                        warehouses = withInventory,
+                        selectedWarehouse = _state.value.selectedWarehouse ?: withInventory.firstOrNull()
                     )
                     _state.value.selectedWarehouse?.let { loadRacks(it) }
                 },
@@ -142,9 +147,12 @@ class CycleCountViewModel(
         viewModelScope.launch {
             warehouseRepository.getRacks(w.id).fold(
                 onSuccess = { list ->
+                    val withInventory = list.filter { r ->
+                        inventoryRepository.countUnitsInRack(r.id).getOrDefault(0L) > 0L
+                    }
                     _state.value = _state.value.copy(
-                        racks = list,
-                        selectedRack = list.firstOrNull()
+                        racks = withInventory,
+                        selectedRack = withInventory.firstOrNull()
                     )
                     _state.value.selectedRack?.let { loadBins(it) }
                 },
@@ -168,9 +176,12 @@ class CycleCountViewModel(
         viewModelScope.launch {
             warehouseRepository.getBins(r.warehouseId, r.id).fold(
                 onSuccess = { list ->
+                    val withInventory = list.filter { b ->
+                        inventoryRepository.countUnitsInBin(b.id).getOrDefault(0L) > 0L
+                    }
                     _state.value = _state.value.copy(
-                        bins = list,
-                        selectedBin = list.firstOrNull()
+                        bins = withInventory,
+                        selectedBin = withInventory.firstOrNull()
                     )
                 },
                 onFailure = { e ->

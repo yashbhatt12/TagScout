@@ -1602,6 +1602,10 @@ fun TagScoutNavGraph(
                 onStopAndReview = vm::stopAndReview,
                 onBackToPickBin = vm::backToPickBin,
                 onCommit = vm::commitReconciliation,
+                onExit = {
+                    vm.reset()
+                    navController.popBackStack()
+                },
                 onReset = vm::reset,
                 onDismissMessage = vm::clearMessage
             )

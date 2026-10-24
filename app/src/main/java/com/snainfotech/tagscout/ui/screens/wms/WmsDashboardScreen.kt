@@ -35,6 +35,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.snainfotech.tagscout.data.wms.Bin
@@ -42,6 +43,7 @@ import com.snainfotech.tagscout.data.wms.InventorySkuAggregate
 import com.snainfotech.tagscout.data.wms.Rack
 import com.snainfotech.tagscout.data.wms.Warehouse
 import com.snainfotech.tagscout.ui.components.AppHeader
+import com.snainfotech.tagscout.ui.components.LabeledDropdown
 import com.snainfotech.tagscout.ui.theme.Amber
 import com.snainfotech.tagscout.ui.theme.BorderGray
 import com.snainfotech.tagscout.ui.theme.DarkText
@@ -229,6 +231,28 @@ private fun ByProductView(
         return
     }
 
+    // Local filter — "All warehouses" is null. Doesn't persist across tab switches,
+    // which is intentional: picking a warehouse here shouldn't change the By Location view.
+    var filterWarehouse by remember { mutableStateOf<Warehouse?>(null) }
+
+    // "All" option is a sentinel. We model it with the full warehouses list and a null selection.
+    val filterOptions = state.warehouses
+    val filtered = remember(state.aggregates, filterWarehouse) {
+        if (filterWarehouse == null) {
+            state.aggregates
+        } else {
+            val wid = filterWarehouse!!.id
+            state.aggregates.mapNotNull { agg ->
+                val subset = agg.byLocation.filterKeys { it.startsWith("$wid/") }
+                if (subset.isEmpty()) null
+                else agg.copy(
+                    byLocation = subset,
+                    totalQuantity = subset.values.sum()
+                )
+            }
+        }
+    }
+
     Column(
         modifier = Modifier
             .fillMaxSize()
@@ -236,11 +260,40 @@ private fun ByProductView(
             .padding(horizontal = 12.dp, vertical = 8.dp),
         verticalArrangement = Arrangement.spacedBy(8.dp)
     ) {
-        state.aggregates.forEach { agg ->
-            ProductAggregateCard(
-                aggregate = agg,
-                onClick = { onExpandProduct(agg.productId) }
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            Box(modifier = Modifier.weight(1f)) {
+                LabeledDropdown(
+                    label = "Filter by warehouse",
+                    options = filterOptions,
+                    selected = filterWarehouse,
+                    optionText = { it.name },
+                    onSelect = { filterWarehouse = it },
+                    emptyText = "No warehouses"
+                )
+            }
+            if (filterWarehouse != null) {
+                Spacer(modifier = Modifier.width(8.dp))
+                TextButton(onClick = { filterWarehouse = null }) {
+                    Text("Clear", fontSize = 12.sp)
+                }
+            }
+        }
+
+        if (filtered.isEmpty()) {
+            Spacer(modifier = Modifier.height(16.dp))
+            Text(
+                text = "No products in ${filterWarehouse?.name}.",
+                fontSize = 12.sp, color = MediumGray,
+                modifier = Modifier.fillMaxWidth(),
+                textAlign = TextAlign.Center
             )
+        } else {
+            filtered.forEach { agg ->
+                ProductAggregateCard(
+                    aggregate = agg,
+                    onClick = { onExpandProduct(agg.productId) }
+                )
+            }
         }
         Spacer(modifier = Modifier.height(16.dp))
     }
@@ -375,35 +428,34 @@ private fun ByLocationView(
             .padding(horizontal = 12.dp, vertical = 8.dp),
         verticalArrangement = Arrangement.spacedBy(10.dp)
     ) {
-        // Warehouse picker (only visible if there's more than one)
-        if (state.warehouses.size > 1) {
-            HorizontalChipPicker(
-                label = "Warehouse",
-                items = state.warehouses.map { it.name },
-                selectedIndex = state.warehouses.indexOfFirst { it.id == state.selectedWarehouse?.id },
-                onSelect = { i -> onSelectWarehouse(state.warehouses[i]) }
-            )
-        }
+        LabeledDropdown(
+            label = "Warehouse",
+            options = state.warehouses,
+            selected = state.selectedWarehouse,
+            optionText = { it.name },
+            onSelect = onSelectWarehouse,
+            emptyText = "No warehouses set up"
+        )
 
-        // Rack picker
-        if (state.racks.isNotEmpty()) {
-            HorizontalChipPicker(
-                label = "Rack",
-                items = state.racks.map { it.name },
-                selectedIndex = state.racks.indexOfFirst { it.id == state.selectedRack?.id },
-                onSelect = { i -> onSelectRack(state.racks[i]) }
-            )
-        }
+        LabeledDropdown(
+            label = "Rack",
+            options = state.racks,
+            selected = state.selectedRack,
+            optionText = { it.name },
+            onSelect = onSelectRack,
+            emptyText = if (state.selectedWarehouse == null) "Pick a warehouse first"
+            else "No racks in this warehouse"
+        )
 
-        // Bin picker
-        if (state.bins.isNotEmpty()) {
-            HorizontalChipPicker(
-                label = "Bin",
-                items = state.bins.map { it.binCode },
-                selectedIndex = state.bins.indexOfFirst { it.id == state.selectedBin?.id },
-                onSelect = { i -> onSelectBin(state.bins[i]) }
-            )
-        }
+        LabeledDropdown(
+            label = "Bin",
+            options = state.bins,
+            selected = state.selectedBin,
+            optionText = { it.binCode },
+            onSelect = onSelectBin,
+            emptyText = if (state.selectedRack == null) "Pick a rack first"
+            else "No bins in this rack"
+        )
 
         HorizontalDivider(color = BorderGray, modifier = Modifier.padding(vertical = 4.dp))
 

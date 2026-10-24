@@ -39,13 +39,14 @@ import androidx.compose.ui.unit.sp
 import com.snainfotech.tagscout.data.wms.GrnService
 import com.snainfotech.tagscout.ui.components.AppHeader
 import com.snainfotech.tagscout.ui.theme.Amber
+import com.snainfotech.tagscout.ui.theme.SuccessGreen
 import com.snainfotech.tagscout.ui.theme.BorderGray
+import com.snainfotech.tagscout.ui.theme.ErrorRed
 import com.snainfotech.tagscout.ui.theme.DarkText
 import com.snainfotech.tagscout.ui.theme.ErrorRed
 import com.snainfotech.tagscout.ui.theme.LightGray
 import com.snainfotech.tagscout.ui.theme.MediumGray
 import com.snainfotech.tagscout.ui.theme.Primary
-import com.snainfotech.tagscout.ui.theme.SuccessGreen
 
 @Composable
 fun InwardScreen(
@@ -58,13 +59,13 @@ fun InwardScreen(
     onDismissMessage: () -> Unit,
     modifier: Modifier = Modifier
 ) {
-    val context = LocalContext.current
+    val context = androidx.compose.ui.platform.LocalContext.current
 
     val filePickerLauncher = rememberLauncherForActivityResult(
         contract = ActivityResultContracts.OpenDocument()
     ) { uri ->
         if (uri != null) {
-            val fileName = uri.lastPathSegment
+            val fileName = queryDisplayName(context, uri) ?: "selected_file.xlsx"
                 ?.substringAfterLast('/')
                 ?.substringAfterLast(':')
                 ?.replace("%20", " ")
@@ -313,21 +314,35 @@ private fun ReviewStep(
                 modifier = Modifier.padding(12.dp),
                 horizontalArrangement = Arrangement.spacedBy(8.dp)
             ) {
-                TextButton(
-                    onClick = onReset,
-                    modifier = Modifier.weight(1f).height(48.dp)
-                ) {
-                    Text(
-                        text = if (hasErrors) "Back — Try Another File" else "Cancel",
-                        color = MediumGray, fontWeight = FontWeight.SemiBold
-                    )
+                if (hasErrors) {
+                    Button(
+                        onClick = onReset,
+                        modifier = Modifier.weight(1f).height(48.dp),
+                        shape = RoundedCornerShape(8.dp),
+                        colors = ButtonDefaults.buttonColors(containerColor = ErrorRed)
+                    ) {
+                        Text(
+                            text = "Back — Try Another File",
+                            color = Color.White, fontWeight = FontWeight.SemiBold
+                        )
+                    }
+                } else {
+                    TextButton(
+                        onClick = onReset,
+                        modifier = Modifier.weight(1f).height(48.dp)
+                    ) {
+                        Text(
+                            text = "Cancel",
+                            color = MediumGray, fontWeight = FontWeight.SemiBold
+                        )
+                    }
                 }
                 if (!hasErrors) {
                     Button(
                         onClick = onConfirm,
                         modifier = Modifier.weight(2f).height(48.dp),
                         shape = RoundedCornerShape(8.dp),
-                        colors = ButtonDefaults.buttonColors(containerColor = Amber)
+                        colors = ButtonDefaults.buttonColors(containerColor = SuccessGreen)
                     ) {
                         Text(
                             text = "Confirm Inward — ${state.totalRowCount} rows",
@@ -485,5 +500,21 @@ private fun DoneStep(
         ) {
             Text("Back to WMS Menu", color = MediumGray)
         }
+    }
+}
+private fun queryDisplayName(context: android.content.Context, uri: android.net.Uri): String? {
+    return try {
+        context.contentResolver.query(
+            uri,
+            arrayOf(android.provider.OpenableColumns.DISPLAY_NAME),
+            null, null, null
+        )?.use { cursor ->
+            if (cursor.moveToFirst()) {
+                val idx = cursor.getColumnIndex(android.provider.OpenableColumns.DISPLAY_NAME)
+                if (idx >= 0) cursor.getString(idx) else null
+            } else null
+        }
+    } catch (e: Exception) {
+        null
     }
 }

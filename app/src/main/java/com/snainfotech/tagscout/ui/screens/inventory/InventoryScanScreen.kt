@@ -1,8 +1,6 @@
 package com.snainfotech.tagscout.ui.screens.inventory
 
 import androidx.compose.foundation.background
-import androidx.compose.foundation.border
-import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -12,15 +10,11 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
-import androidx.compose.foundation.lazy.LazyColumn
-import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.OutlinedButton
-import androidx.compose.material3.Slider
-import androidx.compose.material3.SliderDefaults
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
@@ -34,7 +28,10 @@ import androidx.compose.ui.unit.sp
 import com.snainfotech.tagscout.ui.components.AntennaSlider
 import com.snainfotech.tagscout.ui.components.AppHeader
 import com.snainfotech.tagscout.ui.components.DeviceStatusComponent
+import com.snainfotech.tagscout.ui.components.ExpectedItemTable
+import com.snainfotech.tagscout.ui.components.ScanTabRow
 import com.snainfotech.tagscout.ui.components.TimerBadge
+import com.snainfotech.tagscout.ui.components.UnexpectedTagsTable
 import com.snainfotech.tagscout.ui.screens.home.ConnectionStatus
 import com.snainfotech.tagscout.ui.theme.BorderGray
 import com.snainfotech.tagscout.ui.theme.DarkText
@@ -45,8 +42,6 @@ import com.snainfotech.tagscout.ui.theme.LightGray
 import com.snainfotech.tagscout.ui.theme.MediumGray
 import com.snainfotech.tagscout.ui.theme.Primary
 import com.snainfotech.tagscout.ui.theme.SuccessGreen
-import com.snainfotech.tagscout.ui.theme.TableRowFound
-import com.snainfotech.tagscout.ui.theme.TableRowMissing
 import com.snainfotech.tagscout.ui.theme.WarningOrange
 
 @Composable
@@ -68,7 +63,6 @@ fun InventoryScanScreen(
     onClearClick: () -> Unit = {},
     modifier: Modifier = Modifier
 ) {
-    // Build the timer badge for the header
     val timerBadge = when {
         state.isScanning -> TimerBadge.Live(formatTime(state.timeRemaining))
         state.isPaused -> TimerBadge.Paused(formatTime(state.timeRemaining))
@@ -77,7 +71,6 @@ fun InventoryScanScreen(
 
     Column(modifier = modifier.fillMaxSize().background(LightGray)) {
 
-        // Top bar with timer badge
         AppHeader(
             title = "Inventory by File",
             showBackButton = !state.isScanning,
@@ -87,7 +80,6 @@ fun InventoryScanScreen(
             showMenu = false
         )
 
-        // Device status bar
         DeviceStatusComponent(
             isConnected = isDeviceConnected,
             deviceName = deviceName,
@@ -98,14 +90,12 @@ fun InventoryScanScreen(
             onClick = if (isDeviceConnected) onDeviceStatusClick else null
         )
 
-        // Antenna control
         AntennaSlider(
             value = state.antennaStrength,
             enabled = !state.isScanning,
             onValueChange = onAntennaChange
         )
 
-        // Content varies based on state
         if (!state.hasFileLoaded) {
             Box(modifier = Modifier.weight(1f).fillMaxWidth()) {
                 EmptyState(
@@ -146,27 +136,21 @@ private fun EmptyState(
         verticalArrangement = Arrangement.Center
     ) {
         Text(text = "📋", fontSize = 64.sp)
-
         Spacer(modifier = Modifier.height(16.dp))
-
         Text(
             text = "Inventory by File",
             fontSize = 20.sp,
             fontWeight = FontWeight.SemiBold,
             color = DarkText
         )
-
         Spacer(modifier = Modifier.height(8.dp))
-
         Text(
             text = "Load an Excel or CSV file with expected tags to begin inventory matching.",
             fontSize = 14.sp,
             color = MediumGray,
             modifier = Modifier.padding(horizontal = 24.dp)
         )
-
         Spacer(modifier = Modifier.height(32.dp))
-
         Button(
             onClick = onLoadFileClick,
             enabled = isDeviceConnected,
@@ -179,7 +163,6 @@ private fun EmptyState(
         ) {
             Text("📁 Load Inventory File", fontSize = 14.sp)
         }
-
         if (!isDeviceConnected) {
             Spacer(modifier = Modifier.height(12.dp))
             Text(
@@ -207,7 +190,7 @@ private fun LoadedFileContent(
 ) {
     Column(modifier = Modifier.fillMaxSize()) {
 
-        // File info bar (compact, no extra stats)
+        // File info bar
         Row(
             modifier = Modifier
                 .fillMaxWidth()
@@ -228,7 +211,6 @@ private fun LoadedFileContent(
                     color = MediumGray
                 )
             }
-
             OutlinedButton(
                 onClick = onLoadFileClick,
                 enabled = !state.isScanning
@@ -239,16 +221,16 @@ private fun LoadedFileContent(
 
         Spacer(modifier = Modifier.height(8.dp))
 
-        // Tab row
-        TabRow(
+        // Shared tab row
+        ScanTabRow(
             selectedTab = state.selectedTab,
-            fileMappingFound = state.foundItems,
-            fileMappingTotal = state.expectedItems,
-            additionalTagsCount = state.unexpectedTags.size,
+            expectedFound = state.foundItems,
+            expectedTotal = state.expectedItems,
+            additionalCount = state.unexpectedTags.size,
+            expectedLabel = "File Mapping",
             onTabSelect = onTabSelect
         )
 
-        // Conditional table based on selected tab
         when (state.selectedTab) {
             InventoryTab.FILE_MAPPING -> FileMappingContent(
                 state = state,
@@ -260,7 +242,6 @@ private fun LoadedFileContent(
             )
         }
 
-        // Bottom button bar
         BottomButtons(
             state = state,
             isDeviceConnected = isDeviceConnected,
@@ -282,7 +263,6 @@ private fun FileMappingContent(
 ) {
     Column(modifier = modifier.fillMaxWidth().background(Color.White)) {
 
-        // Match progress section
         Column(
             modifier = Modifier
                 .fillMaxWidth()
@@ -319,285 +299,9 @@ private fun FileMappingContent(
             )
         }
 
-        // Item table fills the rest
-        ItemTable(
+        ExpectedItemTable(
             items = state.inventoryItems,
             modifier = Modifier.weight(1f)
-        )
-    }
-}
-
-// ============================================
-// TAB ROW
-// ============================================
-
-@Composable
-private fun TabRow(
-    selectedTab: InventoryTab,
-    fileMappingFound: Int,
-    fileMappingTotal: Int,
-    additionalTagsCount: Int,
-    onTabSelect: (InventoryTab) -> Unit
-) {
-    Row(
-        modifier = Modifier
-            .fillMaxWidth()
-            .background(LightGray)
-            .padding(horizontal = 8.dp, vertical = 6.dp),
-        horizontalArrangement = Arrangement.spacedBy(8.dp)
-    ) {
-        TabButton(
-            label = "File Mapping",
-            count = "$fileMappingFound/$fileMappingTotal",
-            isSelected = selectedTab == InventoryTab.FILE_MAPPING,
-            onClick = { onTabSelect(InventoryTab.FILE_MAPPING) },
-            modifier = Modifier.weight(1f)
-        )
-        TabButton(
-            label = "Additional Tags",
-            count = "$additionalTagsCount",
-            isSelected = selectedTab == InventoryTab.ADDITIONAL_TAGS,
-            onClick = { onTabSelect(InventoryTab.ADDITIONAL_TAGS) },
-            modifier = Modifier.weight(1f)
-        )
-    }
-}
-
-@Composable
-private fun TabButton(
-    label: String,
-    count: String,
-    isSelected: Boolean,
-    onClick: () -> Unit,
-    modifier: Modifier = Modifier
-) {
-    val bgColor = if (isSelected) Primary else Color.White
-    val textColor = if (isSelected) Color.White else DarkText
-    val borderColor = if (isSelected) Primary else BorderGray
-
-    Column(
-        modifier = modifier
-            .clip(RoundedCornerShape(6.dp))
-            .background(bgColor)
-            .border(1.dp, borderColor, RoundedCornerShape(6.dp))
-            .clickable { onClick() }
-            .padding(vertical = 8.dp, horizontal = 12.dp),
-        horizontalAlignment = Alignment.CenterHorizontally
-    ) {
-        Text(
-            text = label,
-            fontSize = 12.sp,
-            fontWeight = FontWeight.SemiBold,
-            color = textColor
-        )
-        Spacer(modifier = Modifier.height(2.dp))
-        Text(
-            text = count,
-            fontSize = 11.sp,
-            color = textColor,
-            fontFamily = FontFamily.Monospace
-        )
-    }
-}
-
-// ============================================
-// ITEM TABLE (File Mapping)
-// ============================================
-
-@Composable
-private fun ItemTable(
-    items: List<InventoryItem>,
-    modifier: Modifier = Modifier
-) {
-    Column(modifier = modifier.fillMaxWidth().background(Color.White)) {
-
-        Row(
-            modifier = Modifier
-                .fillMaxWidth()
-                .background(LightGray)
-                .padding(horizontal = 12.dp, vertical = 8.dp),
-            verticalAlignment = Alignment.CenterVertically
-        ) {
-            Text(
-                text = "Status",
-                fontSize = 10.sp,
-                fontWeight = FontWeight.SemiBold,
-                color = MediumGray,
-                modifier = Modifier.weight(0.18f)
-            )
-            Text(
-                text = "EPC",
-                fontSize = 10.sp,
-                fontWeight = FontWeight.SemiBold,
-                color = MediumGray,
-                modifier = Modifier.weight(0.5f)
-            )
-            Text(
-                text = "Product",
-                fontSize = 10.sp,
-                fontWeight = FontWeight.SemiBold,
-                color = MediumGray,
-                modifier = Modifier.weight(0.32f)
-            )
-        }
-
-        if (items.isEmpty()) {
-            Box(
-                modifier = Modifier.fillMaxWidth().padding(24.dp),
-                contentAlignment = Alignment.Center
-            ) {
-                Text(
-                    text = "No items loaded",
-                    fontSize = 12.sp,
-                    color = MediumGray
-                )
-            }
-        } else {
-            LazyColumn(modifier = Modifier.fillMaxWidth()) {
-                items(items = items, key = { it.id }) { item ->
-                    InventoryItemRow(item = item)
-                }
-            }
-        }
-    }
-}
-
-@Composable
-private fun InventoryItemRow(item: InventoryItem) {
-    val bgColor = if (item.isFound) TableRowFound else TableRowMissing
-
-    Row(
-        modifier = Modifier
-            .fillMaxWidth()
-            .background(bgColor)
-            .padding(horizontal = 12.dp, vertical = 8.dp),
-        verticalAlignment = Alignment.CenterVertically
-    ) {
-        Text(
-            text = if (item.isFound) "✓" else "✗",
-            fontSize = 14.sp,
-            fontWeight = FontWeight.Bold,
-            color = if (item.isFound) SuccessGreen else ErrorRed,
-            modifier = Modifier.weight(0.18f)
-        )
-        Text(
-            text = item.epc.take(16),
-            fontSize = 11.sp,
-            color = DarkText,
-            fontFamily = FontFamily.Monospace,
-            modifier = Modifier.weight(0.5f)
-        )
-        Text(
-            text = item.productName,
-            fontSize = 11.sp,
-            color = DarkText,
-            modifier = Modifier.weight(0.32f)
-        )
-    }
-}
-
-// ============================================
-// UNEXPECTED TAGS TABLE
-// ============================================
-
-@Composable
-private fun UnexpectedTagsTable(
-    tags: List<UnexpectedTag>,
-    modifier: Modifier = Modifier
-) {
-    Column(modifier = modifier.fillMaxWidth().background(Color.White)) {
-
-        Row(
-            modifier = Modifier
-                .fillMaxWidth()
-                .background(LightGray)
-                .padding(horizontal = 12.dp, vertical = 8.dp),
-            verticalAlignment = Alignment.CenterVertically
-        ) {
-            Text(
-                text = "EPC",
-                fontSize = 10.sp,
-                fontWeight = FontWeight.SemiBold,
-                color = MediumGray,
-                modifier = Modifier.weight(0.55f)
-            )
-            Text(
-                text = "TID",
-                fontSize = 10.sp,
-                fontWeight = FontWeight.SemiBold,
-                color = MediumGray,
-                modifier = Modifier.weight(0.25f)
-            )
-            Text(
-                text = "First Seen",
-                fontSize = 10.sp,
-                fontWeight = FontWeight.SemiBold,
-                color = MediumGray,
-                modifier = Modifier.weight(0.2f)
-            )
-        }
-
-        if (tags.isEmpty()) {
-            Box(
-                modifier = Modifier.fillMaxWidth().padding(24.dp),
-                contentAlignment = Alignment.Center
-            ) {
-                Column(horizontalAlignment = Alignment.CenterHorizontally) {
-                    Text(text = "✨", fontSize = 32.sp)
-                    Spacer(modifier = Modifier.height(8.dp))
-                    Text(
-                        text = "No additional tags",
-                        fontSize = 12.sp,
-                        fontWeight = FontWeight.SemiBold,
-                        color = DarkText
-                    )
-                    Spacer(modifier = Modifier.height(4.dp))
-                    Text(
-                        text = "Tags scanned that aren't in your file will appear here",
-                        fontSize = 11.sp,
-                        color = MediumGray
-                    )
-                }
-            }
-        } else {
-            LazyColumn(modifier = Modifier.fillMaxWidth()) {
-                items(items = tags, key = { it.epc }) { tag ->
-                    UnexpectedTagRow(tag = tag)
-                }
-            }
-        }
-    }
-}
-
-@Composable
-private fun UnexpectedTagRow(tag: UnexpectedTag) {
-    Row(
-        modifier = Modifier
-            .fillMaxWidth()
-            .background(Color.White)
-            .border(0.5.dp, BorderGray)
-            .padding(horizontal = 12.dp, vertical = 8.dp),
-        verticalAlignment = Alignment.CenterVertically
-    ) {
-        Text(
-            text = tag.epc.take(20),
-            fontSize = 11.sp,
-            color = DarkText,
-            fontFamily = FontFamily.Monospace,
-            modifier = Modifier.weight(0.55f)
-        )
-        Text(
-            text = tag.tid.take(10),
-            fontSize = 11.sp,
-            color = MediumGray,
-            fontFamily = FontFamily.Monospace,
-            modifier = Modifier.weight(0.25f)
-        )
-        Text(
-            text = formatElapsed(tag.firstSeenSeconds),
-            fontSize = 10.sp,
-            color = MediumGray,
-            modifier = Modifier.weight(0.2f)
         )
     }
 }
@@ -671,8 +375,4 @@ private fun formatTime(seconds: Int): String {
     val mins = seconds / 60
     val secs = seconds % 60
     return "%d:%02d".format(mins, secs)
-}
-
-private fun formatElapsed(seconds: Int): String {
-    return if (seconds < 60) "${seconds}s" else "${seconds / 60}m ${seconds % 60}s"
 }

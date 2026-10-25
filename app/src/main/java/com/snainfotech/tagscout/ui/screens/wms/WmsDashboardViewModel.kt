@@ -11,6 +11,8 @@ import com.snainfotech.tagscout.data.wms.ProductRepository
 import com.snainfotech.tagscout.data.wms.Rack
 import com.snainfotech.tagscout.data.wms.Warehouse
 import com.snainfotech.tagscout.data.wms.WarehouseRepository
+import kotlinx.coroutines.async
+import kotlinx.coroutines.awaitAll
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -31,11 +33,15 @@ data class WmsDashboardState(
     val aggregates: List<InventorySkuAggregate> = emptyList(),
 
     // ── By-Location view ────────────
+    // Full warehouse → rack → bin structure, loaded once on screen open.
+    // The visible racks/bins lists are filtered in memory from allRacks/allBins
+    // whenever the user picks a different warehouse or rack — no Firestore
+    // round-trip for dropdown changes.
     val warehouses: List<Warehouse> = emptyList(),
+    val allRacks: List<Rack> = emptyList(),
+    val allBins: List<Bin> = emptyList(),
     val selectedWarehouse: Warehouse? = null,
-    val racks: List<Rack> = emptyList(),
     val selectedRack: Rack? = null,
-    val bins: List<Bin> = emptyList(),
     val selectedBin: Bin? = null,
     val unitsInSelectedBin: List<InventoryUnit> = emptyList(),
 
@@ -43,6 +49,18 @@ data class WmsDashboardState(
     val totalSkuCount: Int = 0,
     val totalUnitCount: Int = 0
 ) {
+    /** Racks under the currently selected warehouse. */
+    val racks: List<Rack>
+        get() = selectedWarehouse?.let { wh ->
+            allRacks.filter { it.warehouseId == wh.id }
+        } ?: emptyList()
+
+    /** Bins under the currently selected rack. */
+    val bins: List<Bin>
+        get() = selectedRack?.let { rack ->
+            allBins.filter { it.rackId == rack.id }
+        } ?: emptyList()
+
     /**
      * The by-location view groups units in the selected bin by SKU
      * so the UI can render "SKU-1001 × 3" rows instead of listing
@@ -65,11 +83,11 @@ class WmsDashboardViewModel(
     val state: StateFlow<WmsDashboardState> = _state.asStateFlow()
 
     init {
-        // Load both views' primary data on entry so switching between
-        // tabs feels instant. Aggregates are small (one doc per SKU) and
-        // warehouses/racks/bins are small too, so this is cheap.
-        loadByProductView()
-        loadWarehouseTree()
+        // Load both views' primary data in parallel on entry so switching
+        // between tabs feels instant. Aggregates are small (one doc per SKU)
+        // and the warehouse structure is small too, so pulling the whole lot
+        // up front and filtering in memory is cheaper than chaining selects.
+        loadAll()
     }
 
     fun clearMessage() { _state.value = _state.value.copy(message = null) }
@@ -80,131 +98,136 @@ class WmsDashboardViewModel(
 
     /** Manual refresh from the pull-to-refresh gesture or after external changes. */
     fun refresh() {
-        loadByProductView()
-        loadWarehouseTree()
-        _state.value.selectedBin?.let { loadUnitsInBin(it) }
+        loadAll()
     }
 
-    // ── By-Product view ─────────────────────────────────────
+    // ── Combined load ───────────────────────────────────────
+    //
+    // Fires three independent reads in parallel:
+    //   • SKU aggregates (for the by-product view)
+    //   • Product catalog (to enrich aggregates with product titles)
+    //   • Full warehouse structure (warehouses + all racks + all bins)
+    //
+    // Previously these ran in sequence with each dropdown change triggering
+    // its own Firestore call. For a few dozen locations the old chain added
+    // up to several seconds of waiting; this version loads everything in
+    // roughly the time of the slowest single read.
 
-    private fun loadByProductView() {
+    private fun loadAll() {
         _state.value = _state.value.copy(isLoading = true)
         viewModelScope.launch {
-            val aggResult = inventoryRepo.getAllSkuAggregates()
-            val productResult = productRepo.getProducts()
+            val aggDeferred = async { inventoryRepo.getAllSkuAggregates() }
+            val productDeferred = async { productRepo.getProducts() }
+            val structureDeferred = async { warehouseRepo.getFullStructure() }
 
-            aggResult.fold(
-                onSuccess = { rawAggregates ->
-                    // Enrich each aggregate with the product's title so the UI
-                    // can show a human-readable name next to the SKU.
-                    val products = productResult.getOrDefault(emptyList())
-                    val productById = products.associateBy { it.id }
-                    val enriched = rawAggregates
-                        .filter { it.totalQuantity > 0 }  // hide zero-count SKUs
+            val results = awaitAll(aggDeferred, productDeferred, structureDeferred)
+            @Suppress("UNCHECKED_CAST")
+            val aggResult = results[0] as Result<List<InventorySkuAggregate>>
+            @Suppress("UNCHECKED_CAST")
+            val productResult = results[1] as Result<List<com.snainfotech.tagscout.data.wms.Product>>
+            @Suppress("UNCHECKED_CAST")
+            val structureResult = results[2] as Result<WarehouseRepository.FullStructure>
+
+            // ── By-Product view ─────────────
+            val enrichedAggregates = aggResult.fold(
+                onSuccess = { raw ->
+                    val productsById = productResult.getOrDefault(emptyList())
+                        .associateBy { it.id }
+                    raw.filter { it.totalQuantity > 0 }
                         .map { agg ->
-                            agg.copy(
-                                productTitle = productById[agg.productId]?.title ?: ""
-                            )
+                            agg.copy(productTitle = productsById[agg.productId]?.title ?: "")
                         }
-
-                    val totalUnits = enriched.sumOf { it.totalQuantity }
-
-                    _state.value = _state.value.copy(
-                        isLoading = false,
-                        aggregates = enriched,
-                        totalSkuCount = enriched.size,
-                        totalUnitCount = totalUnits
-                    )
                 },
-                onFailure = { e ->
+                onFailure = {
                     _state.value = _state.value.copy(
-                        isLoading = false,
-                        message = "Could not load inventory: ${e.message}"
+                        message = "Could not load inventory: ${it.message}"
                     )
+                    emptyList()
                 }
             )
+
+            // ── By-Location view ─────────────
+            val structure = structureResult.getOrElse {
+                _state.value = _state.value.copy(
+                    message = (_state.value.message
+                        ?: "Could not load warehouses: ${it.message}")
+                )
+                WarehouseRepository.FullStructure(emptyList(), emptyList(), emptyList())
+            }
+
+            // Preserve the user's selection if it still exists in the new
+            // structure; otherwise fall back to the first available entry.
+            val prev = _state.value
+            val selectedWh = structure.warehouses.firstOrNull { it.id == prev.selectedWarehouse?.id }
+                ?: structure.warehouses.firstOrNull()
+            val racksInWh = selectedWh?.let { wh ->
+                structure.racks.filter { it.warehouseId == wh.id }
+            } ?: emptyList()
+            val selectedRack = racksInWh.firstOrNull { it.id == prev.selectedRack?.id }
+                ?: racksInWh.firstOrNull()
+            val binsInRack = selectedRack?.let { rack ->
+                structure.bins.filter { it.rackId == rack.id }
+            } ?: emptyList()
+            val selectedBin = binsInRack.firstOrNull { it.id == prev.selectedBin?.id }
+                ?: binsInRack.firstOrNull()
+
+            _state.value = _state.value.copy(
+                isLoading = false,
+                aggregates = enrichedAggregates,
+                totalSkuCount = enrichedAggregates.size,
+                totalUnitCount = enrichedAggregates.sumOf { it.totalQuantity },
+                warehouses = structure.warehouses,
+                allRacks = structure.racks,
+                allBins = structure.bins,
+                selectedWarehouse = selectedWh,
+                selectedRack = selectedRack,
+                selectedBin = selectedBin,
+                // Clear old units if the auto-selected bin changed; the
+                // follow-up loadUnitsInBin below will populate the new one.
+                unitsInSelectedBin = if (selectedBin?.id == prev.selectedBin?.id) {
+                    prev.unitsInSelectedBin
+                } else {
+                    emptyList()
+                }
+            )
+
+            // Fetch units for the auto-selected bin so the screen isn't empty
+            // on first open. User-driven bin changes go through selectBin().
+            selectedBin?.let { bin ->
+                if (bin.id != prev.selectedBin?.id || prev.unitsInSelectedBin.isEmpty()) {
+                    loadUnitsInBin(bin)
+                }
+            }
         }
     }
 
-    // ── By-Location view ────────────────────────────────────
-
-    private fun loadWarehouseTree() {
-        viewModelScope.launch {
-            warehouseRepo.getWarehouses().fold(
-                onSuccess = { list ->
-                    _state.value = _state.value.copy(
-                        warehouses = list,
-                        selectedWarehouse = _state.value.selectedWarehouse ?: list.firstOrNull()
-                    )
-                    _state.value.selectedWarehouse?.let { loadRacks(it) }
-                },
-                onFailure = { e ->
-                    _state.value = _state.value.copy(
-                        message = "Could not load warehouses: ${e.message}"
-                    )
-                }
-            )
-        }
-    }
+    // ── Selection handlers (filter in memory) ────────────────
 
     fun selectWarehouse(warehouse: Warehouse) {
-        _state.value = _state.value.copy(
+        val s = _state.value
+        val racks = s.allRacks.filter { it.warehouseId == warehouse.id }
+        val firstRack = racks.firstOrNull()
+        val bins = firstRack?.let { r -> s.allBins.filter { it.rackId == r.id } } ?: emptyList()
+        val firstBin = bins.firstOrNull()
+        _state.value = s.copy(
             selectedWarehouse = warehouse,
-            selectedRack = null,
-            selectedBin = null,
-            racks = emptyList(),
-            bins = emptyList(),
+            selectedRack = firstRack,
+            selectedBin = firstBin,
             unitsInSelectedBin = emptyList()
         )
-        loadRacks(warehouse)
-    }
-
-    private fun loadRacks(warehouse: Warehouse) {
-        viewModelScope.launch {
-            warehouseRepo.getRacks(warehouse.id).fold(
-                onSuccess = { list ->
-                    _state.value = _state.value.copy(
-                        racks = list,
-                        selectedRack = list.firstOrNull()
-                    )
-                    _state.value.selectedRack?.let { loadBins(it) }
-                },
-                onFailure = { e ->
-                    _state.value = _state.value.copy(
-                        message = "Could not load racks: ${e.message}"
-                    )
-                }
-            )
-        }
+        firstBin?.let { loadUnitsInBin(it) }
     }
 
     fun selectRack(rack: Rack) {
-        _state.value = _state.value.copy(
+        val s = _state.value
+        val bins = s.allBins.filter { it.rackId == rack.id }
+        val firstBin = bins.firstOrNull()
+        _state.value = s.copy(
             selectedRack = rack,
-            selectedBin = null,
-            bins = emptyList(),
+            selectedBin = firstBin,
             unitsInSelectedBin = emptyList()
         )
-        loadBins(rack)
-    }
-
-    private fun loadBins(rack: Rack) {
-        viewModelScope.launch {
-            warehouseRepo.getBins(rack.warehouseId, rack.id).fold(
-                onSuccess = { list ->
-                    _state.value = _state.value.copy(
-                        bins = list,
-                        selectedBin = list.firstOrNull()
-                    )
-                    _state.value.selectedBin?.let { loadUnitsInBin(it) }
-                },
-                onFailure = { e ->
-                    _state.value = _state.value.copy(
-                        message = "Could not load bins: ${e.message}"
-                    )
-                }
-            )
-        }
+        firstBin?.let { loadUnitsInBin(it) }
     }
 
     fun selectBin(bin: Bin) {
@@ -214,6 +237,8 @@ class WmsDashboardViewModel(
         )
         loadUnitsInBin(bin)
     }
+
+    // ── The one call that still hits Firestore after structure load ───
 
     private fun loadUnitsInBin(bin: Bin) {
         _state.value = _state.value.copy(isLoading = true)

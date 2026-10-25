@@ -4,6 +4,9 @@ import com.google.firebase.Timestamp
 import com.google.firebase.auth.FirebaseAuth
 import com.google.firebase.firestore.FirebaseFirestore
 import com.snainfotech.tagscout.data.auth.AuthReady
+import kotlinx.coroutines.async
+import kotlinx.coroutines.awaitAll
+import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.tasks.await
 
 /**
@@ -526,6 +529,53 @@ class WarehouseRepository(
                 }
             }
             Result.success(null)
+        } catch (e: Exception) {
+            Result.failure(e)
+        }
+    }
+
+    // ── Bulk structure read ───────────────────────────────────
+    //
+    // Loads the entire warehouse → rack → bin tree in three parallel waves
+    // instead of one call-per-selection. Used by screens that need to show
+    // dropdowns of the whole structure (Cycle Count pick-bin, WMS Dashboard
+    // by-location) — load once on screen open, filter in memory from there.
+    //
+    // Cost: 1 warehouse read + N parallel rack reads + M parallel bin reads,
+    // where N = warehouses and M = total racks across the company. For the
+    // SME customers we target this is a handful of reads; for a very large
+    // customer the aggregates-based approach in InventoryRepository is a
+    // better fit for the "which bins are non-empty" question.
+
+    /** All warehouses + all racks + all bins for the current company. */
+    data class FullStructure(
+        val warehouses: List<Warehouse>,
+        val racks: List<Rack>,
+        val bins: List<Bin>
+    )
+
+    suspend fun getFullStructure(): Result<FullStructure> {
+        return try {
+            val warehouses = getWarehouses().getOrElse { return Result.failure(it) }
+            if (warehouses.isEmpty()) {
+                return Result.success(FullStructure(emptyList(), emptyList(), emptyList()))
+            }
+
+            coroutineScope {
+                // Fan out one rack-read per warehouse, wait for all.
+                val racks = warehouses
+                    .map { wh -> async { getRacks(wh.id).getOrElse { emptyList() } } }
+                    .awaitAll()
+                    .flatten()
+
+                // Fan out one bin-read per rack, wait for all.
+                val bins = racks
+                    .map { rack -> async { getBins(rack.warehouseId, rack.id).getOrElse { emptyList() } } }
+                    .awaitAll()
+                    .flatten()
+
+                Result.success(FullStructure(warehouses, racks, bins))
+            }
         } catch (e: Exception) {
             Result.failure(e)
         }

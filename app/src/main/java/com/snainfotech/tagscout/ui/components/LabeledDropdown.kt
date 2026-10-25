@@ -65,7 +65,10 @@ fun <T> LabeledDropdown(
             ),
             modifier = Modifier
                 .fillMaxWidth()
-                .menuAnchor()
+                .menuAnchor(
+                    androidx.compose.material3.MenuAnchorType.PrimaryNotEditable,
+                    enabled = isEnabled
+                )
         )
         androidx.compose.material3.DropdownMenu(
             expanded = expanded && isEnabled,

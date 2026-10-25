@@ -1,16 +1,21 @@
 package com.snainfotech.tagscout.ui.screens.wms
-
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.ViewModelProvider
 import androidx.lifecycle.viewModelScope
 import com.snainfotech.tagscout.data.wms.Bin
 import com.snainfotech.tagscout.data.wms.CycleCountService
 import com.snainfotech.tagscout.data.wms.InventoryRepository
+import com.snainfotech.tagscout.data.wms.ProductRepository
 import com.snainfotech.tagscout.data.wms.Rack
 import com.snainfotech.tagscout.data.wms.Warehouse
 import com.snainfotech.tagscout.data.wms.WarehouseRepository
 import com.snainfotech.tagscout.sdk.RfidScanner
+import com.snainfotech.tagscout.ui.screens.inventory.InventoryItem
+import com.snainfotech.tagscout.ui.screens.inventory.InventoryTab
+import com.snainfotech.tagscout.ui.screens.inventory.UnexpectedTag
 import kotlinx.coroutines.Job
+import kotlinx.coroutines.async
+import kotlinx.coroutines.awaitAll
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -41,9 +46,30 @@ data class CycleCountState(
     val bins: List<Bin> = emptyList(),
     val selectedBin: Bin? = null,
 
+    // Full warehouse structure (loaded once); the visible racks/bins
+    // lists above are filtered from these in memory.
+    val allRacks: List<Rack> = emptyList(),
+    val allBins: List<Bin> = emptyList(),
+    // Bin codes that currently hold at least one unit, derived from the
+    // SKU-aggregate byLocation map. Used to hide empty bins without one
+    // count query per bin.
+    val nonEmptyBinCodes: Set<String> = emptySet(),
+
     // Scanning
     val scanning: Boolean = false,
     val scannedEpcs: Set<String> = emptySet(),
+    val firstSeenAt: Map<String, Long> = emptyMap(),   // epc -> wall-clock millis when first seen
+    val scanStartedAt: Long = 0L,
+
+    // Expected set, loaded when the bin is picked. Each item is one inventory_unit.
+    val expectedItems: List<InventoryItem> = emptyList(),
+    val expectedLoadFailed: Boolean = false,
+
+    // Live unexpected list (scanned EPCs not in expectedItems). knownLocation
+    // is filled in when entering REVIEW, by looking each one up in inventory_units.
+    val unexpectedTags: List<UnexpectedTag> = emptyList(),
+
+    val selectedTab: InventoryTab = InventoryTab.FILE_MAPPING,
 
     // Review
     val report: CycleCountService.ReconciliationReport? = null,
@@ -56,13 +82,18 @@ data class CycleCountState(
     val canProceedFromRef get() = reference.isNotBlank()
     val canProceedFromBin get() = selectedBin != null
     val scannedCount get() = scannedEpcs.size
+
+    // Derived counters for the Match Progress strip
+    val expectedCount get() = expectedItems.size
+    val expectedFoundCount get() = expectedItems.count { it.isFound }
 }
 
 class CycleCountViewModel(
     private val scanner: RfidScanner,
     private val warehouseRepository: WarehouseRepository = WarehouseRepository(),
     private val service: CycleCountService = CycleCountService(),
-    private val inventoryRepository: InventoryRepository = InventoryRepository()
+    private val inventoryRepository: InventoryRepository = InventoryRepository(),
+    private val productRepository: ProductRepository = ProductRepository()
 ) : ViewModel() {
 
     private val _state = MutableStateFlow(CycleCountState())
@@ -75,7 +106,9 @@ class CycleCountViewModel(
     fun updateReference(v: String) {
         _state.value = _state.value.copy(reference = v)
     }
-
+    fun selectTab(tab: com.snainfotech.tagscout.ui.screens.inventory.InventoryTab) {
+        _state.value = _state.value.copy(selectedTab = tab)
+    }
     fun proceedToPickBin() {
         if (!_state.value.canProceedFromRef) {
             _state.value = _state.value.copy(message = "Enter a reference number first")
@@ -86,14 +119,51 @@ class CycleCountViewModel(
     }
 
     fun proceedToScanning() {
-        if (!_state.value.canProceedFromBin) {
+        val bin = _state.value.selectedBin
+        if (bin == null) {
             _state.value = _state.value.copy(message = "Pick a bin first")
             return
         }
         _state.value = _state.value.copy(
             step = CycleCountStep.SCANNING,
-            scannedEpcs = emptySet()
+            scannedEpcs = emptySet(),
+            firstSeenAt = emptyMap(),
+            unexpectedTags = emptyList(),
+            expectedItems = emptyList(),
+            expectedLoadFailed = false,
+            selectedTab = InventoryTab.FILE_MAPPING,
+            isLoading = true
         )
+        fun selectTab(tab: InventoryTab) {
+            _state.value = _state.value.copy(selectedTab = tab)
+        }
+        viewModelScope.launch {
+            val unitsResult = inventoryRepository.getUnitsInBin(bin.id)
+            val productsResult = productRepository.getProducts()
+
+            val units = unitsResult.getOrNull().orEmpty()
+            val productTitleBySku = productsResult.getOrNull()
+                .orEmpty()
+                .associate { it.sku to it.title }
+
+            val items = units.mapIndexed { idx, u ->
+                InventoryItem(
+                    id = idx,
+                    epc = u.epc,
+                    tid = "",
+                    productName = productTitleBySku[u.sku] ?: u.sku,
+                    binNumber = u.currentBinCode,
+                    productGrouping = u.sku,
+                    isFound = false
+                )
+            }
+
+            _state.value = _state.value.copy(
+                expectedItems = items,
+                expectedLoadFailed = unitsResult.isFailure,
+                isLoading = false
+            )
+        }
     }
 
     fun backToPickBin() {
@@ -106,89 +176,106 @@ class CycleCountViewModel(
     }
 
     // ── Bin picker ────────────────────────────────────────────
-
     private fun loadWarehouses() {
         _state.value = _state.value.copy(isLoading = true)
         viewModelScope.launch {
-            warehouseRepository.getWarehouses().fold(
-                onSuccess = { list ->
-                    val withInventory = list.filter { w ->
-                        inventoryRepository.countUnitsInWarehouse(w.id).getOrDefault(0L) > 0L
-                    }
-                    _state.value = _state.value.copy(
-                        isLoading = false,
-                        warehouses = withInventory,
-                        selectedWarehouse = _state.value.selectedWarehouse ?: withInventory.firstOrNull()
-                    )
-                    _state.value.selectedWarehouse?.let { loadRacks(it) }
-                },
-                onFailure = { e ->
-                    _state.value = _state.value.copy(
-                        isLoading = false,
-                        message = "Could not load warehouses: ${e.message}"
-                    )
+            // Fetch the full warehouse tree and the SKU aggregates in
+            // parallel. Aggregates tell us which bin codes currently hold
+            // stock — that replaces the per-bin / per-rack / per-warehouse
+            // count queries that previously ran one after another.
+            val structureDeferred = async { warehouseRepository.getFullStructure() }
+            val aggDeferred = async { inventoryRepository.getAllSkuAggregates() }
+            val results = awaitAll(structureDeferred, aggDeferred)
+            @Suppress("UNCHECKED_CAST")
+            val structureResult = results[0] as Result<WarehouseRepository.FullStructure>
+            @Suppress("UNCHECKED_CAST")
+            val aggResult = results[1] as Result<List<com.snainfotech.tagscout.data.wms.InventorySkuAggregate>>
+
+            val structure = structureResult.getOrElse {
+                _state.value = _state.value.copy(
+                    isLoading = false,
+                    message = "Could not load warehouses: ${it.message}"
+                )
+                return@launch
+            }
+
+            // byLocation keys look like "warehouseId/binCode". Extract the
+            // binCode half; that's what we match against Bin.binCode below.
+            val nonEmptyBinCodes = aggResult.getOrDefault(emptyList())
+                .flatMap { it.byLocation.keys }
+                .mapNotNull { key ->
+                    val slash = key.indexOf('/')
+                    if (slash >= 0 && slash < key.length - 1) key.substring(slash + 1) else null
                 }
+                .toSet()
+
+            // Which bins hold stock → which racks and warehouses are non-empty.
+            val nonEmptyBins = structure.bins.filter { it.binCode in nonEmptyBinCodes }
+            val nonEmptyRackIds = nonEmptyBins.map { it.rackId }.toSet()
+            val nonEmptyWarehouseIds = structure.racks
+                .filter { it.id in nonEmptyRackIds }
+                .map { it.warehouseId }
+                .toSet()
+            val visibleWarehouses = structure.warehouses.filter { it.id in nonEmptyWarehouseIds }
+
+            val prevSelected = _state.value.selectedWarehouse
+            val selectedWh = visibleWarehouses.firstOrNull { it.id == prevSelected?.id }
+                ?: visibleWarehouses.firstOrNull()
+            val racksForWh = selectedWh?.let { wh ->
+                structure.racks.filter { it.warehouseId == wh.id && it.id in nonEmptyRackIds }
+            } ?: emptyList()
+            val selectedRack = racksForWh.firstOrNull()
+            val binsForRack = selectedRack?.let { rack ->
+                structure.bins.filter { it.rackId == rack.id && it.binCode in nonEmptyBinCodes }
+            } ?: emptyList()
+            val selectedBin = binsForRack.firstOrNull()
+
+            _state.value = _state.value.copy(
+                isLoading = false,
+                warehouses = visibleWarehouses,
+                allRacks = structure.racks,
+                allBins = structure.bins,
+                nonEmptyBinCodes = nonEmptyBinCodes,
+                selectedWarehouse = selectedWh,
+                racks = racksForWh,
+                selectedRack = selectedRack,
+                bins = binsForRack,
+                selectedBin = selectedBin
             )
         }
     }
 
     fun selectWarehouse(w: Warehouse) {
-        _state.value = _state.value.copy(
+        val s = _state.value
+        val racksForWh = s.allRacks.filter { it.warehouseId == w.id }
+        val visibleRacks = racksForWh.filter { rack ->
+            s.allBins.any { it.rackId == rack.id && it.binCode in s.nonEmptyBinCodes }
+        }
+        val firstRack = visibleRacks.firstOrNull()
+        val binsForRack = firstRack?.let { r ->
+            s.allBins.filter { it.rackId == r.id && it.binCode in s.nonEmptyBinCodes }
+        } ?: emptyList()
+        val firstBin = binsForRack.firstOrNull()
+        _state.value = s.copy(
             selectedWarehouse = w,
-            selectedRack = null,
-            selectedBin = null,
-            racks = emptyList(),
-            bins = emptyList()
+            racks = visibleRacks,
+            selectedRack = firstRack,
+            bins = binsForRack,
+            selectedBin = firstBin
         )
-        loadRacks(w)
     }
 
-    private fun loadRacks(w: Warehouse) {
-        viewModelScope.launch {
-            warehouseRepository.getRacks(w.id).fold(
-                onSuccess = { list ->
-                    val withInventory = list.filter { r ->
-                        inventoryRepository.countUnitsInRack(r.id).getOrDefault(0L) > 0L
-                    }
-                    _state.value = _state.value.copy(
-                        racks = withInventory,
-                        selectedRack = withInventory.firstOrNull()
-                    )
-                    _state.value.selectedRack?.let { loadBins(it) }
-                },
-                onFailure = { e ->
-                    _state.value = _state.value.copy(message = "Could not load racks: ${e.message}")
-                }
-            )
-        }
-    }
+
 
     fun selectRack(r: Rack) {
-        _state.value = _state.value.copy(
+        val s = _state.value
+        val binsForRack = s.allBins.filter { it.rackId == r.id && it.binCode in s.nonEmptyBinCodes }
+        val firstBin = binsForRack.firstOrNull()
+        _state.value = s.copy(
             selectedRack = r,
-            selectedBin = null,
-            bins = emptyList()
+            bins = binsForRack,
+            selectedBin = firstBin
         )
-        loadBins(r)
-    }
-
-    private fun loadBins(r: Rack) {
-        viewModelScope.launch {
-            warehouseRepository.getBins(r.warehouseId, r.id).fold(
-                onSuccess = { list ->
-                    val withInventory = list.filter { b ->
-                        inventoryRepository.countUnitsInBin(b.id).getOrDefault(0L) > 0L
-                    }
-                    _state.value = _state.value.copy(
-                        bins = withInventory,
-                        selectedBin = withInventory.firstOrNull()
-                    )
-                },
-                onFailure = { e ->
-                    _state.value = _state.value.copy(message = "Could not load bins: ${e.message}")
-                }
-            )
-        }
     }
 
     fun selectBin(b: Bin) {
@@ -199,13 +286,41 @@ class CycleCountViewModel(
 
     fun startScanning() {
         if (_state.value.scanning) return
-        _state.value = _state.value.copy(scanning = true)
+        runCatching { scanner.setAntennaPower(20) }
+
+        val now = System.currentTimeMillis()
+        val cur = _state.value
+        _state.value = cur.copy(
+            scanning = true,
+            // Keep scanStartedAt from the first start of this session so
+            // Resume doesn't reset the "first seen" clock.
+            scanStartedAt = if (cur.scanStartedAt == 0L) now else cur.scanStartedAt
+        )
+
         scanJob = viewModelScope.launch {
             scanner.startScanning().collect { tag ->
-                // Accumulate unique EPCs. A tag being read multiple times
-                // in the same session is normal; we care about unique presence.
-                _state.value = _state.value.copy(
-                    scannedEpcs = _state.value.scannedEpcs + tag.epc.trim().uppercase()
+                val epc = tag.epc.trim().uppercase()
+                val s = _state.value
+                if (epc in s.scannedEpcs) return@collect // ignore repeat reads
+
+                val newScanned = s.scannedEpcs + epc
+                val newFirstSeen = s.firstSeenAt + (epc to System.currentTimeMillis())
+
+                val isExpected = s.expectedItems.any { it.epc.equals(epc, ignoreCase = true) }
+                val newExpected = if (isExpected) {
+                    s.expectedItems.map { if (it.epc.equals(epc, ignoreCase = true)) it.copy(isFound = true) else it }
+                } else s.expectedItems
+
+                val newUnexpected = if (!isExpected) {
+                    val elapsed = ((System.currentTimeMillis() - s.scanStartedAt) / 1000).toInt()
+                    s.unexpectedTags + UnexpectedTag(epc = epc, tid = "", firstSeenSeconds = elapsed)
+                } else s.unexpectedTags
+
+                _state.value = s.copy(
+                    scannedEpcs = newScanned,
+                    firstSeenAt = newFirstSeen,
+                    expectedItems = newExpected,
+                    unexpectedTags = newUnexpected
                 )
             }
         }
@@ -235,6 +350,20 @@ class CycleCountViewModel(
         }
 
         viewModelScope.launch {
+            // Resolve where each unexpected tag actually lives, so Review can show
+            // "At RNG-001 • MW-R2-B01" instead of just an EPC.
+            val resolvedUnexpected = _state.value.unexpectedTags.map { tag ->
+                val lookup = runCatching { inventoryRepository.getUnitByEpc(tag.epc) }
+                    .getOrNull()?.getOrNull()
+                val location = when {
+                    lookup == null -> null
+                    lookup.currentBinCode.isNotBlank() ->
+                        "${lookup.sku.ifBlank { "Unknown SKU" }} • ${lookup.currentBinCode}"
+                    else -> lookup.sku.ifBlank { null }
+                }
+                tag.copy(knownLocation = location)
+            }
+
             service.reconcile(
                 binId = bin.id,
                 binCode = bin.binCode,
@@ -246,13 +375,15 @@ class CycleCountViewModel(
                     _state.value = _state.value.copy(
                         isLoading = false,
                         step = CycleCountStep.REVIEW,
-                        report = report
+                        report = report,
+                        unexpectedTags = resolvedUnexpected
                     )
                 },
                 onFailure = { e ->
                     _state.value = _state.value.copy(
                         isLoading = false,
-                        message = "Reconciliation failed: ${e.message}"
+                        message = "Reconciliation failed: ${e.message}",
+                        unexpectedTags = resolvedUnexpected
                     )
                 }
             )

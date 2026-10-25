@@ -431,8 +431,7 @@ fun TagScoutNavGraph(
                     onLocateTagClick = { navController.navigate(Routes.LOCATE_TAG) },
                     onShopClick = { navController.navigate(Routes.SHOP) },
                     onWmsClick = { navController.navigate(Routes.WMS_MENU) },
-                    onJewelleryClick = { navController.navigate(Routes.JEWELLERY_MENU) },
-                    onManagerAlertsClick = { navController.navigate(Routes.MANAGER_ALERTS) },
+                    onRetailClick = { navController.navigate(Routes.JEWELLERY_MENU) },
                     onDeviceConfigClick = { navController.navigate(Routes.DEVICE_CONFIG) },
                     onTagOperationsClick = { navController.navigate(Routes.TAG_OPERATIONS) }
                 )
@@ -1411,6 +1410,7 @@ fun TagScoutNavGraph(
                 isReaderConnected = deviceState.isConnected,
                 onEnrollClick = { navController.navigate(Routes.JEWELLERY_ENROLL) },
                 onCheckoutClick = { navController.navigate(Routes.JEWELLERY_CHECKOUT) },
+                onManagerAlertsClick = { navController.navigate(Routes.MANAGER_ALERTS) }
                 // Cycle Count will reuse the existing WMS cycle count flow in a later file.
             )
         }
@@ -1600,6 +1600,7 @@ fun TagScoutNavGraph(
                 onStartScanning = vm::startScanning,
                 onPauseScanning = vm::pauseScanning,
                 onStopAndReview = vm::stopAndReview,
+                onSelectTab = vm::selectTab,
                 onBackToPickBin = vm::backToPickBin,
                 onCommit = vm::commitReconciliation,
                 onExit = {

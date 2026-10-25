@@ -48,8 +48,7 @@ fun HomeScreen(
     onLocateTagClick: () -> Unit = {},
     onShopClick: () -> Unit = {},
     onWmsClick: () -> Unit = {},
-    onJewelleryClick: () -> Unit = {},
-    onManagerAlertsClick: () -> Unit = {},
+    onRetailClick: () -> Unit = {},
     onTagOperationsClick: () -> Unit = {},
     onDeviceConfigClick: () -> Unit = {}
 ) {
@@ -125,20 +124,10 @@ fun HomeScreen(
             )
             FeatureButton(
                 icon = R.drawable.ic_jewellery,
-                title = "Jewellery",
-                description = "Enroll, checkout and cycle count jewellery pieces",
+                title = "Retail Management",
+                description = "Enroll pieces, checkout, manager alerts and cycle count",
                 enabled = deviceState.isConnected,
-                onClick = onJewelleryClick
-            )
-            // Manager Alerts — unsold-piece-at-portal notifications.
-            // Reuses ic_jewellery for now; a dedicated bell/alert drawable
-            // can replace it when design produces one.
-            FeatureButton(
-                icon = R.drawable.ic_jewellery,
-                title = "Manager Alerts",
-                description = "Live notifications when unsold pieces are seen at the exit",
-                enabled = true,
-                onClick = onManagerAlertsClick
+                onClick = onRetailClick
             )
             FeatureButton(
                 icon = R.drawable.ic_shop,

@@ -234,7 +234,34 @@ class InventoryRepository {
             Result.success(list)
         } catch (e: Exception) { Result.failure(e) }
     }
-
+    /**
+     * Look up a single inventory unit by its EPC. Returns Result.success(null)
+     * if no document exists for that EPC. Used by Cycle Count's Additional Tags
+     * tab to show where an unexpected tag actually lives.
+     */
+    suspend fun getUnitByEpc(epc: String): Result<InventoryUnit?> {
+        return try {
+            val ref = companyDoc()?.collection("inventory_units")?.document(epc.trim().uppercase())
+                ?: return Result.failure(Exception("Not logged in"))
+            val doc = ref.get().await()
+            if (!doc.exists()) return Result.success(null)
+            val unit = InventoryUnit(
+                epc = doc.id,
+                productId = doc.getString("productId") ?: "",
+                sku = doc.getString("sku") ?: "",
+                serialNumber = doc.getString("serialNumber") ?: "",
+                currentWarehouseId = doc.getString("currentWarehouseId") ?: "",
+                currentRackId = doc.getString("currentRackId") ?: "",
+                currentBinId = doc.getString("currentBinId") ?: "",
+                currentBinCode = doc.getString("currentBinCode") ?: "",
+                status = doc.getString("status") ?: "in_stock",
+                inwardedAt = doc.getTimestamp("inwardedAt"),
+                lastMovedAt = doc.getTimestamp("lastMovedAt"),
+                dispatchedAt = doc.getTimestamp("dispatchedAt")
+            )
+            Result.success(unit)
+        } catch (e: Exception) { Result.failure(e) }
+    }
     /**
      * All units currently in a specific bin. Used by the by-location
      * dashboard view — pick a bin, see what's in it.

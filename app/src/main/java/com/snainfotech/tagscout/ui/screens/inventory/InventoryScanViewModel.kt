@@ -22,11 +22,12 @@ data class InventoryItem(
     val isFound: Boolean = false
 )
 
-// A tag scanned that wasn't in the expected file
+// A tag scanned that wasn't in the expected set (file for Inventory, bin for Cycle Count)
 data class UnexpectedTag(
     val epc: String,
     val tid: String,
-    val firstSeenSeconds: Int  // Seconds since scan started
+    val firstSeenSeconds: Int,       // Seconds since scan started
+    val knownLocation: String? = null // If this EPC is known in Firestore, where it actually is (SKU + bin)
 )
 
 // Tab selection

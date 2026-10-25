@@ -29,18 +29,20 @@ import com.snainfotech.tagscout.ui.theme.LightGray
 import com.snainfotech.tagscout.ui.theme.MediumGray
 
 /**
- * The Jewellery submenu — hub for all jewellery retail operations.
+ * The Retail Management submenu — hub for all retail operations.
  *
  * Mirrors WmsMenuScreen's structure so the UX feels consistent.
- * Jewellery pieces are stored as InventoryUnit documents with
- * category = "jewellery" and the retail-specific fields populated
- * (itemCode, price, soldAt, soldBy).
+ * Retail pieces are stored as InventoryUnit documents with
+ * category = "jewellery" (the internal category tag is unchanged for
+ * backwards compatibility with existing enrolled stock) and the retail-
+ * specific fields populated (itemCode, price, soldAt, soldBy).
  *
  * Buttons that require an RFID reader (Enroll, Checkout) are disabled
  * when no sled is connected — opening those screens without hardware
  * would crash the Bluebird SDK. Cycle Count stays enabled since it
  * routes into the existing WMS flow which has its own connection
- * handling.
+ * handling. Manager Alerts is also always enabled — its data flows in
+ * through Firestore from the fixed-reader edge service, not the sled.
  */
 @Composable
 fun JewelleryMenuScreen(
@@ -49,6 +51,7 @@ fun JewelleryMenuScreen(
     onEnrollClick: () -> Unit = {},
     onCheckoutClick: () -> Unit = {},
     onCycleCountClick: () -> Unit = {},
+    onManagerAlertsClick: () -> Unit = {},
     modifier: Modifier = Modifier
 ) {
     Column(
@@ -57,7 +60,7 @@ fun JewelleryMenuScreen(
             .background(LightGray)
     ) {
         AppHeader(
-            title = "Jewellery",
+            title = "Retail Management",
             showBackButton = true,
             onBackClick = onBackClick,
             showMenu = false
@@ -102,9 +105,29 @@ fun JewelleryMenuScreen(
             FeatureButton(
                 icon = R.drawable.ic_scan,
                 title = "Cycle Count",
-                description = "Coming soon — jewellery-specific stock reconciliation",
+                description = "Coming soon — retail-specific stock reconciliation",
                 enabled = false,
                 onClick = onCycleCountClick
+            )
+
+            // ── Alerts ───────────────────────────────────
+            // Manager Alerts does not require a connected reader — the
+            // alerts come in via Firestore from the fixed-reader edge
+            // service, so this button stays enabled even when offline.
+            Text(
+                text = "ALERTS",
+                fontSize = 11.sp,
+                fontWeight = FontWeight.Bold,
+                color = MediumGray,
+                modifier = Modifier.padding(start = 4.dp, top = 8.dp, bottom = 2.dp)
+            )
+
+            FeatureButton(
+                icon = R.drawable.ic_jewellery,
+                title = "Manager Alerts",
+                description = "Live notifications when unsold pieces are seen at the exit",
+                enabled = true,
+                onClick = onManagerAlertsClick
             )
 
             Spacer(modifier = Modifier.height(4.dp))
@@ -132,10 +155,9 @@ private fun NoReaderBanner() {
 // ============================================
 // PREVIEWS
 // ============================================
-
 @Preview(showBackground = true, heightDp = 700)
 @Composable
-fun JewelleryMenuScreenConnectedPreview() {
+fun RetailMenuScreenConnectedPreview() {
     JewelleryMenuScreen(
         onBackClick = {},
         isReaderConnected = true
@@ -144,7 +166,7 @@ fun JewelleryMenuScreenConnectedPreview() {
 
 @Preview(showBackground = true, heightDp = 700)
 @Composable
-fun JewelleryMenuScreenDisconnectedPreview() {
+fun RetailMenuScreenDisconnectedPreview() {
     JewelleryMenuScreen(
         onBackClick = {},
         isReaderConnected = false

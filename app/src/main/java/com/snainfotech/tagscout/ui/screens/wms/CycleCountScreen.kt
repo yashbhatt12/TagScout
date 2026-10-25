@@ -61,6 +61,12 @@ import com.snainfotech.tagscout.ui.theme.MediumGray
 import com.snainfotech.tagscout.ui.theme.Primary
 import com.snainfotech.tagscout.ui.theme.SuccessGreen
 import com.snainfotech.tagscout.ui.theme.WarningOrange
+import androidx.compose.material3.LinearProgressIndicator
+import androidx.compose.ui.draw.clip
+import com.snainfotech.tagscout.ui.components.ExpectedItemTable
+import com.snainfotech.tagscout.ui.components.ScanTabRow
+import com.snainfotech.tagscout.ui.components.UnexpectedTagsTable
+import com.snainfotech.tagscout.ui.screens.inventory.InventoryTab
 
 @Composable
 fun CycleCountScreen(
@@ -77,6 +83,7 @@ fun CycleCountScreen(
     onStopAndReview: () -> Unit,
     onBackToPickBin: () -> Unit,
     onCommit: () -> Unit,
+    onSelectTab: (InventoryTab) -> Unit,
     onExit: () -> Unit,
     onReset: () -> Unit,
     onDismissMessage: () -> Unit,
@@ -120,12 +127,14 @@ fun CycleCountScreen(
                     onStart = onStartScanning,
                     onPause = onPauseScanning,
                     onStopAndReview = onStopAndReview,
+                    onSelectTab = onSelectTab,
                     onBack = onBackToPickBin
                 )
                 CycleCountStep.REVIEW -> ReviewStep(
                     state = state,
                     onCommit = onCommit,
                     onExit = onExit,
+                    onSelectTab = onSelectTab,
                     onBack = onBackToPickBin
                 )
                 CycleCountStep.DONE -> DoneStep(
@@ -338,19 +347,18 @@ private fun ChipPicker(
     }
 }
 
-// ── STEP: Scanning ────────────────────────────────────────
-
 @Composable
 private fun ScanningStep(
     state: CycleCountState,
     onStart: () -> Unit,
     onPause: () -> Unit,
     onStopAndReview: () -> Unit,
-    onBack: () -> Unit
+    onBack: () -> Unit,
+    onSelectTab: (InventoryTab) -> Unit
 ) {
     Column(modifier = Modifier.fillMaxSize()) {
 
-        // Compact context bar (matches Inventory's file-info bar)
+        // Context bar (bin + ref + Change)
         Row(
             modifier = Modifier
                 .fillMaxWidth()
@@ -366,7 +374,7 @@ private fun ScanningStep(
                     color = DarkText
                 )
                 Text(
-                    text = "Ref: ${state.reference} • Antenna locked 20 dBm",
+                    text = "Ref: ${state.reference} • ${state.expectedCount} expected • Antenna locked 20 dBm",
                     fontSize = 11.sp,
                     color = MediumGray
                 )
@@ -381,88 +389,29 @@ private fun ScanningStep(
 
         Spacer(modifier = Modifier.height(8.dp))
 
-        // Progress strip (matches Inventory's Match Progress strip)
-        Row(
-            modifier = Modifier
-                .fillMaxWidth()
-                .background(Color.White)
-                .padding(horizontal = 16.dp, vertical = 10.dp),
-            verticalAlignment = Alignment.CenterVertically
-        ) {
-            Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.weight(1f)) {
-                Box(
-                    modifier = Modifier
-                        .height(8.dp).width(8.dp)
-                        .background(
-                            if (state.scanning) SuccessGreen else MediumGray,
-                            RoundedCornerShape(4.dp)
-                        )
-                )
-                Spacer(modifier = Modifier.width(6.dp))
-                Text(
-                    text = if (state.scanning) "Scanning"
-                    else if (state.scannedCount > 0) "Paused"
-                    else "Ready",
-                    fontSize = 12.sp,
-                    fontWeight = FontWeight.SemiBold,
-                    color = if (state.scanning) SuccessGreen else MediumGray
-                )
-            }
-            Text(
-                text = "${state.scannedCount} tag${if (state.scannedCount == 1) "" else "s"}",
-                fontSize = 12.sp,
-                fontWeight = FontWeight.SemiBold,
-                color = DarkText,
-                fontFamily = FontFamily.Monospace
-            )
-        }
+        // Tabs
+        ScanTabRow(
+            selectedTab = state.selectedTab,
+            expectedFound = state.expectedFoundCount,
+            expectedTotal = state.expectedCount,
+            additionalCount = state.unexpectedTags.size,
+            expectedLabel = "Bin Contents",
+            onTabSelect = onSelectTab
+        )
 
-        // Scanned EPC list
-        Column(
-            modifier = Modifier
-                .weight(1f)
-                .fillMaxWidth()
-                .background(Color.White)
-                .verticalScroll(rememberScrollState())
-                .padding(horizontal = 16.dp, vertical = 6.dp)
-        ) {
-            if (state.scannedEpcs.isEmpty()) {
-                Spacer(modifier = Modifier.height(32.dp))
-                Column(
-                    modifier = Modifier.fillMaxWidth(),
-                    horizontalAlignment = Alignment.CenterHorizontally
-                ) {
-                    Text(text = "📡", fontSize = 40.sp)
-                    Spacer(modifier = Modifier.height(8.dp))
-                    Text(
-                        text = "Pull the sled trigger to start reading tags in this bin.",
-                        fontSize = 12.sp, color = MediumGray,
-                        textAlign = TextAlign.Center
-                    )
-                }
-            } else {
-                Text(
-                    text = "SCANNED EPCS",
-                    fontSize = 10.sp, fontWeight = FontWeight.Bold, color = MediumGray,
-                    modifier = Modifier.padding(bottom = 6.dp)
-                )
-                state.scannedEpcs.take(50).forEach { epc ->
-                    Text(
-                        text = epc,
-                        fontSize = 11.sp,
-                        color = DarkText,
-                        fontFamily = FontFamily.Monospace,
-                        modifier = Modifier.padding(vertical = 2.dp)
-                    )
-                }
-                if (state.scannedEpcs.size > 50) {
-                    Text(
-                        text = "… and ${state.scannedEpcs.size - 50} more",
-                        fontSize = 11.sp, color = MediumGray, fontWeight = FontWeight.SemiBold,
-                        modifier = Modifier.padding(top = 4.dp)
-                    )
-                }
-            }
+        // Tab content
+        when (state.selectedTab) {
+            InventoryTab.FILE_MAPPING -> BinContentsTab(
+                state = state,
+                modifier = Modifier.weight(1f)
+            )
+            InventoryTab.ADDITIONAL_TAGS -> UnexpectedTagsTable(
+                tags = state.unexpectedTags,
+                emptyEmoji = "✨",
+                emptyTitle = "No additional tags",
+                emptyHint = "Tags not in this bin's record will appear here",
+                modifier = Modifier.weight(1f)
+            )
         }
 
         // Bottom action bar
@@ -512,6 +461,64 @@ private fun ScanningStep(
     }
 }
 
+@Composable
+private fun BinContentsTab(
+    state: CycleCountState,
+    modifier: Modifier = Modifier
+) {
+    Column(modifier = modifier.fillMaxWidth().background(Color.White)) {
+
+        // Match Progress strip
+        Column(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(horizontal = 16.dp, vertical = 10.dp)
+        ) {
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Text(
+                    text = "Match Progress",
+                    fontSize = 12.sp,
+                    fontWeight = FontWeight.SemiBold,
+                    color = DarkText,
+                    modifier = Modifier.weight(1f)
+                )
+                val pct = if (state.expectedCount == 0) 0
+                else (state.expectedFoundCount * 100) / state.expectedCount
+                Text(
+                    text = "${state.expectedFoundCount}/${state.expectedCount}  (${pct}%)",
+                    fontSize = 12.sp,
+                    fontWeight = FontWeight.SemiBold,
+                    color = SuccessGreen,
+                    fontFamily = FontFamily.Monospace
+                )
+            }
+            Spacer(modifier = Modifier.height(6.dp))
+            LinearProgressIndicator(
+                progress = {
+                    if (state.expectedCount == 0) 0f
+                    else state.expectedFoundCount.toFloat() / state.expectedCount
+                },
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .height(6.dp)
+                    .clip(RoundedCornerShape(3.dp)),
+                color = SuccessGreen,
+                trackColor = BorderGray
+            )
+        }
+
+        ExpectedItemTable(
+            items = state.expectedItems,
+            emptyText = if (state.expectedLoadFailed) "Couldn't load bin contents"
+            else "This bin has no inventory on record",
+            modifier = Modifier.weight(1f)
+        )
+    }
+}
+
 // ── STEP: Review ──────────────────────────────────────────
 
 @Composable
@@ -519,18 +526,43 @@ private fun ReviewStep(
     state: CycleCountState,
     onCommit: () -> Unit,
     onBack: () -> Unit,
-    onExit: () -> Unit
+    onExit: () -> Unit,
+    onSelectTab: (InventoryTab) -> Unit
 ) {
-    var showExitConfirm by remember { mutableStateOf(false) }
     val report = state.report ?: return
+    var showExitConfirm by remember { mutableStateOf(false) }
+
     Column(modifier = Modifier.fillMaxSize()) {
+
+        // Context bar (read-only — review mode)
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .background(Color.White)
+                .padding(horizontal = 16.dp, vertical = 8.dp),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            Column(modifier = Modifier.weight(1f)) {
+                Text(
+                    text = "📍 Bin ${state.selectedBin?.binCode ?: ""} — Review",
+                    fontSize = 13.sp,
+                    fontWeight = FontWeight.Medium,
+                    color = DarkText
+                )
+                Text(
+                    text = "Ref: ${state.reference}",
+                    fontSize = 11.sp,
+                    color = MediumGray
+                )
+            }
+        }
 
         // Summary strip
         Row(
             modifier = Modifier
                 .fillMaxWidth()
                 .background(Color.White)
-                .padding(horizontal = 16.dp, vertical = 12.dp),
+                .padding(horizontal = 16.dp, vertical = 10.dp),
             horizontalArrangement = Arrangement.spacedBy(12.dp)
         ) {
             StatBlock("Matched", report.matchedCount.toString(), SuccessGreen)
@@ -538,108 +570,101 @@ private fun ReviewStep(
             StatBlock("Unexpected", report.unexpectedCount.toString(), Amber)
         }
 
-        // Rows list
-        Column(
-            modifier = Modifier
-                .weight(1f)
-                .fillMaxWidth()
-                .verticalScroll(rememberScrollState())
-                .padding(horizontal = 12.dp, vertical = 8.dp),
-            verticalArrangement = Arrangement.spacedBy(6.dp)
-        ) {
-            if (report.rows.isEmpty()) {
-                Box(
-                    modifier = Modifier.fillMaxWidth().padding(top = 40.dp),
-                    contentAlignment = Alignment.Center
-                ) {
-                    Column(horizontalAlignment = Alignment.CenterHorizontally) {
-                        Text("📭", fontSize = 40.sp)
-                        Spacer(Modifier.height(6.dp))
-                        Text(
-                            "Nothing to reconcile — bin is empty in the database and no tags were scanned.",
-                            fontSize = 12.sp, color = MediumGray, textAlign = TextAlign.Center
-                        )
-                    }
-                }
-            } else {
-                report.rows.forEach { row -> ReconciliationRowCard(row) }
-                Spacer(modifier = Modifier.height(8.dp))
-            }
-        }
+        Spacer(modifier = Modifier.height(8.dp))
 
-        // Bottom bar
-        Card(
-            modifier = Modifier.fillMaxWidth(),
-            shape = RoundedCornerShape(topStart = 12.dp, topEnd = 12.dp),
-            colors = CardDefaults.cardColors(containerColor = Color.White),
-            elevation = CardDefaults.cardElevation(defaultElevation = 4.dp)
-        ) {
-            Column(
-                modifier = Modifier.padding(12.dp),
-                verticalArrangement = Arrangement.spacedBy(8.dp)
-            ) {
-                // Primary action — Log / Confirm
-                Button(
-                    onClick = onCommit,
-                    modifier = Modifier.fillMaxWidth().height(48.dp),
-                    shape = RoundedCornerShape(8.dp),
-                    colors = ButtonDefaults.buttonColors(containerColor = Primary)
-                ) {
-                    Text(
-                        text = if (report.hasNoDiscrepancies) "Confirm — No Discrepancies"
-                        else "Log ${report.discrepancyCount} Discrepancies",
-                        fontSize = 14.sp, fontWeight = FontWeight.SemiBold, color = Color.White
-                    )
-                }
-                // Secondary actions — Recount / Exit
-                Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.spacedBy(8.dp)
-                ) {
-                    Button(
-                        onClick = onBack,
-                        modifier = Modifier.weight(1f).height(44.dp),
-                        shape = RoundedCornerShape(8.dp),
-                        colors = ButtonDefaults.buttonColors(containerColor = Amber)
-                    ) {
-                        Text("Recount", color = Color.White, fontWeight = FontWeight.SemiBold)
-                    }
-                    Button(
-                        onClick = {
-                            if (report.hasNoDiscrepancies) onExit() else showExitConfirm = true
-                        },
-                        modifier = Modifier.weight(1f).height(44.dp),
-                        shape = RoundedCornerShape(8.dp),
-                        colors = ButtonDefaults.buttonColors(containerColor = ErrorRed)
-                    ) {
-                        Text("Exit", color = Color.White, fontWeight = FontWeight.SemiBold)
-                    }
-                }
-            }
-        }
-        if (showExitConfirm) {
-            AlertDialog(
-                onDismissRequest = { showExitConfirm = false },
-                title = { Text("Exit without logging?", fontWeight = FontWeight.SemiBold, color = DarkText) },
-                text = {
-                    Text(
-                        "You have ${report.discrepancyCount} unlogged discrepancies. " +
-                                "Exiting now will discard the count — nothing will be saved."
-                    )
-                },
-                confirmButton = {
-                    Button(
-                        onClick = { showExitConfirm = false; onExit() },
-                        colors = ButtonDefaults.buttonColors(containerColor = ErrorRed)
-                    ) { Text("Exit anyway", color = Color.White) }
-                },
-                dismissButton = {
-                    TextButton(onClick = { showExitConfirm = false }) {
-                        Text("Keep reviewing", color = MediumGray)
-                    }
-                }
+        // Tabs
+        ScanTabRow(
+            selectedTab = state.selectedTab,
+            expectedFound = state.expectedFoundCount,
+            expectedTotal = state.expectedCount,
+            additionalCount = state.unexpectedTags.size,
+            expectedLabel = "Bin Contents",
+            onTabSelect = onSelectTab
+        )
+
+        // Tab content
+        when (state.selectedTab) {
+            InventoryTab.FILE_MAPPING -> ExpectedItemTable(
+                items = state.expectedItems,
+                emptyText = "This bin has no inventory on record",
+                modifier = Modifier.weight(1f)
+            )
+            InventoryTab.ADDITIONAL_TAGS -> UnexpectedTagsTable(
+                tags = state.unexpectedTags,
+                emptyEmoji = "✨",
+                emptyTitle = "No additional tags",
+                emptyHint = "All scanned tags matched the bin's records",
+                modifier = Modifier.weight(1f)
             )
         }
+
+        // Three-action bottom bar
+        Column(
+            modifier = Modifier
+                .background(Color.White)
+                .padding(12.dp),
+            verticalArrangement = Arrangement.spacedBy(8.dp)
+        ) {
+            Button(
+                onClick = onCommit,
+                modifier = Modifier.fillMaxWidth().height(48.dp),
+                shape = RoundedCornerShape(8.dp),
+                colors = ButtonDefaults.buttonColors(containerColor = Primary)
+            ) {
+                Text(
+                    text = if (report.hasNoDiscrepancies) "Confirm — No Discrepancies"
+                    else "Log ${report.discrepancyCount} Discrepancies",
+                    fontSize = 14.sp, fontWeight = FontWeight.SemiBold, color = Color.White
+                )
+            }
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.spacedBy(8.dp)
+            ) {
+                Button(
+                    onClick = onBack,
+                    modifier = Modifier.weight(1f).height(44.dp),
+                    shape = RoundedCornerShape(8.dp),
+                    colors = ButtonDefaults.buttonColors(containerColor = Amber)
+                ) {
+                    Text("Recount", color = Color.White, fontWeight = FontWeight.SemiBold)
+                }
+                Button(
+                    onClick = {
+                        if (report.hasNoDiscrepancies) onExit() else showExitConfirm = true
+                    },
+                    modifier = Modifier.weight(1f).height(44.dp),
+                    shape = RoundedCornerShape(8.dp),
+                    colors = ButtonDefaults.buttonColors(containerColor = ErrorRed)
+                ) {
+                    Text("Exit", color = Color.White, fontWeight = FontWeight.SemiBold)
+                }
+            }
+        }
+    }
+
+    if (showExitConfirm) {
+        AlertDialog(
+            onDismissRequest = { showExitConfirm = false },
+            title = { Text("Exit without logging?", fontWeight = FontWeight.SemiBold, color = DarkText) },
+            text = {
+                Text(
+                    "You have ${report.discrepancyCount} unlogged discrepancies. " +
+                            "Exiting now will discard the count — nothing will be saved."
+                )
+            },
+            confirmButton = {
+                Button(
+                    onClick = { showExitConfirm = false; onExit() },
+                    colors = ButtonDefaults.buttonColors(containerColor = ErrorRed)
+                ) { Text("Exit anyway", color = Color.White) }
+            },
+            dismissButton = {
+                TextButton(onClick = { showExitConfirm = false }) {
+                    Text("Keep reviewing", color = MediumGray)
+                }
+            }
+        )
     }
 }
 

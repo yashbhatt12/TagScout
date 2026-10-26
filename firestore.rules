@@ -1,0 +1,96 @@
+rules_version = '2';
+service cloud.firestore {
+    match /databases/{database}/documents {
+
+        // ── User profile ─────────────────────────────────────────────
+        match /users/{userId} {
+            allow read, write: if request.auth != null && request.auth.uid == userId;
+        }
+
+        // ── Shop catalog (top-level, managed by SNA) ─────────────────
+        match /products/{productId} {
+            allow read: if request.auth != null;
+            allow write: if false;
+        }
+
+        // ── Shop orders ──────────────────────────────────────────────
+        match /purchase_requisitions/{orderId} {
+            allow create: if request.auth != null;
+            allow read: if request.auth != null && resource.data.userId == request.auth.uid;
+            allow update, delete: if false;
+        }
+
+        // ── Vertical / type templates: read only by Cloud Functions (Admin SDK) ──
+        match /vertical_templates/{templateId} {
+            allow read, write: if false;
+        }
+
+        // ── Company data: /companies/{companyId}/... ─────────────────
+        // companyId == uid until multi-user lands; then isMember() becomes a
+        // lookup in /companies/{companyId}/members/{uid}.
+        match /companies/{companyId} {
+
+            function isMember() {
+                return request.auth != null && request.auth.uid == companyId;
+            }
+
+            // Collections with their own stricter rules below. The general rule
+            // must exclude them, because Firestore allows a request if ANY rule does.
+            function isRestricted(collection) {
+                return collection in ['settings', 'movements', 'batches', 'alerts', 'inventory_sku'];
+            }
+
+            allow read: if isMember();
+
+            // Everything else under the company: warehouses/racks/bins, products,
+            // inventory_units, counters, brands, categories, ...
+            match /{collection}/{document=**} {
+                allow read: if isMember();
+                allow write: if isMember() && !isRestricted(collection);
+            }
+
+            // Company settings: read-only to the app. Edited in the console or
+            // by Cloud Functions (Admin SDK bypasses rules).
+            match /settings/{docId} {
+                allow read: if isMember();
+                allow write: if false;
+            }
+
+            // Movement ledger: append-only.
+            match /movements/{movementId} {
+                allow read, create: if isMember();
+                allow update, delete: if false;
+            }
+
+            // SKU aggregate: maintained only by the updateSkuAggregate function.
+            match /inventory_sku/{productId} {
+                allow read: if isMember();
+                allow write: if false;
+            }
+
+            // Alerts: created by the alarmNotifier function; the app may only mark them read.
+            match /alerts/{alertId} {
+                allow read: if isMember();
+                allow update: if isMember()
+                    && request.resource.data.diff(resource.data).affectedKeys()
+                .hasOnly(['read', 'readAt', 'readBy']);
+                allow create, delete: if false;
+            }
+
+            // Batches (batch tracking): batch number and dates are locked once created.
+            match /batches/{batchId} {
+                allow read, create: if isMember();
+                allow update: if isMember()
+                    && request.resource.data.batchNo == resource.data.batchNo
+                    && request.resource.data.mfgDate == resource.data.mfgDate
+                    && request.resource.data.expiryDate == resource.data.expiryDate;
+                allow delete: if false;
+            }
+        }
+
+        // ── Everything else is closed ────────────────────────────────
+        match /{document=**} {
+            allow read, write: if false;
+        }
+    }
+}

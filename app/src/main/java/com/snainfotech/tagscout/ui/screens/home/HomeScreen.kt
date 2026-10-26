@@ -1,5 +1,6 @@
 package com.snainfotech.tagscout.ui.screens.home
 import com.snainfotech.tagscout.R
+import androidx.annotation.DrawableRes
 import androidx.compose.foundation.background
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
@@ -11,16 +12,26 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.platform.LocalInspectionMode
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import com.snainfotech.tagscout.data.config.CompanyConfig
+import com.snainfotech.tagscout.data.config.ConfigRepository
+import com.snainfotech.tagscout.data.config.Feature
 import com.snainfotech.tagscout.ui.components.AppHeader
 import com.snainfotech.tagscout.ui.components.DeviceStatusComponent
 import com.snainfotech.tagscout.ui.components.FeatureButton
@@ -29,6 +40,7 @@ import com.snainfotech.tagscout.ui.theme.InfoBg
 import com.snainfotech.tagscout.ui.theme.InfoBlue
 import com.snainfotech.tagscout.ui.theme.InfoText
 import com.snainfotech.tagscout.ui.theme.LightGray
+import com.snainfotech.tagscout.ui.theme.MediumGray
 import com.snainfotech.tagscout.ui.theme.WarningBg
 import com.snainfotech.tagscout.ui.theme.WarningOrange
 import com.snainfotech.tagscout.ui.theme.WarningText
@@ -52,6 +64,16 @@ fun HomeScreen(
     onTagOperationsClick: () -> Unit = {},
     onDeviceConfigClick: () -> Unit = {}
 ) {
+    // Live company config. Previews can't start Firebase, so they use defaults.
+    val config: CompanyConfig = if (LocalInspectionMode.current) {
+        CompanyConfig.DEFAULT
+    } else {
+        ConfigRepository.config.collectAsState().value
+    }
+
+    // Title of the feature whose "upgrade" tile was tapped; null = no dialog.
+    var upgradeFor by remember { mutableStateOf<String?>(null) }
+
     Column(
         modifier = modifier
             .fillMaxSize()
@@ -99,8 +121,9 @@ fun HomeScreen(
                 else -> { /* no banner for Connected or Charging */ }
             }
 
-            // Feature buttons — reorganized: scan workflows consolidated
-            // under Tag Operations, which opens its own submenu.
+            // Connect Device and Device Config are never flagged — the app is
+            // useless without them. Every other tile follows settings/config:
+            // enabled → normal tile, disabled → "upgrade" tile.
             FeatureButton(
                 icon = R.drawable.ic_connect,
                 title = "Connect Device",
@@ -108,34 +131,44 @@ fun HomeScreen(
                 enabled = true,
                 onClick = onConnectDeviceClick
             )
-            FeatureButton(
+
+            GatedFeatureButton(
+                available = config.anyTagOperationEnabled(),
                 icon = R.drawable.ic_rfid_tag,
                 title = "Tag Operations",
                 description = "Scan, locate, read and write RFID tags",
                 enabled = true,
-                onClick = onTagOperationsClick
+                onClick = onTagOperationsClick,
+                onUpgrade = { upgradeFor = it }
             )
-            FeatureButton(
+            GatedFeatureButton(
+                available = config.isEnabled(Feature.WMS),
                 icon = R.drawable.ic_inventory,
                 title = "Warehouse Management",
                 description = "Inward, cycle count, pick lists & dispatch",
                 enabled = true,
-                onClick = onWmsClick
+                onClick = onWmsClick,
+                onUpgrade = { upgradeFor = it }
             )
-            FeatureButton(
+            GatedFeatureButton(
+                available = config.isEnabled(Feature.RETAIL),
                 icon = R.drawable.ic_jewellery,
                 title = "Retail Management",
                 description = "Enroll pieces, checkout, manager alerts and cycle count",
                 enabled = deviceState.isConnected,
-                onClick = onRetailClick
+                onClick = onRetailClick,
+                onUpgrade = { upgradeFor = it }
             )
-            FeatureButton(
+            GatedFeatureButton(
+                available = config.isEnabled(Feature.SHOP),
                 icon = R.drawable.ic_shop,
                 title = "Order Supplies",
                 description = "Purchase RFID labels, scanners & printers",
                 enabled = true,
-                onClick = onShopClick
+                onClick = onShopClick,
+                onUpgrade = { upgradeFor = it }
             )
+
             FeatureButton(
                 icon = R.drawable.ic_config,
                 title = "Device Config",
@@ -145,6 +178,78 @@ fun HomeScreen(
             )
         }
     }
+
+    upgradeFor?.let { title ->
+        UpgradeDialog(featureTitle = title, onDismiss = { upgradeFor = null })
+    }
+}
+
+/**
+ * A feature tile that respects the company's plan.
+ *   available = true  → the normal tile (still greyed when [enabled] is false,
+ *                       e.g. Retail without a connected sled)
+ *   available = false → a faded tile that stays tappable and opens the
+ *                       upgrade dialog instead of the feature
+ */
+@Composable
+private fun GatedFeatureButton(
+    available: Boolean,
+    @DrawableRes icon: Int,
+    title: String,
+    description: String,
+    enabled: Boolean,
+    onClick: () -> Unit,
+    onUpgrade: (String) -> Unit
+) {
+    if (available) {
+        FeatureButton(
+            icon = icon,
+            title = title,
+            description = description,
+            enabled = enabled,
+            onClick = onClick
+        )
+    } else {
+        FeatureButton(
+            icon = icon,
+            title = title,
+            description = "🔒 Not in your plan · Tap to upgrade",
+            enabled = true,
+            onClick = { onUpgrade(title) },
+            modifier = Modifier.alpha(0.6f)
+        )
+    }
+}
+
+@Composable
+private fun UpgradeDialog(featureTitle: String, onDismiss: () -> Unit) {
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = {
+            Text(
+                text = "🔒 $featureTitle",
+                fontWeight = FontWeight.SemiBold
+            )
+        },
+        text = {
+            Column {
+                Text(
+                    text = "$featureTitle isn't part of your current plan.",
+                    fontSize = 13.sp,
+                    color = DarkText
+                )
+                Spacer(modifier = Modifier.height(8.dp))
+                Text(
+                    text = "To enable it, contact SNA Infotech at contactus@sna-infotech.co.in or +91-22-42182620.",
+                    fontSize = 12.sp,
+                    color = MediumGray
+                )
+            }
+        },
+        confirmButton = {
+            TextButton(onClick = onDismiss) { Text("OK") }
+        }
+    )
 }
 
 // Info banner (blue) - shown when disconnected

@@ -3,11 +3,19 @@ package com.snainfotech.tagscout.data.repository
 import com.snainfotech.tagscout.data.dao.DeviceConnectionDao
 import com.snainfotech.tagscout.data.entities.DeviceConnectionEntity
 import kotlinx.coroutines.flow.Flow
+import com.snainfotech.tagscout.data.config.ConfigRepository
 
 class DeviceRepository(private val deviceConnectionDao: DeviceConnectionDao) {
 
     companion object {
-        const val MAX_SAVED_DEVICES = 10
+        /**
+         * Live per-company limit from settings/config (limits.maxDevices).
+         * Falls back to 10 (Limits.DEFAULT_MAX_DEVICES) when there's no
+         * settings doc, offline before first load, or the doc is unreadable.
+         * Kept under its old name so DeviceLimitReachedDialog needs no change.
+         */
+        val MAX_SAVED_DEVICES: Int
+            get() = ConfigRepository.current.limits.maxDevices
     }
 
     fun getSavedDevices(): Flow<List<DeviceConnectionEntity>> {

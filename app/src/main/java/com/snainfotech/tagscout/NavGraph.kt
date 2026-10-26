@@ -195,6 +195,9 @@ fun TagScoutNavGraph(
 
     // Initialize device state ONCE at app startup
 
+    // Closes any screen whose feature is disabled in settings/config.
+    FeatureNavGuard(navController)
+
     NavHost(
         navController = navController,
         startDestination = Routes.AUTH_CHECK,

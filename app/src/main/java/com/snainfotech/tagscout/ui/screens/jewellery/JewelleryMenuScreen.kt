@@ -14,15 +14,26 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.collectAsState
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.platform.LocalInspectionMode
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.snainfotech.tagscout.R
+import com.snainfotech.tagscout.data.config.CompanyConfig
+import com.snainfotech.tagscout.data.config.ConfigRepository
+import com.snainfotech.tagscout.data.config.Feature
 import com.snainfotech.tagscout.ui.components.AppHeader
 import com.snainfotech.tagscout.ui.components.FeatureButton
+import com.snainfotech.tagscout.ui.components.GatedFeatureButton
+import com.snainfotech.tagscout.ui.components.UpgradeDialog
 import com.snainfotech.tagscout.ui.theme.InfoBg
 import com.snainfotech.tagscout.ui.theme.InfoText
 import com.snainfotech.tagscout.ui.theme.LightGray
@@ -32,17 +43,19 @@ import com.snainfotech.tagscout.ui.theme.MediumGray
  * The Retail Management submenu — hub for all retail operations.
  *
  * Mirrors WmsMenuScreen's structure so the UX feels consistent.
- * Retail pieces are stored as InventoryUnit documents with
- * category = "jewellery" (the internal category tag is unchanged for
- * backwards compatibility with existing enrolled stock) and the retail-
- * specific fields populated (itemCode, price, soldAt, soldBy).
  *
- * Buttons that require an RFID reader (Enroll, Checkout) are disabled
- * when no sled is connected — opening those screens without hardware
- * would crash the Bluebird SDK. Cycle Count stays enabled since it
- * routes into the existing WMS flow which has its own connection
- * handling. Manager Alerts is also always enabled — its data flows in
- * through Firestore from the fixed-reader edge service, not the sled.
+ * Products opens the shared product catalog (the same one WMS uses), so a
+ * retail-only company manages its designs / SKUs here without WMS.
+ *
+ * Pilot note: pieces enrolled so far are InventoryUnit documents with
+ * category = "jewellery" and no productId. Enroll and Checkout still use
+ * that model until they are rebuilt on products of type jewellery.
+ *
+ * Buttons that need an RFID reader (Enroll, Checkout) are disabled when no
+ * sled is connected — opening those screens without hardware would crash
+ * the Bluebird SDK. Products and Manager Alerts need no reader: products
+ * are catalog data, and alerts arrive via Firestore from the fixed-reader
+ * edge service.
  */
 @Composable
 fun JewelleryMenuScreen(
@@ -52,8 +65,18 @@ fun JewelleryMenuScreen(
     onCheckoutClick: () -> Unit = {},
     onCycleCountClick: () -> Unit = {},
     onManagerAlertsClick: () -> Unit = {},
+    onProductsClick: () -> Unit = {},
     modifier: Modifier = Modifier
 ) {
+    // Live company config. Previews can't start Firebase, so they use defaults.
+    val config: CompanyConfig = if (LocalInspectionMode.current) {
+        CompanyConfig.DEFAULT
+    } else {
+        ConfigRepository.config.collectAsState().value
+    }
+
+    var upgradeFor by remember { mutableStateOf<String?>(null) }
+
     Column(
         modifier = modifier
             .fillMaxSize()
@@ -80,13 +103,7 @@ fun JewelleryMenuScreen(
             }
 
             // ── Operations ───────────────────────────
-            Text(
-                text = "OPERATIONS",
-                fontSize = 11.sp,
-                fontWeight = FontWeight.Bold,
-                color = MediumGray,
-                modifier = Modifier.padding(start = 4.dp, top = 4.dp, bottom = 2.dp)
-            )
+            SectionLabel("OPERATIONS", topPadding = 4)
 
             FeatureButton(
                 icon = R.drawable.ic_jewellery,
@@ -110,29 +127,48 @@ fun JewelleryMenuScreen(
                 onClick = onCycleCountClick
             )
 
-            // ── Alerts ───────────────────────────────────
-            // Manager Alerts does not require a connected reader — the
-            // alerts come in via Firestore from the fixed-reader edge
-            // service, so this button stays enabled even when offline.
-            Text(
-                text = "ALERTS",
-                fontSize = 11.sp,
-                fontWeight = FontWeight.Bold,
-                color = MediumGray,
-                modifier = Modifier.padding(start = 4.dp, top = 8.dp, bottom = 2.dp)
-            )
+            // ── Catalog ──────────────────────────────
+            SectionLabel("CATALOG", topPadding = 8)
 
             FeatureButton(
+                icon = R.drawable.ic_inventory,
+                title = "Products",
+                description = "Designs and SKUs — add, edit, search",
+                enabled = true,
+                onClick = onProductsClick
+            )
+
+            // ── Alerts ───────────────────────────────
+            SectionLabel("ALERTS", topPadding = 8)
+
+            GatedFeatureButton(
+                available = config.isEnabled(Feature.MANAGER_ALERTS),
                 icon = R.drawable.ic_jewellery,
                 title = "Manager Alerts",
                 description = "Live notifications when unsold pieces are seen at the exit",
                 enabled = true,
-                onClick = onManagerAlertsClick
+                onClick = onManagerAlertsClick,
+                onUpgrade = { upgradeFor = it }
             )
 
             Spacer(modifier = Modifier.height(4.dp))
         }
     }
+
+    upgradeFor?.let { title ->
+        UpgradeDialog(featureTitle = title, onDismiss = { upgradeFor = null })
+    }
+}
+
+@Composable
+private fun SectionLabel(text: String, topPadding: Int) {
+    Text(
+        text = text,
+        fontSize = 11.sp,
+        fontWeight = FontWeight.Bold,
+        color = MediumGray,
+        modifier = Modifier.padding(start = 4.dp, top = topPadding.dp, bottom = 2.dp)
+    )
 }
 
 @Composable

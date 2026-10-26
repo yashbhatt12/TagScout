@@ -151,8 +151,10 @@ fun HomeScreen(
                 available = config.isEnabled(Feature.RETAIL),
                 icon = R.drawable.ic_jewellery,
                 title = "Retail Management",
-                description = "Enroll pieces, checkout, manager alerts and cycle count",
-                enabled = deviceState.isConnected,
+                description = "Enroll pieces, checkout, products and manager alerts",
+                // Always open: the menu disables its reader-only actions itself,
+                // and Products / Manager Alerts need no reader.
+                enabled = true,
                 onClick = onRetailClick,
                 onUpgrade = { upgradeFor = it }
             )

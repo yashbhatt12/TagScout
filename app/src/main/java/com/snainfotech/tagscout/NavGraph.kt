@@ -1427,7 +1427,8 @@ fun TagScoutNavGraph(
                 isReaderConnected = deviceState.isConnected,
                 onEnrollClick = { navController.navigate(Routes.JEWELLERY_ENROLL) },
                 onCheckoutClick = { navController.navigate(Routes.JEWELLERY_CHECKOUT) },
-                onManagerAlertsClick = { navController.navigate(Routes.MANAGER_ALERTS) }
+                onManagerAlertsClick = { navController.navigate(Routes.MANAGER_ALERTS) },
+                onProductsClick = { navController.navigate(Routes.PRODUCTS) }
                 // Cycle Count will reuse the existing WMS cycle count flow in a later file.
             )
         }

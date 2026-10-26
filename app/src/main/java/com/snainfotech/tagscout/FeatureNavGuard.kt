@@ -37,10 +37,15 @@ object FeatureRoutes {
 
             Routes.WMS_MENU,
             Routes.WMS_WAREHOUSE_SETUP,
-            Routes.WMS_PRODUCT_CATALOG,
             Routes.WMS_DASHBOARD,
             Routes.WMS_CYCLE_COUNT,
             Routes.WMS_INWARD -> config.isEnabled(Feature.WMS)
+
+            // Products are shared: any module that manages stock can open them.
+            Routes.PRODUCTS,
+            Routes.PRODUCT_NEW,
+            Routes.PRODUCT_EDIT,
+            Routes.WMS_PRODUCT_CATALOG -> canManageProducts(config)
 
             Routes.JEWELLERY_MENU,
             Routes.JEWELLERY_ENROLL,
@@ -53,6 +58,10 @@ object FeatureRoutes {
             else -> true
         }
     }
+
+    /** Products open from WMS and from Retail, so either flag is enough. */
+    fun canManageProducts(config: CompanyConfig): Boolean =
+        config.isEnabled(Feature.WMS) || config.isEnabled(Feature.RETAIL)
 }
 
 /**

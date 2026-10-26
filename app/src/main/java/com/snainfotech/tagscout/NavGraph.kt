@@ -127,6 +127,14 @@ import com.snainfotech.tagscout.ui.screens.wms.WmsDashboardScreen
 import com.snainfotech.tagscout.ui.screens.wms.WmsDashboardViewModel
 import com.snainfotech.tagscout.ui.screens.wms.WmsDashboardViewModelFactory
 import com.snainfotech.tagscout.ui.screens.wms.WmsMenuScreen
+import androidx.navigation.NavType
+import androidx.navigation.navArgument
+import com.snainfotech.tagscout.ui.screens.products.ProductFormScreen
+import com.snainfotech.tagscout.ui.screens.products.ProductFormViewModel
+import com.snainfotech.tagscout.ui.screens.products.ProductFormViewModelFactory
+import com.snainfotech.tagscout.ui.screens.products.ProductListScreen
+import com.snainfotech.tagscout.ui.screens.products.ProductListViewModel
+import com.snainfotech.tagscout.ui.screens.products.ProductListViewModelFactory
 import kotlinx.coroutines.launch
 import java.text.SimpleDateFormat
 import java.util.Date
@@ -176,6 +184,12 @@ object Routes {
 
     // Manager Alerts (unsold-piece-at-portal notifications)
     const val MANAGER_ALERTS = "manager_alerts"
+
+    // Products — shared by WMS and Retail, owned by neither
+    const val PRODUCTS = "products"
+    const val PRODUCT_NEW = "product_new"
+    const val PRODUCT_EDIT = "product_edit"                 // full route: product_edit/{productId}
+    fun productEdit(productId: String) = "$PRODUCT_EDIT/$productId"
 }
 
 @Composable
@@ -1395,7 +1409,7 @@ fun TagScoutNavGraph(
             WmsMenuScreen(
                 onBackClick = { navController.popBackStack() },
                 onWarehouseSetupClick = { navController.navigate(Routes.WMS_WAREHOUSE_SETUP) },
-                onProductCatalogClick = { navController.navigate(Routes.WMS_PRODUCT_CATALOG) },
+                onProductCatalogClick = { navController.navigate(Routes.PRODUCTS) },
                 onDashboardClick = { navController.navigate(Routes.WMS_DASHBOARD) },
                 onCycleCountClick = { navController.navigate(Routes.WMS_CYCLE_COUNT) },
                 onInwardClick = { navController.navigate(Routes.WMS_INWARD) },
@@ -1570,6 +1584,43 @@ fun TagScoutNavGraph(
             )
         }
 
+        composable(Routes.PRODUCTS) {
+            val vm: ProductListViewModel = viewModel(factory = ProductListViewModelFactory())
+            ProductListScreen(
+                viewModel = vm,
+                onBack = { navController.popBackStack() },
+                onAddProduct = { navController.navigate(Routes.PRODUCT_NEW) },
+                onEditProduct = { id -> navController.navigate(Routes.productEdit(id)) }
+            )
+        }
+        // ============================================
+        // PRODUCTS — shared create / edit form
+        // ============================================
+        composable(Routes.PRODUCT_NEW) {
+            val vm: ProductFormViewModel = viewModel(
+                factory = ProductFormViewModelFactory(productId = null)
+            )
+            ProductFormScreen(
+                viewModel = vm,
+                onBack = { navController.popBackStack() },
+                onSaved = { navController.popBackStack() }
+            )
+        }
+
+        composable(
+            route = "${Routes.PRODUCT_EDIT}/{productId}",
+            arguments = listOf(navArgument("productId") { type = NavType.StringType })
+        ) { entry ->
+            val productId = entry.arguments?.getString("productId").orEmpty()
+            val vm: ProductFormViewModel = viewModel(
+                factory = ProductFormViewModelFactory(productId = productId)
+            )
+            ProductFormScreen(
+                viewModel = vm,
+                onBack = { navController.popBackStack() },
+                onSaved = { navController.popBackStack() }
+            )
+        }
         composable(Routes.WMS_DASHBOARD) {
             val vm: WmsDashboardViewModel = viewModel(
                 factory = WmsDashboardViewModelFactory()

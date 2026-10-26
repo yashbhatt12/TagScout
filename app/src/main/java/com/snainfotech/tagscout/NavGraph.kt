@@ -135,6 +135,9 @@ import com.snainfotech.tagscout.ui.screens.products.ProductFormViewModelFactory
 import com.snainfotech.tagscout.ui.screens.products.ProductListScreen
 import com.snainfotech.tagscout.ui.screens.products.ProductListViewModel
 import com.snainfotech.tagscout.ui.screens.products.ProductListViewModelFactory
+import com.snainfotech.tagscout.ui.screens.products.CatalogLookupsScreen
+import com.snainfotech.tagscout.ui.screens.products.CatalogLookupsViewModel
+import com.snainfotech.tagscout.ui.screens.products.CatalogLookupsViewModelFactory
 import kotlinx.coroutines.launch
 import java.text.SimpleDateFormat
 import java.util.Date
@@ -190,6 +193,7 @@ object Routes {
     const val PRODUCT_NEW = "product_new"
     const val PRODUCT_EDIT = "product_edit"                 // full route: product_edit/{productId}
     fun productEdit(productId: String) = "$PRODUCT_EDIT/$productId"
+    const val PRODUCT_LOOKUPS = "product_lookups"          // categories & brands
 }
 
 @Composable
@@ -1591,7 +1595,16 @@ fun TagScoutNavGraph(
                 viewModel = vm,
                 onBack = { navController.popBackStack() },
                 onAddProduct = { navController.navigate(Routes.PRODUCT_NEW) },
-                onEditProduct = { id -> navController.navigate(Routes.productEdit(id)) }
+                onEditProduct = { id -> navController.navigate(Routes.productEdit(id)) },
+                onManageLookups = { navController.navigate(Routes.PRODUCT_LOOKUPS) }
+            )
+        }
+
+        composable(Routes.PRODUCT_LOOKUPS) {
+            val vm: CatalogLookupsViewModel = viewModel(factory = CatalogLookupsViewModelFactory())
+            CatalogLookupsScreen(
+                viewModel = vm,
+                onBack = { navController.popBackStack() }
             )
         }
         // ============================================

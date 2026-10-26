@@ -71,7 +71,8 @@ fun ProductListScreen(
     viewModel: ProductListViewModel,
     onBack: () -> Unit,
     onAddProduct: () -> Unit,
-    onEditProduct: (productId: String) -> Unit
+    onEditProduct: (productId: String) -> Unit,
+    onManageLookups: () -> Unit = {}
 ) {
     val state by viewModel.state.collectAsState()
     val context = LocalContext.current
@@ -101,7 +102,7 @@ fun ProductListScreen(
 
         Box(modifier = Modifier.weight(1f)) {
             Column(modifier = Modifier.fillMaxSize()) {
-                SearchAndFilters(state, viewModel)
+                SearchAndFilters(state, viewModel, onManageLookups)
 
                 when {
                     state.loading -> CenteredBox { CircularProgressIndicator(color = Primary) }
@@ -167,10 +168,12 @@ fun ProductListScreen(
     }
 }
 
-// ── Search and filters ────────────────────────────────────────────
-
 @Composable
-private fun SearchAndFilters(state: ProductListState, vm: ProductListViewModel) {
+private fun SearchAndFilters(
+    state: ProductListState,
+    vm: ProductListViewModel,
+    onManageLookups: () -> Unit
+) {
     Column(modifier = Modifier.padding(start = 16.dp, end = 16.dp, top = 12.dp, bottom = 4.dp)) {
         OutlinedTextField(
             value = state.query,
@@ -212,15 +215,22 @@ private fun SearchAndFilters(state: ProductListState, vm: ProductListViewModel) 
                 color = MediumGray,
                 modifier = Modifier.weight(1f)
             )
-            if (state.discontinuedCount > 0) {
-                TextButton(onClick = { vm.onShowDiscontinued(!state.showDiscontinued) }) {
-                    Text(
-                        text = if (state.showDiscontinued) "Hide discontinued"
-                        else "Show discontinued (${state.discontinuedCount})",
-                        fontSize = 12.sp,
-                        color = Primary
-                    )
-                }
+            TextButton(onClick = onManageLookups) {
+                Text("Categories & brands ›", fontSize = 12.sp, color = Primary)
+            }
+        }
+
+        if (state.discontinuedCount > 0) {
+            TextButton(
+                onClick = { vm.onShowDiscontinued(!state.showDiscontinued) },
+                modifier = Modifier.align(Alignment.End)
+            ) {
+                Text(
+                    text = if (state.showDiscontinued) "Hide discontinued"
+                    else "Show discontinued (${state.discontinuedCount})",
+                    fontSize = 12.sp,
+                    color = Primary
+                )
             }
         }
     }

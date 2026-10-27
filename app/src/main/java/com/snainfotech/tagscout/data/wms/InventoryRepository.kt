@@ -9,7 +9,8 @@ import kotlinx.coroutines.async
 import kotlinx.coroutines.awaitAll
 import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.tasks.await
-
+import com.google.firebase.firestore.FieldValue
+import com.snainfotech.tagscout.data.config.UnitStatus
 /**
  * Reads/writes inventory units and the movement ledger.
  *
@@ -363,6 +364,149 @@ class InventoryRepository {
             }
         }.toMap()
 
+    // ── Unit details ───────────────────────────────────────────
+
+    /** Every field of a unit (custom fields, batch, sale…), or null if the tag isn't enrolled. */
+    suspend fun getUnitFull(epc: String): Result<InventoryUnit?> {
+        return try {
+            val ref = companyDoc()?.collection("inventory_units")?.document(epc.trim().uppercase())
+                ?: return Result.failure(Exception("Not logged in"))
+            val doc = ref.get().await()
+            if (!doc.exists()) return Result.success(null)
+            Result.success(doc.toObject(InventoryUnit::class.java)?.copy(epc = doc.id))
+        } catch (e: Exception) { Result.failure(e) }
+    }
+
+    /** Units with exactly this serial number. Tries as typed, then uppercase. */
+    suspend fun findUnitsBySerial(serial: String): Result<List<InventoryUnit>> {
+        return try {
+            val ref = companyDoc()?.collection("inventory_units")
+                ?: return Result.failure(Exception("Not logged in"))
+            val typed = serial.trim()
+            if (typed.isEmpty()) return Result.success(emptyList())
+            val variants = listOf(typed, typed.uppercase()).distinct()
+            val units = variants.flatMap { v ->
+                ref.whereEqualTo("serialNumber", v).limit(MAX_SERIAL_MATCHES).get().await().documents
+            }
+                .distinctBy { it.id }
+                .mapNotNull { d -> d.toObject(InventoryUnit::class.java)?.copy(epc = d.id) }
+            Result.success(units)
+        } catch (e: Exception) { Result.failure(e) }
+    }
+
+    /**
+     * Edits a unit's own details. [customFields] is the complete map to store
+     * (FieldValidator.validate output, which keeps values of inactive fields).
+     * A null [price] removes the price.
+     */
+    suspend fun updateUnitDetails(
+        epc: String,
+        serialNumber: String,
+        price: Double?,
+        customFields: Map<String, Any>
+    ): Result<Unit> {
+        return try {
+            val ref = companyDoc()?.collection("inventory_units")?.document(epc)
+                ?: return Result.failure(Exception("Not logged in"))
+            ref.update(
+                mapOf(
+                    "serialNumber" to serialNumber.trim(),
+                    "price" to (price ?: FieldValue.delete()),
+                    "customFields" to customFields
+                )
+            ).await()
+            Result.success(Unit)
+        } catch (e: Exception) { Result.failure(e) }
+    }
+
+    /**
+     * Changes a unit's status and logs it in the movement ledger, in one transaction.
+     *
+     *   counted → not counted   outward,  quantity -1, from the unit's location
+     *   not counted → counted   inward,   quantity +1, into the unit's location
+     *   otherwise               status_change, quantity 0 (history only)
+     *
+     * "Counted" = [STOCK_STATUSES]. Leaving SOLD clears soldAt/soldBy;
+     * entering SOLD sets them. System-only statuses can't be set here.
+     */
+    suspend fun changeUnitStatus(epc: String, newStatus: UnitStatus, note: String = ""): Result<Unit> {
+        return try {
+            require(!newStatus.systemOnly) { "${newStatus.displayName} is set automatically" }
+            val company = companyDoc() ?: return Result.failure(Exception("Not logged in"))
+            val unitRef = company.collection("inventory_units").document(epc)
+            val movementRef = company.collection("movements").document()
+            val uid = userId()
+            val now = Timestamp.now()
+
+            firestore.runTransaction { txn ->
+                val snap = txn.get(unitRef)
+                if (!snap.exists()) throw IllegalStateException("This tag is no longer enrolled")
+
+                val oldKey = snap.getString("status") ?: UnitStatus.IN_STOCK.key
+                val oldStatus = UnitStatus.fromKey(oldKey) ?: UnitStatus.IN_STOCK
+                if (oldStatus == newStatus) return@runTransaction null
+                if (oldStatus == UnitStatus.RETAGGED) throw IllegalStateException("A re-tagged unit can't change status")
+
+                val wasCounted = oldStatus in STOCK_STATUSES
+                val isCounted = newStatus in STOCK_STATUSES
+
+                val updates = hashMapOf<String, Any>(
+                    "status" to newStatus.key,
+                    "lastMovedAt" to now
+                )
+                if (newStatus == UnitStatus.SOLD) {
+                    updates["soldAt"] = now
+                    updates["soldBy"] = uid
+                } else if (oldStatus == UnitStatus.SOLD) {
+                    updates["soldAt"] = FieldValue.delete()
+                    updates["soldBy"] = FieldValue.delete()
+                }
+                txn.update(unitRef, updates)
+
+                val warehouseId = snap.getString("currentWarehouseId").orEmpty()
+                val rackId = snap.getString("currentRackId").orEmpty()
+                val binId = snap.getString("currentBinId").orEmpty()
+                val binCode = snap.getString("currentBinCode").orEmpty()
+                val leaving = wasCounted && !isCounted
+                val arriving = !wasCounted && isCounted
+
+                val movement = hashMapOf<String, Any>(
+                    "type" to when {
+                        leaving -> "outward"
+                        arriving -> "inward"
+                        else -> "status_change"
+                    },
+                    "productId" to snap.getString("productId").orEmpty(),
+                    "sku" to snap.getString("sku").orEmpty(),
+                    "epc" to epc,
+                    "quantity" to when {
+                        leaving -> -1
+                        arriving -> 1
+                        else -> 0
+                    },
+                    "fromWarehouseId" to if (arriving) "" else warehouseId,
+                    "fromRackId" to if (arriving) "" else rackId,
+                    "fromBinId" to if (arriving) "" else binId,
+                    "fromBinCode" to if (arriving) "" else binCode,
+                    "toWarehouseId" to if (leaving) "" else warehouseId,
+                    "toRackId" to if (leaving) "" else rackId,
+                    "toBinId" to if (leaving) "" else binId,
+                    "toBinCode" to if (leaving) "" else binCode,
+                    "referenceType" to "status_change",
+                    "referenceId" to "${oldStatus.key}→${newStatus.key}",
+                    "userId" to uid,
+                    "timestamp" to now,
+                    "notes" to note.trim(),
+                    "batchId" to snap.getString("batchId").orEmpty()
+                )
+                txn.set(movementRef, movement)
+                null
+            }.await()
+            Result.success(Unit)
+        } catch (e: Exception) {
+            Result.failure((e.cause as? IllegalStateException) ?: e)
+        }
+    }
     // ── Dashboard reads ────────────────────────────────────────
 
     /**
@@ -460,6 +604,10 @@ class InventoryRepository {
 
 private const val ENROLL_PARALLELISM = 8
 
+private const val MAX_SERIAL_MATCHES = 20L
+
+/** Statuses that count as stock on hand. Shared rule for status changes and (Phase 5) auto-expire. */
+val STOCK_STATUSES: Set<UnitStatus> = setOf(UnitStatus.IN_STOCK, UnitStatus.PICKED)
 /** Hex only, 8–128 chars. Rejects keyboard-wedge noise and anything unsafe as a doc id. */
 private val EPC_PATTERN = Regex("^[0-9A-Fa-f]{8,128}$")
 

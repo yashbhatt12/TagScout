@@ -47,7 +47,8 @@ object FeatureRoutes {
             Routes.PRODUCT_EDIT,
             Routes.PRODUCT_LOOKUPS,
             Routes.WMS_PRODUCT_CATALOG,
-            Routes.UNIT_ENROLL -> canManageProducts(config)
+            Routes.UNIT_ENROLL,
+            Routes.UNIT_DETAIL -> canManageProducts(config)
 
             Routes.JEWELLERY_MENU,
             Routes.JEWELLERY_ENROLL,

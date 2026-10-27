@@ -63,6 +63,7 @@ fun JewelleryMenuScreen(
     isReaderConnected: Boolean = true,
     onEnrollClick: () -> Unit = {},
     onCheckoutClick: () -> Unit = {},
+    onPieceDetailsClick: () -> Unit = {},
     onCycleCountClick: () -> Unit = {},
     onManagerAlertsClick: () -> Unit = {},
     onProductsClick: () -> Unit = {},
@@ -118,6 +119,13 @@ fun JewelleryMenuScreen(
                 description = "Scan at counter to mark piece as sold",
                 enabled = isReaderConnected,
                 onClick = onCheckoutClick
+            )
+            FeatureButton(
+                icon = R.drawable.ic_scan,
+                title = "Piece details",
+                description = "Scan or search a piece to view, edit or change its status",
+                enabled = true,
+                onClick = onPieceDetailsClick
             )
             FeatureButton(
                 icon = R.drawable.ic_scan,

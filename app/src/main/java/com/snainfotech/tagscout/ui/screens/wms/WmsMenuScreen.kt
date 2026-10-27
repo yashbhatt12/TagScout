@@ -37,6 +37,7 @@ fun WmsMenuScreen(
     onDashboardClick: () -> Unit = {},
     onInwardClick: () -> Unit = {},
     onEnrollUnitsClick: () -> Unit = {},
+    onUnitDetailsClick: () -> Unit = {},
     onCycleCountClick: () -> Unit = {},
     onPickListClick: () -> Unit = {},
     onDispatchClick: () -> Unit = {},
@@ -129,7 +130,13 @@ fun WmsMenuScreen(
                 enabled = true,
                 onClick = onEnrollUnitsClick
             )
-
+            FeatureButton(
+                icon = R.drawable.ic_scan,
+                title = "Unit details",
+                description = "Scan or search a tag to view, edit or change its status",
+                enabled = true,
+                onClick = onUnitDetailsClick
+            )
             FeatureButton(
                 icon = R.drawable.ic_scan,
                 title = "Cycle Count",

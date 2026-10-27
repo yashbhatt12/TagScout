@@ -143,6 +143,9 @@ import com.snainfotech.tagscout.ui.screens.enrollment.ReaderMode
 import com.snainfotech.tagscout.ui.screens.enrollment.UnitEnrollmentScreen
 import com.snainfotech.tagscout.ui.screens.enrollment.UnitEnrollmentViewModel
 import com.snainfotech.tagscout.ui.screens.enrollment.UnitEnrollmentViewModelFactory
+import com.snainfotech.tagscout.ui.screens.units.UnitDetailScreen
+import com.snainfotech.tagscout.ui.screens.units.UnitDetailViewModel
+import com.snainfotech.tagscout.ui.screens.units.UnitDetailViewModelFactory
 import kotlinx.coroutines.launch
 import java.text.SimpleDateFormat
 import java.util.Date
@@ -200,7 +203,9 @@ object Routes {
     fun productEdit(productId: String) = "$PRODUCT_EDIT/$productId"
     const val PRODUCT_LOOKUPS = "product_lookups"          // categories & brands
     // Unit enrollment — shared by WMS and Retail
+
     const val UNIT_ENROLL = "unit_enroll"
+    const val UNIT_DETAIL = "unit_detail"
 }
 
 @Composable
@@ -1425,6 +1430,7 @@ fun TagScoutNavGraph(
                 onCycleCountClick = { navController.navigate(Routes.WMS_CYCLE_COUNT) },
                 onInwardClick = { navController.navigate(Routes.WMS_INWARD) },
                 onEnrollUnitsClick = { navController.navigate(Routes.UNIT_ENROLL) },
+                onUnitDetailsClick = { navController.navigate(Routes.UNIT_DETAIL) },
                 // Cycle Count, Pick List, Dispatch remain disabled placeholders.
             )
         }
@@ -1477,6 +1483,46 @@ fun TagScoutNavGraph(
                 onBack = { navController.popBackStack() },
                 onConnectSled = { navController.navigate(Routes.CONNECT_DEVICE) }
             )
+
+            composable(Routes.UNIT_DETAIL) {
+                val app = LocalContext.current.applicationContext as com.snainfotech.tagscout.TagScoutApplication
+                val vm: UnitDetailViewModel = viewModel(factory = UnitDetailViewModelFactory())
+                val detailState by vm.state.collectAsState()
+                val deviceState by sharedHomeViewModel.deviceState.collectAsState()
+                val useSled = detailState.reader == ReaderMode.SLED
+
+                // Low power: look up the one piece in hand, not the tray beside it.
+                LaunchedEffect(deviceState.isConnected, useSled) {
+                    if (deviceState.isConnected && useSled) {
+                        runCatching { app.rfidScanner.setAntennaPower(1) }
+                            .onFailure { android.util.Log.e("UnitDetail", "setAntennaPower failed", it) }
+                    }
+                }
+
+                // Sled runs only while the screen is waiting for a tag; it stops while a unit is open.
+                LaunchedEffect(detailState.isListening, deviceState.isConnected, useSled) {
+                    if (detailState.isListening && deviceState.isConnected && useSled) {
+                        runCatching {
+                            app.rfidScanner.startScanning().collect { tag -> vm.onTagScanned(tag.epc) }
+                        }.onFailure {
+                            android.util.Log.e("UnitDetail", "startScanning failed", it)
+                        }
+                    } else {
+                        runCatching { app.rfidScanner.stopScanning() }
+                    }
+                }
+
+                DisposableEffect(Unit) {
+                    onDispose { runCatching { app.rfidScanner.stopScanning() } }
+                }
+
+                UnitDetailScreen(
+                    viewModel = vm,
+                    sledConnected = deviceState.isConnected,
+                    onBack = { navController.popBackStack() },
+                    onConnectSled = { navController.navigate(Routes.CONNECT_DEVICE) }
+                )
+            }
         }
         // ============================================
         // Jewellery — Retail module
@@ -1488,6 +1534,7 @@ fun TagScoutNavGraph(
                 isReaderConnected = deviceState.isConnected,
                 onEnrollClick = { navController.navigate(Routes.UNIT_ENROLL) },
                 onCheckoutClick = { navController.navigate(Routes.JEWELLERY_CHECKOUT) },
+                onPieceDetailsClick = { navController.navigate(Routes.UNIT_DETAIL) },
                 onManagerAlertsClick = { navController.navigate(Routes.MANAGER_ALERTS) },
                 onProductsClick = { navController.navigate(Routes.PRODUCTS) }
                 // Cycle Count will reuse the existing WMS cycle count flow in a later file.

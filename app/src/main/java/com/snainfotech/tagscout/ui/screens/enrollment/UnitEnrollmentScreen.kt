@@ -47,6 +47,7 @@ import androidx.compose.material3.SwitchDefaults
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.rememberDatePickerState
+import androidx.compose.material3.AlertDialog
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
@@ -139,15 +140,22 @@ fun UnitEnrollmentScreen(
         if (desktopListening) runCatching { focusRequester.requestFocus() }
     }
 
-    val handleBack: () -> Unit = {
+    var confirmDiscard by remember { mutableStateOf(false) }
+
+    // Setup → leave the screen. Scanning / details → back to setup (reader off),
+    // asking first if tags would be lost. Result → setup.
+    fun handleBack() {
         when (state.phase) {
             EnrollPhase.SETUP -> onBack()
-            EnrollPhase.SCANNING -> viewModel.backToSetup()
-            EnrollPhase.DETAILS ->
-                if (state.capture == CaptureMode.SINGLE) state.selectedEpc?.let(viewModel::removePiece)
-                else viewModel.scanMore()
             EnrollPhase.SAVING -> Unit
             EnrollPhase.RESULT -> viewModel.changeSetup()
+            EnrollPhase.SCANNING, EnrollPhase.DETAILS -> {
+                if (state.hasUnsavedPieces) {
+                    confirmDiscard = true
+                } else {
+                    viewModel.backToSetup()
+                }
+            }
         }
     }
     BackHandler(enabled = state.phase != EnrollPhase.SETUP) { handleBack() }
@@ -170,7 +178,7 @@ fun UnitEnrollmentScreen(
         AppHeader(
             title = "Enroll stock",
             showBackButton = true,
-            onBackClick = handleBack,
+            onBackClick = { handleBack() },
             showMenu = false
         )
 
@@ -194,6 +202,66 @@ fun UnitEnrollmentScreen(
                 EnrollPhase.RESULT -> ResultPane(state, viewModel)
             }
         }
+    }
+    // ── After a save: enroll another, or back to the menu ──
+    if (state.allDone) {
+        val enrolled = state.lastSummary?.enrolled ?: 0
+        val skipped = state.pieces.count { it.status == PieceStatus.ALREADY_ENROLLED }
+        AlertDialog(
+            // A choice is required; tapping outside or Back does nothing.
+            onDismissRequest = {},
+            title = {
+                Text(
+                    when (enrolled) {
+                        0 -> "Nothing new enrolled"
+                        1 -> "Unit enrolled"
+                        else -> "$enrolled units enrolled"
+                    }
+                )
+            },
+            text = {
+                Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                    if (skipped > 0) {
+                        Text(
+                            "$skipped tag${if (skipped == 1) " was" else "s were"} already enrolled and skipped.",
+                            fontSize = 13.sp,
+                            color = MediumGray
+                        )
+                    }
+                    Text("Do you want to enroll another unit or go back to the menu?")
+                }
+            },
+            confirmButton = {
+                Button(
+                    onClick = viewModel::enrollMore,
+                    colors = ButtonDefaults.buttonColors(containerColor = Primary)
+                ) { Text("Enroll another") }
+            },
+            dismissButton = {
+                TextButton(onClick = onBack) { Text("Back to menu", color = Primary) }
+            }
+        )
+    }
+
+    // ── Back pressed with unsaved tags ──
+    if (confirmDiscard) {
+        val unsaved = state.pieces.count { it.isSaveable || it.status == PieceStatus.CHECKING }
+        AlertDialog(
+            onDismissRequest = { confirmDiscard = false },
+            title = { Text("Discard scanned tags?") },
+            text = {
+                Text("$unsaved tag${if (unsaved == 1) " hasn't" else "s haven't"} been saved. Going back will discard ${if (unsaved == 1) "it" else "them"}.")
+            },
+            confirmButton = {
+                TextButton(onClick = {
+                    confirmDiscard = false
+                    viewModel.discardAndSetup()
+                }) { Text("Discard", color = ErrorRed) }
+            },
+            dismissButton = {
+                TextButton(onClick = { confirmDiscard = false }) { Text("Keep", color = Primary) }
+            }
+        )
     }
 }
 

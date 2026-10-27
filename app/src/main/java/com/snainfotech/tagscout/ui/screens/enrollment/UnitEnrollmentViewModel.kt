@@ -155,7 +155,9 @@ data class UnitEnrollmentState(
             pieces.none { it.status == PieceStatus.CHECKING }
 
     val hasUnsavedPieces: Boolean get() = pieces.any { it.isSaveable || it.status == PieceStatus.CHECKING }
-
+    /** Save finished with nothing left to fix: the screen asks "enroll another or back to menu". */
+    val allDone: Boolean
+        get() = phase == EnrollPhase.RESULT && pieces.none { it.status == PieceStatus.FAILED }
     companion object {
         const val MAX_PIECES = 200
     }
@@ -182,7 +184,13 @@ class UnitEnrollmentViewModel(
 
     private val _state = MutableStateFlow(UnitEnrollmentState())
     val state: StateFlow<UnitEnrollmentState> = _state.asStateFlow()
-
+    /**
+     * Tags enrolled, or found already enrolled, since this screen opened.
+     * Readers keep reporting a tag while it's in the field (a piece left on
+     * the pad, or the sled still pointing at it), so these are ignored
+     * silently instead of reopening and rejecting the same tag in a loop.
+     */
+    private val handledEpcs = HashSet<String>()
     init {
         viewModelScope.launch {
             ConfigRepository.config.collect { cfg -> _state.update { it.copy(config = cfg) } }
@@ -343,6 +351,7 @@ class UnitEnrollmentViewModel(
             return
         }
         if (st.pieces.any { it.epc == epc }) return
+        if (epc in handledEpcs) return
 
         val piece = PieceDraft(epc = epc, tid = tid.trim().uppercase())
         _state.update { cur ->
@@ -362,6 +371,7 @@ class UnitEnrollmentViewModel(
     private fun lookUp(epc: String) {
         viewModelScope.launch {
             val result = inventoryRepo.findUnitByEpc(epc)
+            if (result.getOrNull() != null) handledEpcs += epc
             _state.update { cur ->
                 val existing = result.getOrNull()
                 when {
@@ -594,7 +604,14 @@ class UnitEnrollmentViewModel(
         )
     }
 
-    private fun applySummary(summary: EnrollSummary, batch: Batch?) = _state.update { st ->
+    private fun applySummary(summary: EnrollSummary, batch: Batch?) {
+        summary.results
+            .filter { it.outcome == EnrollOutcome.ENROLLED || it.outcome == EnrollOutcome.ALREADY_ENROLLED }
+            .forEach { handledEpcs += it.epc }
+        applySummaryToState(summary, batch)
+    }
+
+    private fun applySummaryToState(summary: EnrollSummary, batch: Batch?) = _state.update { st ->
         val byEpc = summary.results.associateBy { it.epc }
         val pieces = st.pieces.map { p ->
             val r = byEpc[p.epc] ?: return@map p
@@ -607,25 +624,13 @@ class UnitEnrollmentViewModel(
         val total = st.sessionEnrolled + summary.enrolled
         val withBatch = st.copy(existingBatch = batch ?: st.existingBatch, batchErrors = emptyMap())
 
-        if (st.capture == CaptureMode.SINGLE && summary.skipped == 0) {
-            // Counter flow: straight back to waiting for the next piece.
-            withBatch.copy(
-                phase = EnrollPhase.SCANNING,
-                pieces = emptyList(),
-                selectedEpc = null,
-                sessionEnrolled = total,
-                lastSummary = summary,
-                message = "Enrolled …${summary.results.first().epc.takeLast(6)}"
-            )
-        } else {
-            withBatch.copy(
-                phase = EnrollPhase.RESULT,
-                pieces = pieces,
-                selectedEpc = null,
-                sessionEnrolled = total,
-                lastSummary = summary
-            )
-        }
+        withBatch.copy(
+            phase = EnrollPhase.RESULT,
+            pieces = pieces,
+            selectedEpc = null,
+            sessionEnrolled = total,
+            lastSummary = summary
+        )
     }
 
     // ── After a save ──────────────────────────────────────────
@@ -644,6 +649,10 @@ class UnitEnrollmentViewModel(
 
     /** Back to setup to pick a different product, location or reader. */
     fun changeSetup() = _state.update {
+        it.copy(phase = EnrollPhase.SETUP, pieces = emptyList(), selectedEpc = null, lastSummary = null)
+    }
+    /** Back pressed with unsaved tags, after the user confirmed: drop them and stop the reader. */
+    fun discardAndSetup() = _state.update {
         it.copy(phase = EnrollPhase.SETUP, pieces = emptyList(), selectedEpc = null, lastSummary = null)
     }
 

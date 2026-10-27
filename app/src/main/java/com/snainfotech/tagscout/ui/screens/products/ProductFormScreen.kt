@@ -70,6 +70,17 @@ import com.snainfotech.tagscout.ui.theme.Primary
 import java.time.Instant
 import java.time.LocalDate
 import java.time.ZoneOffset
+import android.content.Context
+import android.net.Uri
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.PickVisualMediaRequest
+import androidx.activity.result.contract.ActivityResultContracts
+import androidx.compose.runtime.saveable.rememberSaveable
+import androidx.compose.ui.draw.clip
+import androidx.compose.ui.layout.ContentScale
+import androidx.core.content.FileProvider
+import coil.compose.AsyncImage
+import java.io.File
 
 /**
  * Create / edit one product. Shared by every module that manages products.
@@ -121,6 +132,8 @@ fun ProductFormScreen(
                 verticalArrangement = Arrangement.spacedBy(12.dp)
             ) {
                 BasicsSection(state, viewModel)
+                PhotoSection(state, viewModel)
+                ClassificationSection(state, viewModel)
                 ClassificationSection(state, viewModel)
                 DetailsSection(state, viewModel)
                 CustomFieldsSection(state, viewModel)
@@ -256,7 +269,82 @@ private fun CustomFieldsSection(state: ProductFormState, vm: ProductFormViewMode
         }
     }
 }
+@Composable
+private fun PhotoSection(state: ProductFormState, vm: ProductFormViewModel) {
+    val context = LocalContext.current
+    // Saveable: the camera app can push us out of memory while it's open.
+    var cameraUri by rememberSaveable { mutableStateOf<Uri?>(null) }
 
+    val pickPhoto = rememberLauncherForActivityResult(ActivityResultContracts.PickVisualMedia()) { uri ->
+        if (uri != null) vm.onPhotoPicked(uri, isTemp = false)
+    }
+    val takePhoto = rememberLauncherForActivityResult(ActivityResultContracts.TakePicture()) { ok ->
+        val uri = cameraUri
+        if (uri != null) {
+            if (ok) vm.onPhotoPicked(uri, isTemp = true)
+            else runCatching { context.contentResolver.delete(uri, null, null) }
+        }
+        cameraUri = null
+    }
+
+    SectionCard("Photo") {
+        val shown = state.shownImage
+        if (shown != null) {
+            AsyncImage(
+                model = shown,
+                contentDescription = "Product photo",
+                contentScale = ContentScale.Crop,
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .height(200.dp)
+                    .clip(RoundedCornerShape(8.dp))
+                    .background(LightGray)
+            )
+        } else {
+            Box(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .height(120.dp)
+                    .clip(RoundedCornerShape(8.dp))
+                    .background(LightGray),
+                contentAlignment = Alignment.Center
+            ) {
+                Text("No photo", color = MediumGray, fontSize = 13.sp)
+            }
+        }
+
+        when {
+            state.pendingImage != null -> HintText("New photo, uploads when you save.")
+            state.removeImage && state.imageUrl.isNotBlank() -> HintText("Photo will be removed when you save.")
+        }
+
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            TextButton(onClick = {
+                pickPhoto.launch(PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageOnly))
+            }) { Text("Choose photo", color = Primary) }
+
+            TextButton(onClick = {
+                val uri = newCameraUri(context)
+                cameraUri = uri
+                runCatching { takePhoto.launch(uri) }.onFailure {
+                    cameraUri = null
+                    Toast.makeText(context, "No camera app found on this device", Toast.LENGTH_SHORT).show()
+                }
+            }) { Text("Take photo", color = Primary) }
+
+            if (shown != null) {
+                TextButton(onClick = vm::onRemovePhoto) { Text("Remove", color = ErrorRed) }
+            }
+        }
+    }
+}
+
+/** A fresh temp file in cache/camera/ (see res/xml/file_paths.xml), shared with the camera app. */
+private fun newCameraUri(context: Context): Uri {
+    val dir = File(context.cacheDir, "camera").apply { mkdirs() }
+    val file = File(dir, "product_${System.currentTimeMillis()}.jpg")
+    return FileProvider.getUriForFile(context, "${context.packageName}.fileprovider", file)
+}
 // ── Pickers ───────────────────────────────────────────────────────
 
 /** Category dropdown with a "None" choice first. */

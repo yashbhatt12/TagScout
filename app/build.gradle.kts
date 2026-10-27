@@ -108,6 +108,8 @@ dependencies {
     implementation(libs.firebase.auth)
     implementation(libs.firebase.firestore)
     implementation(libs.firebase.crashlytics)
+    implementation(libs.firebase.storage)
+    implementation(libs.coil.compose)
 
     testImplementation(libs.junit)
     implementation(libs.stax.api)   // the javax.xml.stream API that Android lacks

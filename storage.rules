@@ -1,0 +1,25 @@
+rules_version = '2';
+
+service firebase.storage {
+  match /b/{bucket}/o {
+
+    // One folder per company: companies/{companyId}/...
+    // companyId == uid for now (single login per company), same as firestore.rules.
+    match /companies/{companyId}/{allPaths=**} {
+      allow read: if request.auth != null && request.auth.uid == companyId;
+
+      // Images only, under 2 MB (the app compresses to ~200–400 KB).
+      allow create, update: if request.auth != null
+        && request.auth.uid == companyId
+        && request.resource.size < 2 * 1024 * 1024
+        && request.resource.contentType.matches('image/.*');
+
+      allow delete: if request.auth != null && request.auth.uid == companyId;
+    }
+
+    // Everything else is closed.
+    match /{allPaths=**} {
+      allow read, write: if false;
+    }
+  }
+}

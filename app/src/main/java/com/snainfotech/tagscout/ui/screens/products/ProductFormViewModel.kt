@@ -28,7 +28,9 @@ import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
 import java.util.Locale
-
+import android.net.Uri
+import com.google.firebase.FirebaseApp
+import com.snainfotech.tagscout.data.wms.ProductImageRepository
 /**
  * Everything the product form shows. Text inputs are held as the user typed
  * them; values are cleaned and type-checked only on save.
@@ -59,6 +61,12 @@ data class ProductFormState(
 
     // Custom fields (product level)
     val customValues: Map<String, String> = emptyMap(),
+
+    // Photo: [imageUrl] is what's saved; [pendingImage] was picked or taken and uploads on Save.
+    val imageUrl: String = "",
+    val pendingImage: Uri? = null,
+    val pendingIsTemp: Boolean = false,     // camera file in cache: delete after use
+    val removeImage: Boolean = false,
 
     // Lookups and settings
     val config: CompanyConfig = CompanyConfig.DEFAULT,
@@ -94,6 +102,10 @@ data class ProductFormState(
         }
 
     val hasErrors: Boolean get() = coreErrors.isNotEmpty() || fieldErrors.isNotEmpty()
+
+    /** What the photo box shows: the new pick, else the saved photo, else nothing. */
+    val shownImage: Any?
+        get() = pendingImage ?: imageUrl.takeIf { it.isNotBlank() && !removeImage }
 }
 
 /**
@@ -103,8 +115,11 @@ data class ProductFormState(
 class ProductFormViewModel(
     private val productId: String?,
     private val productRepo: ProductRepository = ProductRepository(),
-    private val lookupsRepo: CatalogLookupsRepository = CatalogLookupsRepository()
+    private val lookupsRepo: CatalogLookupsRepository = CatalogLookupsRepository(),
+    private val imageRepo: ProductImageRepository = ProductImageRepository(FirebaseApp.getInstance().applicationContext)
 ) : ViewModel() {
+
+    private val appContext = FirebaseApp.getInstance().applicationContext
 
     private val _state = MutableStateFlow(ProductFormState(isNew = productId == null))
     val state: StateFlow<ProductFormState> = _state.asStateFlow()
@@ -157,6 +172,7 @@ class ProductFormViewModel(
                             uom = product.uom(),
                             status = product.productStatus(),
                             customValues = product.customFields.mapValues { (_, v) -> toInputText(v) },
+                            imageUrl = product.imageUrl,
                             categories = categories,
                             brands = brands
                         )
@@ -203,6 +219,48 @@ class ProductFormViewModel(
 
     fun onCustomValue(key: String, value: String) = _state.update {
         it.copy(customValues = it.customValues + (key to value), fieldErrors = it.fieldErrors - key)
+    }
+    /** A photo was picked or taken. [isTemp] = a camera file in cache, deleted after use. */
+    fun onPhotoPicked(uri: Uri, isTemp: Boolean) {
+        val prev = _state.value
+        if (prev.pendingIsTemp) prev.pendingImage?.takeIf { it != uri }?.let { discardTemp(it) }
+        _state.update { it.copy(pendingImage = uri, pendingIsTemp = isTemp, removeImage = false) }
+    }
+
+    fun onRemovePhoto() {
+        val prev = _state.value
+        if (prev.pendingIsTemp) prev.pendingImage?.let { discardTemp(it) }
+        _state.update { it.copy(pendingImage = null, pendingIsTemp = false, removeImage = true) }
+    }
+
+    private fun discardTemp(uri: Uri) {
+        runCatching { appContext.contentResolver.delete(uri, null, null) }
+    }
+
+    /** Leaving the form without saving: drop an unsaved camera file. */
+    override fun onCleared() {
+        val s = _state.value
+        if (s.pendingIsTemp) s.pendingImage?.let { discardTemp(it) }
+    }
+
+    /** Uploads or removes the photo once the product itself is saved. Returns a message only on failure. */
+    private suspend fun savePhoto(productId: String, s: ProductFormState): String? {
+        val pending = s.pendingImage
+        return try {
+            when {
+                pending != null -> imageRepo.replaceImage(productId, pending, s.imageUrl).fold(
+                    onSuccess = { null },
+                    onFailure = { e -> "Product saved, but the photo couldn't be uploaded: ${e.message}" }
+                )
+                s.removeImage && s.imageUrl.isNotBlank() -> imageRepo.removeImage(productId, s.imageUrl).fold(
+                    onSuccess = { null },
+                    onFailure = { e -> "Product saved, but the photo couldn't be removed: ${e.message}" }
+                )
+                else -> null
+            }
+        } finally {
+            if (pending != null && s.pendingIsTemp) discardTemp(pending)
+        }
     }
 
     fun clearMessage() = _state.update { it.copy(message = null) }
@@ -284,7 +342,10 @@ class ProductFormViewModel(
             }
 
             result.fold(
-                onSuccess = { id -> _state.update { it.copy(saving = false, savedProductId = id) } },
+                onSuccess = { id ->
+                    val photoMessage = savePhoto(id, s)
+                    _state.update { it.copy(saving = false, savedProductId = id, message = photoMessage) }
+                },
                 onFailure = { e ->
                     val skuClash = e is ProductRepository.DuplicateSkuException
                     _state.update {

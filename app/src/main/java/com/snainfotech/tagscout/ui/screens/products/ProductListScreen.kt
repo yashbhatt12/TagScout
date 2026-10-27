@@ -52,6 +52,9 @@ import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
+import androidx.compose.ui.draw.clip
+import androidx.compose.ui.layout.ContentScale
+import coil.compose.AsyncImage
 import java.time.LocalDate
 import com.snainfotech.tagscout.data.wms.Product
 import com.snainfotech.tagscout.data.wms.ProductStatus
@@ -302,42 +305,82 @@ private fun ProductRowCard(row: ProductRow, onClick: () -> Unit, onLongClick: ()
         border = BorderStroke(1.dp, BorderGray),
         elevation = CardDefaults.cardElevation(defaultElevation = 0.dp)
     ) {
-        Column(modifier = Modifier.padding(horizontal = 14.dp, vertical = 12.dp)) {
-            Row(verticalAlignment = Alignment.CenterVertically) {
+        Row(
+            verticalAlignment = Alignment.CenterVertically,
+            modifier = Modifier.padding(horizontal = 12.dp, vertical = 10.dp)
+        ) {
+            Thumbnail(imageUrl = p.imageUrl, fallbackText = p.title.ifBlank { p.sku })
+            Spacer(Modifier.width(12.dp))
+
+            Column(modifier = Modifier.weight(1f)) {
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Text(
+                        text = p.sku,
+                        fontSize = 14.sp,
+                        fontWeight = FontWeight.SemiBold,
+                        color = DarkText,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis,
+                        modifier = Modifier.weight(1f, fill = false)
+                    )
+                    Spacer(Modifier.width(8.dp))
+                    Badge(row.typeLabel, background = Primary.copy(alpha = 0.08f), text = Primary)
+                    if (discontinued) {
+                        Spacer(Modifier.width(6.dp))
+                        Badge("Discontinued", background = WarningBg, text = WarningText)
+                    }
+                }
+
                 Text(
-                    text = p.sku,
-                    fontSize = 14.sp,
-                    fontWeight = FontWeight.SemiBold,
+                    text = p.title,
+                    fontSize = 13.sp,
                     color = DarkText,
                     maxLines = 1,
                     overflow = TextOverflow.Ellipsis,
-                    modifier = Modifier.weight(1f, fill = false)
+                    modifier = Modifier.padding(top = 2.dp)
                 )
-                Spacer(Modifier.width(8.dp))
-                Badge(row.typeLabel, background = Primary.copy(alpha = 0.08f), text = Primary)
-                if (discontinued) {
-                    Spacer(Modifier.width(6.dp))
-                    Badge("Discontinued", background = WarningBg, text = WarningText)
-                }
+
+                val meta = listOf(row.categoryName, row.brandName, p.uom().symbol).filter { it.isNotEmpty() }
+                Text(
+                    text = meta.joinToString("  ·  "),
+                    fontSize = 11.sp,
+                    color = MediumGray,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                    modifier = Modifier.padding(top = 2.dp)
+                )
             }
+        }
+    }
+}
 
+/** 48 dp product photo, or the name's first letter on grey when there's none. */
+@Composable
+private fun Thumbnail(imageUrl: String, fallbackText: String) {
+    val shape = RoundedCornerShape(8.dp)
+    if (imageUrl.isNotBlank()) {
+        AsyncImage(
+            model = imageUrl,
+            contentDescription = null,
+            contentScale = ContentScale.Crop,
+            modifier = Modifier
+                .size(48.dp)
+                .clip(shape)
+                .background(LightGray)
+        )
+    } else {
+        Box(
+            modifier = Modifier
+                .size(48.dp)
+                .clip(shape)
+                .background(LightGray),
+            contentAlignment = Alignment.Center
+        ) {
             Text(
-                text = p.title,
-                fontSize = 13.sp,
-                color = DarkText,
-                maxLines = 1,
-                overflow = TextOverflow.Ellipsis,
-                modifier = Modifier.padding(top = 2.dp)
-            )
-
-            val meta = listOf(row.categoryName, row.brandName, p.uom().symbol).filter { it.isNotEmpty() }
-            Text(
-                text = meta.joinToString("  ·  "),
-                fontSize = 11.sp,
-                color = MediumGray,
-                maxLines = 1,
-                overflow = TextOverflow.Ellipsis,
-                modifier = Modifier.padding(top = 2.dp)
+                text = fallbackText.take(1).uppercase(),
+                fontSize = 18.sp,
+                fontWeight = FontWeight.SemiBold,
+                color = MediumGray
             )
         }
     }

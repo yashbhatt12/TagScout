@@ -114,6 +114,29 @@ data class CompanyConfig(
     fun selectableStatuses(type: ProductTypeKey?): List<UnitStatus> =
         typeDef(type).statuses.filterNot { it.systemOnly }
 
+    // ── Core field requirements ──────────────────────────────────────────
+
+    /**
+     * Whether a core (fixed-in-code) unit field is required for this type.
+     * Read from the type's `required` map in settings, e.g.
+     *   it_asset: { required: { serialNumber: true } }
+     *   food:     { required: { batchNo: true, mfgDate: true, expiryDate: true } }
+     *
+     * Batch fields only count when the type has batch tracking, so a stray
+     * `batchNo: true` on a type without it never blocks a save.
+     * With no settings doc nothing core is required — today's behaviour.
+     */
+    fun isCoreRequired(type: ProductTypeKey?, field: CoreField): Boolean {
+        field.capability?.let { if (!hasCapability(type, it)) return false }
+        return typeDef(type).requiredOverrides.entries
+            .firstOrNull { it.key.equals(field.key, ignoreCase = true) }
+            ?.value ?: false
+    }
+
+    /** All core fields required for this type, for validation and form asterisks. */
+    fun requiredCoreFields(type: ProductTypeKey?): Set<CoreField> =
+        CoreField.entries.filterTo(mutableSetOf()) { isCoreRequired(type, it) }
+
     companion object {
         const val CURRENT_SCHEMA_VERSION = 1
         const val DEFAULT_PLAN = "standard"
@@ -603,5 +626,31 @@ object CompanyConfigParser {
             excelHeaders = headers,
             active = m["active"] as? Boolean ?: true
         )
+    }
+}
+
+// ── Core unit fields ─────────────────────────────────────────────────────
+
+/**
+ * Unit fields stored top-level on inventory_units (not in customFields)
+ * that a type's `required` map may make mandatory. [key] matches the
+ * InventoryUnit property name and the settings key — never rename one.
+ * [capability] means the field only exists when the type has it.
+ */
+enum class CoreField(
+    val key: String,
+    val label: String,
+    val capability: Capability? = null
+) {
+    SERIAL_NUMBER("serialNumber", "Serial number"),
+    TID("tid", "TID"),
+    PRICE("price", "Price"),
+    BATCH_NO("batchNo", "Batch number", Capability.BATCH_TRACKING),
+    MFG_DATE("mfgDate", "Manufacturing date", Capability.BATCH_TRACKING),
+    EXPIRY_DATE("expiryDate", "Expiry date", Capability.BATCH_TRACKING);
+
+    companion object {
+        fun fromKey(key: String?): CoreField? =
+            CoreField.entries.firstOrNull { it.key.equals(key?.trim(), ignoreCase = true) }
     }
 }

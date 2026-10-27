@@ -138,6 +138,11 @@ import com.snainfotech.tagscout.ui.screens.products.ProductListViewModelFactory
 import com.snainfotech.tagscout.ui.screens.products.CatalogLookupsScreen
 import com.snainfotech.tagscout.ui.screens.products.CatalogLookupsViewModel
 import com.snainfotech.tagscout.ui.screens.products.CatalogLookupsViewModelFactory
+import com.snainfotech.tagscout.ui.screens.enrollment.CaptureMode
+import com.snainfotech.tagscout.ui.screens.enrollment.ReaderMode
+import com.snainfotech.tagscout.ui.screens.enrollment.UnitEnrollmentScreen
+import com.snainfotech.tagscout.ui.screens.enrollment.UnitEnrollmentViewModel
+import com.snainfotech.tagscout.ui.screens.enrollment.UnitEnrollmentViewModelFactory
 import kotlinx.coroutines.launch
 import java.text.SimpleDateFormat
 import java.util.Date
@@ -194,6 +199,8 @@ object Routes {
     const val PRODUCT_EDIT = "product_edit"                 // full route: product_edit/{productId}
     fun productEdit(productId: String) = "$PRODUCT_EDIT/$productId"
     const val PRODUCT_LOOKUPS = "product_lookups"          // categories & brands
+    // Unit enrollment — shared by WMS and Retail
+    const val UNIT_ENROLL = "unit_enroll"
 }
 
 @Composable
@@ -1417,10 +1424,60 @@ fun TagScoutNavGraph(
                 onDashboardClick = { navController.navigate(Routes.WMS_DASHBOARD) },
                 onCycleCountClick = { navController.navigate(Routes.WMS_CYCLE_COUNT) },
                 onInwardClick = { navController.navigate(Routes.WMS_INWARD) },
+                onEnrollUnitsClick = { navController.navigate(Routes.UNIT_ENROLL) },
                 // Cycle Count, Pick List, Dispatch remain disabled placeholders.
             )
         }
 
+        // ============================================
+        // Unit enrollment — shared by WMS and Retail
+        // ============================================
+        composable(Routes.UNIT_ENROLL) {
+            val app = LocalContext.current.applicationContext as com.snainfotech.tagscout.TagScoutApplication
+            val vm: UnitEnrollmentViewModel = viewModel(factory = UnitEnrollmentViewModelFactory())
+            val enrollState by vm.state.collectAsState()
+            val deviceState by sharedHomeViewModel.deviceState.collectAsState()
+            val useSled = enrollState.reader == ReaderMode.SLED
+
+            // Sled power: low for one piece at a time (reads only the piece in hand),
+            // normal for many together. Only once connected: the Bluebird SDK
+            // crashes if called without a Bluetooth session.
+            LaunchedEffect(deviceState.isConnected, useSled, enrollState.capture) {
+                if (deviceState.isConnected && useSled) {
+                    val power = if (enrollState.capture == CaptureMode.SINGLE) 1 else 20
+                    runCatching { app.rfidScanner.setAntennaPower(power) }
+                        .onFailure { android.util.Log.e("UnitEnroll", "setAntennaPower failed", it) }
+                }
+            }
+
+            // Sled runs iff the screen is listening, the sled is the chosen reader,
+            // and it's connected. The desktop reader is handled inside the screen.
+            LaunchedEffect(enrollState.isListening, deviceState.isConnected, useSled) {
+                if (enrollState.isListening && deviceState.isConnected && useSled) {
+                    runCatching {
+                        app.rfidScanner.startScanning().collect { tag ->
+                            vm.onTagScanned(tag.epc, tag.tid)
+                        }
+                    }.onFailure {
+                        android.util.Log.e("UnitEnroll", "startScanning failed", it)
+                    }
+                } else {
+                    runCatching { app.rfidScanner.stopScanning() }
+                }
+            }
+
+            // Safety net on exit: always stop the scanner.
+            DisposableEffect(Unit) {
+                onDispose { runCatching { app.rfidScanner.stopScanning() } }
+            }
+
+            UnitEnrollmentScreen(
+                viewModel = vm,
+                sledConnected = deviceState.isConnected,
+                onBack = { navController.popBackStack() },
+                onConnectSled = { navController.navigate(Routes.CONNECT_DEVICE) }
+            )
+        }
         // ============================================
         // Jewellery — Retail module
         // ============================================
@@ -1429,7 +1486,7 @@ fun TagScoutNavGraph(
             JewelleryMenuScreen(
                 onBackClick = { navController.popBackStack() },
                 isReaderConnected = deviceState.isConnected,
-                onEnrollClick = { navController.navigate(Routes.JEWELLERY_ENROLL) },
+                onEnrollClick = { navController.navigate(Routes.UNIT_ENROLL) },
                 onCheckoutClick = { navController.navigate(Routes.JEWELLERY_CHECKOUT) },
                 onManagerAlertsClick = { navController.navigate(Routes.MANAGER_ALERTS) },
                 onProductsClick = { navController.navigate(Routes.PRODUCTS) }

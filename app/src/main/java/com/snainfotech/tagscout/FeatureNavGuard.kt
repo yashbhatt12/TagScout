@@ -41,12 +41,13 @@ object FeatureRoutes {
             Routes.WMS_CYCLE_COUNT,
             Routes.WMS_INWARD -> config.isEnabled(Feature.WMS)
 
-            // Products are shared: any module that manages stock can open them.
+            // Products and unit enrollment are shared: any module that manages stock can open them.
             Routes.PRODUCTS,
             Routes.PRODUCT_NEW,
             Routes.PRODUCT_EDIT,
             Routes.PRODUCT_LOOKUPS,
-            Routes.WMS_PRODUCT_CATALOG -> canManageProducts(config)
+            Routes.WMS_PRODUCT_CATALOG,
+            Routes.UNIT_ENROLL -> canManageProducts(config)
 
             Routes.JEWELLERY_MENU,
             Routes.JEWELLERY_ENROLL,

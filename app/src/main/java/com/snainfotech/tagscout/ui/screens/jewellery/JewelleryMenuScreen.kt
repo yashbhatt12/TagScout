@@ -47,15 +47,15 @@ import com.snainfotech.tagscout.ui.theme.MediumGray
  * Products opens the shared product catalog (the same one WMS uses), so a
  * retail-only company manages its designs / SKUs here without WMS.
  *
- * Pilot note: pieces enrolled so far are InventoryUnit documents with
- * category = "jewellery" and no productId. Enroll and Checkout still use
- * that model until they are rebuilt on products of type jewellery.
+ * Enroll opens the shared unit enrollment screen, which works with the
+ * sled or a desktop reader and handles a missing sled itself, so it is
+ * always enabled. Checkout still needs a connected sled: opening it without
+ * hardware would crash the Bluebird SDK. Products and Manager Alerts need
+ * no reader: products are catalog data, and alerts arrive via Firestore
+ * from the fixed-reader edge service.
  *
- * Buttons that need an RFID reader (Enroll, Checkout) are disabled when no
- * sled is connected — opening those screens without hardware would crash
- * the Bluebird SDK. Products and Manager Alerts need no reader: products
- * are catalog data, and alerts arrive via Firestore from the fixed-reader
- * edge service.
+ * Pilot note: pieces enrolled before the product model have
+ * category = "jewellery" and no productId. Checkout still accepts them.
  */
 @Composable
 fun JewelleryMenuScreen(
@@ -108,8 +108,8 @@ fun JewelleryMenuScreen(
             FeatureButton(
                 icon = R.drawable.ic_jewellery,
                 title = "Enroll Piece",
-                description = "Scan tag, enter item code and price",
-                enabled = isReaderConnected,
+                description = "Scan tags, enter weights, HUID and tag price",
+                enabled = true,
                 onClick = onEnrollClick
             )
             FeatureButton(
@@ -181,7 +181,7 @@ private fun NoReaderBanner() {
             .padding(12.dp)
     ) {
         Text(
-            text = "💡 Connect an RFID reader to enable Enroll and Checkout.",
+            text = "💡 Connect an RFID reader to enable Checkout.",
             color = InfoText,
             fontSize = 12.sp
         )

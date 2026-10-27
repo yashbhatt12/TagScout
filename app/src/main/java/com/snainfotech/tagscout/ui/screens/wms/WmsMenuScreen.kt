@@ -36,6 +36,7 @@ fun WmsMenuScreen(
     onProductCatalogClick: () -> Unit,
     onDashboardClick: () -> Unit = {},
     onInwardClick: () -> Unit = {},
+    onEnrollUnitsClick: () -> Unit = {},
     onCycleCountClick: () -> Unit = {},
     onPickListClick: () -> Unit = {},
     onDispatchClick: () -> Unit = {},
@@ -121,6 +122,14 @@ fun WmsMenuScreen(
                 enabled = true,
                 onClick = onInwardClick
             )
+            FeatureButton(
+                icon = R.drawable.ic_rfid_tag,
+                title = "Enroll units",
+                description = "Scan tags and enroll stock with its details",
+                enabled = true,
+                onClick = onEnrollUnitsClick
+            )
+
             FeatureButton(
                 icon = R.drawable.ic_scan,
                 title = "Cycle Count",

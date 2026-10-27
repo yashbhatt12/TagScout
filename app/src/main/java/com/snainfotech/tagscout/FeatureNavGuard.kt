@@ -46,6 +46,7 @@ object FeatureRoutes {
             Routes.PRODUCT_NEW,
             Routes.PRODUCT_EDIT,
             Routes.PRODUCT_LOOKUPS,
+            Routes.PRODUCT_IMPORT,
             Routes.WMS_PRODUCT_CATALOG,
             Routes.UNIT_ENROLL,
             Routes.UNIT_DETAIL -> canManageProducts(config)

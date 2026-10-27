@@ -47,6 +47,12 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import android.net.Uri
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
+import androidx.compose.material3.DropdownMenu
+import androidx.compose.material3.DropdownMenuItem
+import java.time.LocalDate
 import com.snainfotech.tagscout.data.wms.Product
 import com.snainfotech.tagscout.data.wms.ProductStatus
 import com.snainfotech.tagscout.data.wms.productStatus
@@ -72,7 +78,8 @@ fun ProductListScreen(
     onBack: () -> Unit,
     onAddProduct: () -> Unit,
     onEditProduct: (productId: String) -> Unit,
-    onManageLookups: () -> Unit = {}
+    onManageLookups: () -> Unit = {},
+    onImportProducts: () -> Unit = {}
 ) {
     val state by viewModel.state.collectAsState()
     val context = LocalContext.current
@@ -87,7 +94,16 @@ fun ProductListScreen(
             viewModel.clearMessage()
         }
     }
-
+    val exportLauncher = rememberLauncherForActivityResult(
+        ActivityResultContracts.CreateDocument(LIST_XLSX_MIME)
+    ) { uri: Uri? ->
+        if (uri != null) viewModel.exportTo { context.contentResolver.openOutputStream(uri) }
+    }
+    val sampleLauncher = rememberLauncherForActivityResult(
+        ActivityResultContracts.CreateDocument(LIST_XLSX_MIME)
+    ) { uri: Uri? ->
+        if (uri != null) viewModel.writeSample { context.contentResolver.openOutputStream(uri) }
+    }
     Column(
         modifier = Modifier
             .fillMaxSize()
@@ -102,7 +118,14 @@ fun ProductListScreen(
 
         Box(modifier = Modifier.weight(1f)) {
             Column(modifier = Modifier.fillMaxSize()) {
-                SearchAndFilters(state, viewModel, onManageLookups)
+                SearchAndFilters(
+                    state = state,
+                    vm = viewModel,
+                    onManageLookups = onManageLookups,
+                    onExcelImport = onImportProducts,
+                    onExcelExport = { exportLauncher.launch("TagScout products ${LocalDate.now()}.xlsx") },
+                    onExcelSample = { sampleLauncher.launch("TagScout products sample.xlsx") }
+                )
 
                 when {
                     state.loading -> CenteredBox { CircularProgressIndicator(color = Primary) }
@@ -172,7 +195,10 @@ fun ProductListScreen(
 private fun SearchAndFilters(
     state: ProductListState,
     vm: ProductListViewModel,
-    onManageLookups: () -> Unit
+    onManageLookups: () -> Unit,
+    onExcelImport: () -> Unit,
+    onExcelExport: () -> Unit,
+    onExcelSample: () -> Unit
 ) {
     Column(modifier = Modifier.padding(start = 16.dp, end = 16.dp, top = 12.dp, bottom = 4.dp)) {
         OutlinedTextField(
@@ -215,6 +241,15 @@ private fun SearchAndFilters(
                 color = MediumGray,
                 modifier = Modifier.weight(1f)
             )
+            ExcelMenu(
+                exporting = state.exporting,
+                onImport = onExcelImport,
+                onExport = onExcelExport,
+                onSample = onExcelSample
+            )
+            TextButton(onClick = onManageLookups) {
+                Text("Categories & brands ›", fontSize = 12.sp, color = Primary)
+            }
             TextButton(onClick = onManageLookups) {
                 Text("Categories & brands ›", fontSize = 12.sp, color = Primary)
             }
@@ -335,4 +370,34 @@ private fun EmptyText(text: String) {
         modifier = Modifier.padding(32.dp),
         textAlign = androidx.compose.ui.text.style.TextAlign.Center
     )
+}
+private const val LIST_XLSX_MIME = "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+
+@Composable
+private fun ExcelMenu(
+    exporting: Boolean,
+    onImport: () -> Unit,
+    onExport: () -> Unit,
+    onSample: () -> Unit
+) {
+    var open by remember { mutableStateOf(false) }
+    Box {
+        TextButton(onClick = { open = true }, enabled = !exporting) {
+            Text(if (exporting) "Exporting…" else "Excel ▾", fontSize = 12.sp, color = Primary)
+        }
+        DropdownMenu(expanded = open, onDismissRequest = { open = false }) {
+            DropdownMenuItem(
+                text = { Text("Import from Excel") },
+                onClick = { open = false; onImport() }
+            )
+            DropdownMenuItem(
+                text = { Text("Export to Excel") },
+                onClick = { open = false; onExport() }
+            )
+            DropdownMenuItem(
+                text = { Text("Download sample") },
+                onClick = { open = false; onSample() }
+            )
+        }
+    }
 }

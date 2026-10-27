@@ -146,6 +146,9 @@ import com.snainfotech.tagscout.ui.screens.enrollment.UnitEnrollmentViewModelFac
 import com.snainfotech.tagscout.ui.screens.units.UnitDetailScreen
 import com.snainfotech.tagscout.ui.screens.units.UnitDetailViewModel
 import com.snainfotech.tagscout.ui.screens.units.UnitDetailViewModelFactory
+import com.snainfotech.tagscout.ui.screens.products.ProductImportScreen
+import com.snainfotech.tagscout.ui.screens.products.ProductImportViewModel
+import com.snainfotech.tagscout.ui.screens.products.ProductImportViewModelFactory
 import kotlinx.coroutines.launch
 import java.text.SimpleDateFormat
 import java.util.Date
@@ -202,6 +205,7 @@ object Routes {
     const val PRODUCT_EDIT = "product_edit"                 // full route: product_edit/{productId}
     fun productEdit(productId: String) = "$PRODUCT_EDIT/$productId"
     const val PRODUCT_LOOKUPS = "product_lookups"          // categories & brands
+    const val PRODUCT_IMPORT = "product_import"            // Excel import          // categories & brands
     // Unit enrollment — shared by WMS and Retail
 
     const val UNIT_ENROLL = "unit_enroll"
@@ -1700,7 +1704,16 @@ fun TagScoutNavGraph(
                 onBack = { navController.popBackStack() },
                 onAddProduct = { navController.navigate(Routes.PRODUCT_NEW) },
                 onEditProduct = { id -> navController.navigate(Routes.productEdit(id)) },
-                onManageLookups = { navController.navigate(Routes.PRODUCT_LOOKUPS) }
+                onManageLookups = { navController.navigate(Routes.PRODUCT_LOOKUPS) },
+                onImportProducts = { navController.navigate(Routes.PRODUCT_IMPORT) }
+            )
+        }
+
+        composable(Routes.PRODUCT_IMPORT) {
+            val vm: ProductImportViewModel = viewModel(factory = ProductImportViewModelFactory())
+            ProductImportScreen(
+                viewModel = vm,
+                onBack = { navController.popBackStack() }
             )
         }
 

@@ -53,7 +53,7 @@ import com.snainfotech.tagscout.ui.theme.WarningText
 import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
-
+import com.snainfotech.tagscout.data.config.UnitStatus
 /**
  * Jewellery Checkout screen — scan a piece at the counter and mark it sold.
  *
@@ -108,9 +108,8 @@ fun JewelleryCheckoutScreen(
                     CheckoutPhase.LOOKING_UP -> LookingUpCard()
 
                     CheckoutPhase.FOUND -> {
-                        val piece = state.foundPiece
-                        if (piece != null) {
-                            FoundPieceCard(piece)
+                        if (state.foundPiece != null) {
+                            FoundPieceCard(state)
                             Spacer(modifier = Modifier.height(4.dp))
                             MarkSoldButton(
                                 isSaving = state.isSaving,
@@ -125,17 +124,15 @@ fun JewelleryCheckoutScreen(
                     }
 
                     CheckoutPhase.SAVING -> {
-                        val piece = state.foundPiece
-                        if (piece != null) {
-                            FoundPieceCard(piece)
+                        if (state.foundPiece != null) {
+                            FoundPieceCard(state)
                             Spacer(modifier = Modifier.height(4.dp))
                             MarkSoldButton(isSaving = true, onClick = {})
                         }
                     }
 
                     CheckoutPhase.SOLD -> {
-                        val piece = state.foundPiece
-                        if (piece != null) SoldSuccessCard(piece)
+                        if (state.foundPiece != null) SoldSuccessCard(state)
                         Spacer(modifier = Modifier.height(4.dp))
                         PrimaryButton(
                             label = "Sell another piece",
@@ -147,7 +144,7 @@ fun JewelleryCheckoutScreen(
                         ResultCard(
                             emoji = "⚠️",
                             title = "This tag is not enrolled",
-                            body = "The scanned tag has no jewellery record. Enroll it first, or place a different piece on the reader.",
+                            body = "The scanned tag has no stock record. Enroll it first, or place a different piece on the reader.",
                             backgroundColor = Color(0xFFFFEBEE),
                             textColor = Color(0xFFB71C1C)
                         )
@@ -161,8 +158,9 @@ fun JewelleryCheckoutScreen(
                     CheckoutPhase.NOT_JEWELLERY -> {
                         ResultCard(
                             emoji = "ℹ️",
-                            title = "Not a jewellery piece",
-                            body = "This tag is on a warehouse item. Use the Warehouse flow to dispatch it.",
+                            title = "Not sold at the counter",
+                            body = "${state.displayName} isn't a product type sold at checkout. " +
+                                    "Use the Warehouse flow to dispatch it.",
                             backgroundColor = WarningBg,
                             textColor = WarningText
                         )
@@ -174,13 +172,12 @@ fun JewelleryCheckoutScreen(
                     }
 
                     CheckoutPhase.ALREADY_SOLD -> {
-                        val piece = state.foundPiece
-                        val soldDateText = piece?.soldAt?.toDate()?.let { formatDate(it) }
+                        val soldDateText = state.foundPiece?.soldAt?.toDate()?.let { formatDate(it) }
                             ?: "earlier"
                         ResultCard(
                             emoji = "✓",
                             title = "Already sold",
-                            body = "Item ${piece?.itemCode ?: "—"} was marked sold on $soldDateText.",
+                            body = "${state.displayName} was marked sold on $soldDateText.",
                             backgroundColor = WarningBg,
                             textColor = WarningText
                         )
@@ -193,11 +190,13 @@ fun JewelleryCheckoutScreen(
 
                     CheckoutPhase.WRONG_STATUS -> {
                         val piece = state.foundPiece
+                        val statusText = UnitStatus.fromKey(piece?.status)?.displayName
+                            ?: piece?.status ?: "unknown"
                         ResultCard(
                             emoji = "ℹ️",
-                            title = "Cannot checkout",
-                            body = "Item ${piece?.itemCode ?: "—"} has status \"${piece?.status ?: "unknown"}\" " +
-                                    "and cannot be marked sold from here.",
+                            title = "Cannot sell this piece",
+                            body = state.blockedReason
+                                ?: "${state.displayName} is \"$statusText\" and can't be marked sold from here.",
                             backgroundColor = WarningBg,
                             textColor = WarningText
                         )
@@ -218,20 +217,18 @@ fun JewelleryCheckoutScreen(
     }
 
     // Confirmation dialog — shown when cashier taps Mark Sold.
+    // Confirmation dialog — shown when cashier taps Mark Sold.
     if (showConfirmDialog) {
-        val piece = state.foundPiece
+        val price = state.keyDetails.firstOrNull { it.first == "Tag price" }?.second
         AlertDialog(
             onDismissRequest = { showConfirmDialog = false },
             title = { Text("Mark this piece sold?") },
             text = {
                 Column {
-                    Text("Item ${piece?.itemCode ?: "—"}")
-                    if (piece?.price != null) {
+                    Text(state.displayName)
+                    if (price != null) {
                         Spacer(Modifier.height(4.dp))
-                        Text(
-                            "₹${piece.price.toInt()}",
-                            fontWeight = FontWeight.SemiBold
-                        )
+                        Text(price, fontWeight = FontWeight.SemiBold)
                     }
                     Spacer(Modifier.height(8.dp))
                     Text(
@@ -326,7 +323,8 @@ private fun LookingUpCard() {
 }
 
 @Composable
-private fun FoundPieceCard(piece: InventoryUnit) {
+private fun FoundPieceCard(state: JewelleryCheckoutState) {
+    val piece = state.foundPiece ?: return
     Column(
         modifier = Modifier
             .fillMaxWidth()
@@ -341,24 +339,31 @@ private fun FoundPieceCard(piece: InventoryUnit) {
             color = Color(0xFF2E7D32)
         )
         Spacer(modifier = Modifier.height(10.dp))
-        LabelValue(label = "Item Code", value = piece.itemCode ?: "—")
-        Spacer(modifier = Modifier.height(6.dp))
-        LabelValue(
-            label = "Price",
-            value = if (piece.price != null) "₹${piece.price.toInt()}" else "—"
+        Text(
+            text = state.displayName,
+            fontSize = 18.sp,
+            fontWeight = FontWeight.SemiBold,
+            color = DarkText
         )
+        state.keyDetails
+            .filterNot { it.first == "Product" }
+            .forEach { (label, value) ->
+                Spacer(modifier = Modifier.height(6.dp))
+                LabelValue(label = label, value = value)
+            }
         Spacer(modifier = Modifier.height(6.dp))
         LabelValue(label = "Tag EPC", value = piece.epc, mono = true)
-        if (piece.inwardedAt != null) {
+        (piece.enrolledAt ?: piece.inwardedAt)?.let {
             Spacer(modifier = Modifier.height(6.dp))
-            LabelValue(label = "Enrolled", value = formatDate(piece.inwardedAt.toDate()))
+            LabelValue(label = "Enrolled", value = formatDate(it.toDate()))
         }
     }
 }
 
 /** Big success card shown after a mark-sold completes. */
 @Composable
-private fun SoldSuccessCard(piece: InventoryUnit) {
+private fun SoldSuccessCard(state: JewelleryCheckoutState) {
+    val price = state.keyDetails.firstOrNull { it.first == "Tag price" }?.second
     Column(
         modifier = Modifier
             .fillMaxWidth()
@@ -377,18 +382,14 @@ private fun SoldSuccessCard(piece: InventoryUnit) {
         )
         Spacer(Modifier.height(12.dp))
         Text(
-            text = piece.itemCode ?: "—",
+            text = state.displayName,
             fontSize = 15.sp,
             fontWeight = FontWeight.Medium,
             color = DarkText
         )
-        if (piece.price != null) {
+        if (price != null) {
             Spacer(Modifier.height(2.dp))
-            Text(
-                text = "₹${piece.price.toInt()}",
-                fontSize = 14.sp,
-                color = DarkText
-            )
+            Text(text = price, fontSize = 14.sp, color = DarkText)
         }
         Spacer(Modifier.height(16.dp))
         Box(

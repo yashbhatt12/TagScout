@@ -47,12 +47,10 @@ object FeatureRoutes {
             Routes.PRODUCT_EDIT,
             Routes.PRODUCT_LOOKUPS,
             Routes.PRODUCT_IMPORT,
-            Routes.WMS_PRODUCT_CATALOG,
             Routes.UNIT_ENROLL,
             Routes.UNIT_DETAIL -> canManageProducts(config)
 
             Routes.JEWELLERY_MENU,
-            Routes.JEWELLERY_ENROLL,
             Routes.JEWELLERY_CHECKOUT -> config.isEnabled(Feature.RETAIL)
 
             // Lives inside the Retail menu, so it needs both flags.

@@ -22,6 +22,15 @@ android {
         keystoreProperties.load(FileInputStream(keystorePropertiesFile))
     }
 
+    // Per-machine switch for debug builds: real Bluebird sled or the simulator.
+    // Set tagscout.realHardware=true in local.properties (gitignored) to use the sled.
+    val localProperties = Properties()
+    val localPropertiesFile = rootProject.file("local.properties")
+    if (localPropertiesFile.exists()) {
+        localProperties.load(FileInputStream(localPropertiesFile))
+    }
+    val debugRealHardware = localProperties.getProperty("tagscout.realHardware", "false").toBoolean()
+
     signingConfigs {
         create("release") {
             if (keystorePropertiesFile.exists()) {
@@ -30,6 +39,15 @@ android {
                 keyAlias = keystoreProperties["keyAlias"] as String
                 keyPassword = keystoreProperties["keyPassword"] as String
             }
+
+            // Per-machine switch for debug builds: real Bluebird sled or the simulator.
+            // Set tagscout.realHardware=true in local.properties (gitignored) to use the sled.
+            val localProperties = Properties()
+            val localPropertiesFile = rootProject.file("local.properties")
+            if (localPropertiesFile.exists()) {
+                localProperties.load(FileInputStream(localPropertiesFile))
+            }
+            val debugRealHardware = localProperties.getProperty("tagscout.realHardware", "false").toBoolean()
         }
     }
 
@@ -45,8 +63,8 @@ android {
 
     buildTypes {
         debug {
-            // Debug builds use the fake scanner — safe for UI work without hardware
-            buildConfigField("boolean", "USE_REAL_HARDWARE", "false")
+            // Simulator unless this machine's local.properties says tagscout.realHardware=true.
+            buildConfigField("boolean", "USE_REAL_HARDWARE", debugRealHardware.toString())
         }
         release {
             // Release builds use the real Bluebird scanner

@@ -1,13 +1,16 @@
 package com.snainfotech.tagscout.ui.screens.products
 
+import android.content.Context
+import android.net.Uri
 import android.widget.Toast
-import androidx.compose.foundation.BorderStroke
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.PickVisualMediaRequest
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
-import androidx.compose.foundation.layout.ColumnScope
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
@@ -16,42 +19,31 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
-import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
-import androidx.compose.material3.Card
-import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.CircularProgressIndicator
-import androidx.compose.material3.DatePicker
-import androidx.compose.material3.DatePickerDialog
-import androidx.compose.material3.ExperimentalMaterial3Api
-import androidx.compose.material3.OutlinedTextField
-import androidx.compose.material3.OutlinedTextFieldDefaults
-import androidx.compose.material3.Switch
-import androidx.compose.material3.SwitchDefaults
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
-import androidx.compose.material3.rememberDatePickerState
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
-import androidx.compose.runtime.remember
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.KeyboardCapitalization
-import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
-import com.snainfotech.tagscout.data.config.FieldDef
-import com.snainfotech.tagscout.data.config.FieldType
-import com.snainfotech.tagscout.data.config.FieldValidator
+import androidx.core.content.FileProvider
+import coil.compose.AsyncImage
 import com.snainfotech.tagscout.data.wms.Brand
 import com.snainfotech.tagscout.data.wms.CatalogLookupsRepository
 import com.snainfotech.tagscout.data.wms.Category
@@ -59,27 +51,16 @@ import com.snainfotech.tagscout.data.wms.Product
 import com.snainfotech.tagscout.data.wms.ProductStatus
 import com.snainfotech.tagscout.data.wms.UnitOfMeasure
 import com.snainfotech.tagscout.ui.components.AppHeader
+import com.snainfotech.tagscout.ui.components.CustomFieldInput
+import com.snainfotech.tagscout.ui.components.FormHint
+import com.snainfotech.tagscout.ui.components.FormSection
+import com.snainfotech.tagscout.ui.components.FormTextField
 import com.snainfotech.tagscout.ui.components.LabeledDropdown
-import com.snainfotech.tagscout.ui.theme.BorderGray
 import com.snainfotech.tagscout.ui.theme.CardBg
-import com.snainfotech.tagscout.ui.theme.DarkText
 import com.snainfotech.tagscout.ui.theme.ErrorRed
 import com.snainfotech.tagscout.ui.theme.LightGray
 import com.snainfotech.tagscout.ui.theme.MediumGray
 import com.snainfotech.tagscout.ui.theme.Primary
-import java.time.Instant
-import java.time.LocalDate
-import java.time.ZoneOffset
-import android.content.Context
-import android.net.Uri
-import androidx.activity.compose.rememberLauncherForActivityResult
-import androidx.activity.result.PickVisualMediaRequest
-import androidx.activity.result.contract.ActivityResultContracts
-import androidx.compose.runtime.saveable.rememberSaveable
-import androidx.compose.ui.draw.clip
-import androidx.compose.ui.layout.ContentScale
-import androidx.core.content.FileProvider
-import coil.compose.AsyncImage
 import java.io.File
 
 /**
@@ -152,7 +133,7 @@ fun ProductFormScreen(
 
 @Composable
 private fun BasicsSection(state: ProductFormState, vm: ProductFormViewModel) {
-    SectionCard("Basics") {
+    FormSection("Basics") {
         LabeledDropdown(
             label = "Product type *",
             options = state.typeOptions,
@@ -189,9 +170,9 @@ private fun BasicsSection(state: ProductFormState, vm: ProductFormViewModel) {
 
 @Composable
 private fun ClassificationSection(state: ProductFormState, vm: ProductFormViewModel) {
-    SectionCard("Classification") {
+    FormSection("Classification") {
         if (state.topCategories.isEmpty()) {
-            HintText("No categories set up for this product type yet.")
+            FormHint("No categories set up for this product type yet.")
         } else {
             CategoryPicker(
                 label = "Category",
@@ -218,7 +199,7 @@ private fun ClassificationSection(state: ProductFormState, vm: ProductFormViewMo
 
 @Composable
 private fun DetailsSection(state: ProductFormState, vm: ProductFormViewModel) {
-    SectionCard("Details") {
+    FormSection("Details") {
         LabeledDropdown(
             label = "Unit of measure *",
             options = UnitOfMeasure.entries.toList(),
@@ -247,7 +228,7 @@ private fun DetailsSection(state: ProductFormState, vm: ProductFormViewModel) {
                 onSelect = vm::onStatus
             )
             if (state.status == ProductStatus.DISCONTINUED) {
-                HintText("Discontinued: existing units stay valid; no new units can be added.")
+                FormHint("Discontinued: existing units stay valid; no new units can be added.")
             }
         }
     }
@@ -258,7 +239,7 @@ private fun CustomFieldsSection(state: ProductFormState, vm: ProductFormViewMode
     val fields = state.productFields
     if (fields.isEmpty()) return
     val typeLabel = state.config.typeDef(state.productType).label
-    SectionCard("$typeLabel details") {
+    FormSection("$typeLabel details") {
         fields.forEach { def ->
             CustomFieldInput(
                 def = def,
@@ -287,7 +268,7 @@ private fun PhotoSection(state: ProductFormState, vm: ProductFormViewModel) {
         cameraUri = null
     }
 
-    SectionCard("Photo") {
+    FormSection("Photo") {
         val shown = state.shownImage
         if (shown != null) {
             AsyncImage(
@@ -314,8 +295,8 @@ private fun PhotoSection(state: ProductFormState, vm: ProductFormViewModel) {
         }
 
         when {
-            state.pendingImage != null -> HintText("New photo, uploads when you save.")
-            state.removeImage && state.imageUrl.isNotBlank() -> HintText("Photo will be removed when you save.")
+            state.pendingImage != null -> FormHint("New photo, uploads when you save.")
+            state.removeImage && state.imageUrl.isNotBlank() -> FormHint("Photo will be removed when you save.")
         }
 
         Row(verticalAlignment = Alignment.CenterVertically) {
@@ -399,187 +380,7 @@ private fun BrandField(value: String, brands: List<Brand>, onChange: (String) ->
     }
 }
 
-// ── Custom field inputs ───────────────────────────────────────────
-
-@Composable
-private fun CustomFieldInput(def: FieldDef, value: String, error: String?, onChange: (String) -> Unit) {
-    when (def.type) {
-        FieldType.TEXT -> FormTextField(
-            value = value, onChange = onChange, label = def.label,
-            required = def.required, error = error
-        )
-
-        FieldType.NUMBER -> FormTextField(
-            value = value, onChange = onChange, label = def.label,
-            required = def.required, error = error,
-            keyboardType = KeyboardType.Decimal,
-            suffix = def.unit.ifEmpty { null }
-        )
-
-        FieldType.DROPDOWN -> {
-            // "" = no value (only offered when optional). A stored value that's
-            // no longer an option stays listed so the record can still be saved.
-            val legacy = value.takeIf { it.isNotEmpty() && def.options.none { o -> o == it } }
-            val options = buildList {
-                if (!def.required) add("")
-                addAll(def.options)
-                legacy?.let { add(it) }
-            }
-            Column {
-                LabeledDropdown(
-                    label = if (def.required) "${def.label} *" else def.label,
-                    options = options,
-                    selected = value.takeIf { it.isNotEmpty() },
-                    optionText = { if (it.isEmpty()) "—" else it },
-                    onSelect = onChange
-                )
-                error?.let { ErrorText(it) }
-            }
-        }
-
-        FieldType.BOOLEAN -> Column {
-            Row(
-                verticalAlignment = Alignment.CenterVertically,
-                modifier = Modifier.fillMaxWidth()
-            ) {
-                Text(
-                    text = if (def.required) "${def.label} *" else def.label,
-                    fontSize = 14.sp,
-                    color = DarkText,
-                    modifier = Modifier.weight(1f)
-                )
-                Switch(
-                    checked = value == "true",
-                    onCheckedChange = { onChange(it.toString()) },
-                    colors = SwitchDefaults.colors(checkedTrackColor = Primary)
-                )
-            }
-            error?.let { ErrorText(it) }
-        }
-
-        FieldType.DATE -> DateFieldInput(def, value, error, onChange)
-    }
-}
-
-/** Read-only box showing "31 Mar 2027"; tapping opens a date picker. Value is "YYYY-MM-DD". */
-@OptIn(ExperimentalMaterial3Api::class)
-@Composable
-private fun DateFieldInput(def: FieldDef, value: String, error: String?, onChange: (String) -> Unit) {
-    var open by remember { mutableStateOf(false) }
-    val shown = if (value.isBlank()) "" else FieldValidator.display(def, value)
-
-    Row(verticalAlignment = Alignment.CenterVertically) {
-        Box(modifier = Modifier.weight(1f)) {
-            FormTextField(
-                value = shown,
-                onChange = {},
-                label = def.label,
-                required = def.required,
-                error = error,
-                readOnly = true,
-                supporting = if (value.isBlank()) "Tap to pick a date" else null
-            )
-            // Transparent layer so a tap anywhere on the field opens the picker.
-            Box(
-                modifier = Modifier
-                    .matchParentSize()
-                    .clickable { open = true }
-            )
-        }
-        if (value.isNotBlank() && !def.required) {
-            TextButton(onClick = { onChange("") }) { Text("Clear", color = Primary) }
-        }
-    }
-
-    if (open) {
-        val pickerState = rememberDatePickerState(initialSelectedDateMillis = isoToUtcMillis(value))
-        DatePickerDialog(
-            onDismissRequest = { open = false },
-            confirmButton = {
-                TextButton(onClick = {
-                    pickerState.selectedDateMillis?.let { onChange(utcMillisToIso(it)) }
-                    open = false
-                }) { Text("OK", color = Primary) }
-            },
-            dismissButton = {
-                TextButton(onClick = { open = false }) { Text("Cancel", color = MediumGray) }
-            }
-        ) {
-            DatePicker(state = pickerState)
-        }
-    }
-}
-
-/** The date picker works in UTC midnight millis; stored dates are plain "YYYY-MM-DD". */
-private fun isoToUtcMillis(iso: String): Long? = runCatching {
-    LocalDate.parse(iso).atStartOfDay(ZoneOffset.UTC).toInstant().toEpochMilli()
-}.getOrNull()
-
-private fun utcMillisToIso(millis: Long): String =
-    Instant.ofEpochMilli(millis).atZone(ZoneOffset.UTC).toLocalDate().toString()
-
 // ── Building blocks ───────────────────────────────────────────────
-
-@Composable
-private fun SectionCard(title: String, content: @Composable ColumnScope.() -> Unit) {
-    Card(
-        modifier = Modifier.fillMaxWidth(),
-        shape = RoundedCornerShape(10.dp),
-        colors = CardDefaults.cardColors(containerColor = CardBg),
-        border = BorderStroke(1.dp, BorderGray),
-        elevation = CardDefaults.cardElevation(defaultElevation = 0.dp)
-    ) {
-        Column(
-            modifier = Modifier.padding(14.dp),
-            verticalArrangement = Arrangement.spacedBy(10.dp)
-        ) {
-            Text(
-                text = title.uppercase(),
-                fontSize = 11.sp,
-                fontWeight = FontWeight.Bold,
-                color = MediumGray
-            )
-            content()
-        }
-    }
-}
-
-@Composable
-private fun FormTextField(
-    value: String,
-    onChange: (String) -> Unit,
-    label: String,
-    required: Boolean = false,
-    error: String? = null,
-    supporting: String? = null,
-    singleLine: Boolean = true,
-    minLines: Int = 1,
-    readOnly: Boolean = false,
-    keyboardType: KeyboardType = KeyboardType.Text,
-    capitalization: KeyboardCapitalization = KeyboardCapitalization.Sentences,
-    suffix: String? = null
-) {
-    val helper = error ?: supporting
-    OutlinedTextField(
-        value = value,
-        onValueChange = onChange,
-        label = { Text(if (required) "$label *" else label) },
-        isError = error != null,
-        supportingText = helper?.let { { Text(it) } },
-        suffix = suffix?.let { { Text(it, color = MediumGray) } },
-        singleLine = singleLine,
-        minLines = minLines,
-        readOnly = readOnly,
-        keyboardOptions = KeyboardOptions(keyboardType = keyboardType, capitalization = capitalization),
-        shape = RoundedCornerShape(8.dp),
-        colors = OutlinedTextFieldDefaults.colors(
-            focusedBorderColor = Primary,
-            focusedLabelColor = Primary,
-            cursorColor = Primary
-        ),
-        modifier = Modifier.fillMaxWidth()
-    )
-}
 
 @Composable
 private fun SaveBar(label: String, saving: Boolean, onSave: () -> Unit) {
@@ -609,19 +410,4 @@ private fun SaveBar(label: String, saving: Boolean, onSave: () -> Unit) {
             }
         }
     }
-}
-
-@Composable
-private fun HintText(text: String) {
-    Text(text = text, fontSize = 12.sp, color = MediumGray)
-}
-
-@Composable
-private fun ErrorText(text: String) {
-    Text(
-        text = text,
-        fontSize = 12.sp,
-        color = ErrorRed,
-        modifier = Modifier.padding(start = 16.dp, top = 2.dp)
-    )
 }

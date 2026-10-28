@@ -11,6 +11,7 @@ import com.snainfotech.tagscout.data.auth.AuthReady
 import com.snainfotech.tagscout.data.config.ProductTypeKey
 import kotlinx.coroutines.tasks.await
 import java.net.URLEncoder
+import com.google.firebase.storage.FirebaseStorage
 
 /**
  * Reads/writes the company's product catalog.
@@ -439,7 +440,23 @@ class ProductRepository(
                 batch.delete(indexRef)
             }
             batch.commit().await()
+            deleteProductPhotos(productId)
             Result.success(Unit)
         } catch (e: Exception) { Result.failure(e) }
+    }
+
+    /**
+     * Removes every file under companies/{cid}/products/{productId}/ in Storage.
+     * Best effort: a failure is logged, never surfaced; the product is already gone.
+     */
+    private suspend fun deleteProductPhotos(productId: String) {
+        runCatching {
+            val cid = AuthReady.awaitUid() ?: return
+            val folder = FirebaseStorage.getInstance().reference
+                .child("companies/$cid/products/$productId")
+            folder.listAll().await().items.forEach { file ->
+                runCatching { file.delete().await() }
+            }
+        }.onFailure { Log.w("ProductRepository", "Could not delete photos for product $productId", it) }
     }
 }

@@ -33,7 +33,6 @@ import com.snainfotech.tagscout.data.file.OrderPickingExcelParser
 import com.snainfotech.tagscout.data.file.QuickScanExcelParser
 import com.snainfotech.tagscout.data.manager.ManagerRepository
 import com.snainfotech.tagscout.data.shop.ShopRepository
-import com.snainfotech.tagscout.data.wms.ProductRepository
 import com.snainfotech.tagscout.data.wms.WarehouseRepository
 import com.snainfotech.tagscout.ui.components.AppMenu
 import com.snainfotech.tagscout.ui.components.BluetoothPermissionDeniedDialog
@@ -68,9 +67,6 @@ import com.snainfotech.tagscout.ui.screens.inventory.InventoryScanViewModelFacto
 import com.snainfotech.tagscout.ui.screens.jewellery.JewelleryCheckoutScreen
 import com.snainfotech.tagscout.ui.screens.jewellery.JewelleryCheckoutViewModel
 import com.snainfotech.tagscout.ui.screens.jewellery.JewelleryCheckoutViewModelFactory
-import com.snainfotech.tagscout.ui.screens.jewellery.JewelleryEnrollmentScreen
-import com.snainfotech.tagscout.ui.screens.jewellery.JewelleryEnrollmentViewModel
-import com.snainfotech.tagscout.ui.screens.jewellery.JewelleryEnrollmentViewModelFactory
 import com.snainfotech.tagscout.ui.screens.jewellery.JewelleryMenuScreen
 import com.snainfotech.tagscout.ui.screens.locate.LocateTagScreen
 import com.snainfotech.tagscout.ui.screens.locate.LocateTagViewModel
@@ -117,9 +113,6 @@ import com.snainfotech.tagscout.ui.screens.wms.CycleCountViewModelFactory
 import com.snainfotech.tagscout.ui.screens.wms.InwardScreen
 import com.snainfotech.tagscout.ui.screens.wms.InwardViewModel
 import com.snainfotech.tagscout.ui.screens.wms.InwardViewModelFactory
-import com.snainfotech.tagscout.ui.screens.wms.ProductCatalogScreen
-import com.snainfotech.tagscout.ui.screens.wms.ProductCatalogViewModel
-import com.snainfotech.tagscout.ui.screens.wms.ProductCatalogViewModelFactory
 import com.snainfotech.tagscout.ui.screens.wms.WarehouseSetupScreen
 import com.snainfotech.tagscout.ui.screens.wms.WarehouseSetupViewModel
 import com.snainfotech.tagscout.ui.screens.wms.WarehouseSetupViewModelFactory
@@ -186,14 +179,12 @@ object Routes {
     // Warehouse Management System
     const val WMS_MENU = "wms_menu"
     const val WMS_WAREHOUSE_SETUP = "wms_warehouse_setup"
-    const val WMS_PRODUCT_CATALOG = "wms_product_catalog"
     const val WMS_DASHBOARD = "wms_dashboard"
     const val WMS_CYCLE_COUNT = "wms_cycle_count"
     const val WMS_INWARD = "wms_inward"
 
     const val TAG_OPERATIONS = "tag_operations"
     const val JEWELLERY_MENU = "jewellery_menu"
-    const val JEWELLERY_ENROLL = "jewellery_enroll"
     const val JEWELLERY_CHECKOUT = "jewellery_checkout"
 
     // Manager Alerts (unsold-piece-at-portal notifications)
@@ -1545,53 +1536,6 @@ fun TagScoutNavGraph(
             )
         }
 
-        composable(Routes.JEWELLERY_ENROLL) {
-            val app = LocalContext.current.applicationContext as com.snainfotech.tagscout.TagScoutApplication
-            val vm: JewelleryEnrollmentViewModel = viewModel(factory = JewelleryEnrollmentViewModelFactory())
-            val enrollState by vm.state.collectAsState()
-            val deviceState by sharedHomeViewModel.deviceState.collectAsState()
-
-            // Lower antenna only after a sled is connected. Calling into the
-            // Bluebird SDK without an active Bluetooth session crashes it.
-            LaunchedEffect(deviceState.isConnected) {
-                if (deviceState.isConnected) {
-                    runCatching { app.rfidScanner.setAntennaPower(1) }
-                        .onFailure { android.util.Log.e("JewelleryEnroll", "setAntennaPower failed", it) }
-                }
-            }
-
-            // Scanner runs iff waiting-for-tag AND connected. Flow collection
-            // auto-cancels when either key flips.
-            LaunchedEffect(enrollState.isWaitingForTag, deviceState.isConnected) {
-                if (enrollState.isWaitingForTag && deviceState.isConnected) {
-                    runCatching {
-                        app.rfidScanner.startScanning().collect { tag ->
-                            vm.onEpcScanned(tag.epc)
-                        }
-                    }.onFailure {
-                        android.util.Log.e("JewelleryEnroll", "startScanning failed", it)
-                    }
-                } else {
-                    runCatching { app.rfidScanner.stopScanning() }
-                }
-            }
-
-            // Safety net on exit — guaranteed scanner stop regardless of phase.
-            DisposableEffect(Unit) {
-                onDispose { runCatching { app.rfidScanner.stopScanning() } }
-            }
-
-            JewelleryEnrollmentScreen(
-                state = enrollState,
-                onBackClick = { navController.popBackStack() },
-                onItemCodeChanged = { vm.onItemCodeChanged(it) },
-                onPriceChanged = { vm.onPriceChanged(it) },
-                onSaveClick = { vm.save() },
-                onScanAnotherClick = { vm.clearScan() },
-                onMessageDismissed = { vm.dismissMessage() }
-            )
-        }
-
         composable(Routes.JEWELLERY_CHECKOUT) {
             val app = LocalContext.current.applicationContext as com.snainfotech.tagscout.TagScoutApplication
             val vm: JewelleryCheckoutViewModel = viewModel(factory = JewelleryCheckoutViewModelFactory())
@@ -1682,20 +1626,6 @@ fun TagScoutNavGraph(
             )
         }
 
-        composable(Routes.WMS_PRODUCT_CATALOG) {
-            val vm: ProductCatalogViewModel = viewModel(
-                factory = ProductCatalogViewModelFactory(ProductRepository())
-            )
-            val s by vm.state.collectAsState()
-            ProductCatalogScreen(
-                state = s,
-                onBackClick = { navController.popBackStack() },
-                onCreateProduct = vm::createProduct,
-                onUpdateProduct = vm::updateProduct,
-                onDeleteProduct = vm::deleteProduct,
-                onDismissMessage = vm::clearMessage
-            )
-        }
 
         composable(Routes.PRODUCTS) {
             val vm: ProductListViewModel = viewModel(factory = ProductListViewModelFactory())

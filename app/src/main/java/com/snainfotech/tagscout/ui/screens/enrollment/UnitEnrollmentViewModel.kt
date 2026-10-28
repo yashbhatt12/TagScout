@@ -29,6 +29,7 @@ import com.snainfotech.tagscout.data.wms.WarehouseRepository
 import com.snainfotech.tagscout.data.wms.isValidEpc
 import com.snainfotech.tagscout.data.wms.productStatus
 import com.snainfotech.tagscout.data.wms.type
+import com.snainfotech.tagscout.data.config.ConfigSource
 import kotlinx.coroutines.async
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
@@ -127,7 +128,9 @@ data class UnitEnrollmentState(
 
     val showPrice: Boolean
         get() = product != null &&
-                (config.hasCapability(type, Capability.RETAIL_SALE) || isRequired(CoreField.PRICE))
+                (config.hasCapability(type, Capability.RETAIL_SALE) ||
+                        isRequired(CoreField.PRICE) ||
+                        (config.source == ConfigSource.DEFAULTS && type == ProductTypeKey.JEWELLERY))
 
     val showSerial: Boolean
         get() = product != null &&

@@ -1737,7 +1737,8 @@ fun TagScoutNavGraph(
                 onFilePicked = { uri, fileName -> vm.onFilePicked(ctx, uri, fileName) },
                 onConfirm = vm::confirmInward,
                 onReset = vm::reset,
-                onDismissMessage = vm::clearMessage
+                onDismissMessage = vm::clearMessage,
+                onDownloadTemplate = vm::writeTemplate
             )
         }
     }

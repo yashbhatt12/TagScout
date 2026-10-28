@@ -57,6 +57,7 @@ fun InwardScreen(
     onConfirm: () -> Unit,
     onReset: () -> Unit,
     onDismissMessage: () -> Unit,
+    onDownloadTemplate: ((() -> java.io.OutputStream?) -> Unit)? = null,
     modifier: Modifier = Modifier
 ) {
     val context = androidx.compose.ui.platform.LocalContext.current
@@ -73,6 +74,14 @@ fun InwardScreen(
                 ?: "grn.xlsx"
             onFilePicked(uri, fileName)
         }
+    }
+
+    val templateLauncher = rememberLauncherForActivityResult(
+        contract = ActivityResultContracts.CreateDocument(
+            "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+        )
+    ) { uri ->
+        if (uri != null) onDownloadTemplate?.invoke { context.contentResolver.openOutputStream(uri) }
     }
 
     Box(modifier = modifier.fillMaxSize()) {
@@ -103,9 +112,11 @@ fun InwardScreen(
                             "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
                             "application/vnd.ms-excel"
                         ))
-                    }
+                    },
+                    onDownloadTemplate = if (onDownloadTemplate != null) {
+                        { templateLauncher.launch("TagScout GRN template.xlsx") }
+                    } else null
                 )
-
                 InwardStep.VALIDATING, InwardStep.COMMITTING -> LoadingStep(
                     label = if (state.step == InwardStep.VALIDATING)
                         "Validating rows against database…"
@@ -151,7 +162,8 @@ fun InwardScreen(
 private fun EnterGrnStep(
     state: InwardState,
     onGrnReferenceChange: (String) -> Unit,
-    onPickFile: () -> Unit
+    onPickFile: () -> Unit,
+    onDownloadTemplate: (() -> Unit)? = null
 ) {
     Column(
         modifier = Modifier
@@ -205,7 +217,9 @@ private fun EnterGrnStep(
                 )
                 Spacer(modifier = Modifier.height(8.dp))
                 Text(
-                    text = "The Excel file must have these columns: SKU, EPC, Serial Number, Bin Code, Warehouse Name (Notes optional).",
+                    text = "Required columns: SKU, EPC, Bin Code, Warehouse Name. Optional: Serial Number, Notes, " +
+                            "tag price, per-piece details (weights, HUID…) and batch columns. " +
+                            "Download the template for the exact headers your products use.",
                     fontSize = 12.sp, color = MediumGray
                 )
                 Spacer(modifier = Modifier.height(12.dp))
@@ -217,6 +231,14 @@ private fun EnterGrnStep(
                     enabled = state.grnReference.isNotBlank()
                 ) {
                     Text("Choose Excel File", fontSize = 14.sp, fontWeight = FontWeight.SemiBold)
+                }
+                if (onDownloadTemplate != null) {
+                    TextButton(
+                        onClick = onDownloadTemplate,
+                        modifier = Modifier.fillMaxWidth()
+                    ) {
+                        Text("Download GRN template", fontSize = 13.sp, color = Primary)
+                    }
                 }
                 if (state.grnReference.isBlank()) {
                     Spacer(modifier = Modifier.height(6.dp))

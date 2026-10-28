@@ -14,7 +14,8 @@ import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
-
+import com.snainfotech.tagscout.data.config.ConfigRepository
+import java.io.OutputStream
 /**
  * Which step of the Inward workflow the user is currently on.
  */
@@ -92,6 +93,21 @@ class InwardViewModel(
         _state.value = _state.value.copy(message = null)
     }
 
+    /** Writes the "Download GRN template" workbook to [open]'s stream. */
+    fun writeTemplate(open: () -> OutputStream?) {
+        viewModelScope.launch {
+            val result = runCatching {
+                withContext(Dispatchers.IO) {
+                    (open() ?: error("Could not create the file")).use { out ->
+                        GrnExcelParser.writeTemplate(out, ConfigRepository.current)
+                    }
+                }
+            }
+            _state.value = _state.value.copy(
+                message = result.fold({ "Template saved" }, { e -> "Couldn't save the template: ${e.message}" })
+            )
+        }
+    }
     /**
      * User picked a file — parse it, then run validation.
      * Both parsing and validation run off the main thread.

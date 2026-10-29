@@ -94,6 +94,8 @@ android {
 dependencies {
 // Bluebird RFID SDK (local jar, not on Maven)
     implementation(fileTree(mapOf("dir" to "libs", "include" to listOf("*.jar"))))
+    // USB serial (CDC) for the Bluebird DR90X desktop reader
+    implementation(libs.mik3y.usbserial)
     implementation(libs.androidx.core.ktx)
     implementation(libs.androidx.lifecycle.runtime.ktx)
     implementation(libs.androidx.activity.compose)

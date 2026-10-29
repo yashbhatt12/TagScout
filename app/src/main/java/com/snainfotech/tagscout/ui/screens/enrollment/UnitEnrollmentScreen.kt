@@ -71,6 +71,7 @@ import com.snainfotech.tagscout.ui.components.FormHint
 import com.snainfotech.tagscout.ui.components.FormPane
 import com.snainfotech.tagscout.ui.components.FormSection
 import com.snainfotech.tagscout.ui.components.FormTextField
+import com.snainfotech.tagscout.sdk.Dr90xState
 import com.snainfotech.tagscout.ui.components.KeyboardWedgeBuffer
 import com.snainfotech.tagscout.ui.components.LabeledDropdown
 import com.snainfotech.tagscout.ui.components.PrimaryActionButton
@@ -94,8 +95,10 @@ import com.snainfotech.tagscout.ui.theme.WarningText
  *
  * Readers:
  *   - Sled: NavGraph runs the scanner while state.isListening and calls vm.onTagScanned.
- *   - Desktop pad (USB, keyboard mode): this screen captures the typed EPC
- *     while listening, so staff never need to tap a text box first.
+ *   - Desktop pad (USB): when its serial session is Ready, NavGraph reads it
+ *     through app.desktopReader and calls vm.onTagScanned(epc, tid). Otherwise
+ *     (keyboard mode) this screen captures the typed EPC while listening, so
+ *     staff never need to tap a text box first.
  *   - Fixed reader: fed later through vm.onTagsReceived.
  *
  * Layout: content is capped at a comfortable width on tablets; in batch
@@ -107,7 +110,9 @@ fun UnitEnrollmentScreen(
     sledConnected: Boolean,
     onBack: () -> Unit,
     onConnectSled: () -> Unit,
-    showHeader: Boolean = true              // false inside the Enroll screen's tabs
+    showHeader: Boolean = true,             // false inside the Enroll screen's tabs
+    desktopState: Dr90xState = Dr90xState.Closed,
+    onRetryDesktop: () -> Unit = {}
 ) {
     val state by viewModel.state.collectAsState()
     val context = LocalContext.current
@@ -184,7 +189,7 @@ fun UnitEnrollmentScreen(
         ) {
             val wide = maxWidth >= 720.dp
             when (state.phase) {
-                EnrollPhase.SETUP -> SetupPane(state, viewModel, sledConnected, onConnectSled)
+                EnrollPhase.SETUP -> SetupPane(state, viewModel, sledConnected, onConnectSled, desktopState, onRetryDesktop)
                 EnrollPhase.SCANNING -> ScanningPane(state, viewModel, sledConnected, onConnectSled)
                 EnrollPhase.DETAILS, EnrollPhase.SAVING -> DetailsPane(state, viewModel, wide)
                 EnrollPhase.RESULT -> ResultPane(state, viewModel)
@@ -260,7 +265,9 @@ private fun SetupPane(
     state: UnitEnrollmentState,
     vm: UnitEnrollmentViewModel,
     sledConnected: Boolean,
-    onConnectSled: () -> Unit
+    onConnectSled: () -> Unit,
+    desktopState: Dr90xState,
+    onRetryDesktop: () -> Unit
 ) {
     FormPane(
         bar = {
@@ -271,7 +278,7 @@ private fun SetupPane(
             )
         }
     ) {
-        ReaderSection(state, vm, sledConnected, onConnectSled)
+        ReaderSection(state, vm, sledConnected, onConnectSled, desktopState, onRetryDesktop)
         ProductSection(state, vm)
         LocationSection(state, vm)
         if (state.tracksBatches) BatchSection(state, vm)
@@ -284,7 +291,9 @@ private fun ReaderSection(
     state: UnitEnrollmentState,
     vm: UnitEnrollmentViewModel,
     sledConnected: Boolean,
-    onConnectSled: () -> Unit
+    onConnectSled: () -> Unit,
+    desktopState: Dr90xState,
+    onRetryDesktop: () -> Unit
 ) {
     FormSection("Reader") {
         // The handheld sled isn't used for enrollment; bulk goes by Excel.
@@ -317,14 +326,32 @@ private fun ReaderSection(
             Notice(text = "The sled isn't connected.", actionLabel = "Connect", onAction = onConnectSled)
         }
         if (state.reader == ReaderMode.DESKTOP) {
-            FormHint(
-                "Plug the reader into this device's USB port, set to keyboard mode. " +
-                        "Keep its power low so it reads only the piece on the pad."
-            )
+            DesktopReaderStatus(desktopState, onRetryDesktop)
         }
         if (state.reader == ReaderMode.FIXED) {
             Notice(text = "Chamber connection is coming next. Use the desktop reader for now.")
         }
+    }
+}
+
+/** What the desktop reader's serial session is doing, and what staff should do about it. */
+@Composable
+private fun DesktopReaderStatus(desktopState: Dr90xState, onRetry: () -> Unit) {
+    when (desktopState) {
+        is Dr90xState.Ready -> FormHint(
+            "Desktop reader connected. Keep its power low so it reads only the piece on the pad."
+        )
+        is Dr90xState.Opening -> FormHint("Connecting to the desktop reader…")
+        is Dr90xState.Failed -> Notice(
+            text = "The desktop reader isn't answering, so it's being used in keyboard mode. " +
+                    "Set it to keyboard output, or tap Retry.",
+            actionLabel = "Retry",
+            onAction = onRetry
+        )
+        is Dr90xState.Closed -> FormHint(
+            "Plug the reader into this device's USB port, set to keyboard mode. " +
+                    "Keep its power low so it reads only the piece on the pad."
+        )
     }
 }
 

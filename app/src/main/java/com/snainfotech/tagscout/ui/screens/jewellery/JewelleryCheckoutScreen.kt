@@ -1,6 +1,7 @@
 package com.snainfotech.tagscout.ui.screens.jewellery
 
 import androidx.compose.foundation.background
+import androidx.compose.foundation.focusable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -35,14 +36,22 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.focus.FocusRequester
+import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.input.key.Key
+import androidx.compose.ui.input.key.key
+import androidx.compose.ui.input.key.onPreviewKeyEvent
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.snainfotech.tagscout.data.wms.InventoryUnit
+import com.snainfotech.tagscout.data.wms.isValidEpc
+import com.snainfotech.tagscout.sdk.Dr90xState
 import com.snainfotech.tagscout.ui.components.AppHeader
+import com.snainfotech.tagscout.ui.components.KeyboardWedgeBuffer
 import com.snainfotech.tagscout.ui.theme.DarkText
 import com.snainfotech.tagscout.ui.theme.InfoBg
 import com.snainfotech.tagscout.ui.theme.InfoText
@@ -60,7 +69,10 @@ import com.snainfotech.tagscout.data.config.UnitStatus
  * This is a pure-UI screen: state and callbacks come from the NavGraph wrapper
  * which owns the ViewModel and the scanner lifecycle. Whenever
  * [state.isWaitingForTag] is true, the NavGraph has the sled running on low
- * antenna power. Tag reads come back as [JewelleryCheckoutViewModel.onEpcScanned].
+ * antenna power, and the desktop reader reading when its serial session is
+ * Ready. Tag reads come back as [JewelleryCheckoutViewModel.onEpcScanned].
+ * A desktop reader in keyboard mode types the EPC; this screen captures it
+ * while waiting and passes it to [onKeyboardTag].
  */
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -70,10 +82,22 @@ fun JewelleryCheckoutScreen(
     onMarkSoldClick: () -> Unit,
     onScanAnotherClick: () -> Unit,
     onMessageDismissed: () -> Unit,
-    modifier: Modifier = Modifier
+    modifier: Modifier = Modifier,
+    desktopState: Dr90xState = Dr90xState.Closed,
+    onRetryDesktop: () -> Unit = {},
+    onKeyboardTag: ((String) -> Unit)? = null
 ) {
     val snackbarHostState = remember { SnackbarHostState() }
     var showConfirmDialog by remember { mutableStateOf(false) }
+
+    // ── Desktop reader in keyboard mode: capture the typed EPC while waiting ──
+    val keyboardListening = state.isWaitingForTag && onKeyboardTag != null
+    val focusRequester = remember { FocusRequester() }
+    val wedge = remember { KeyboardWedgeBuffer() }
+    LaunchedEffect(keyboardListening) {
+        wedge.clear()
+        if (keyboardListening) runCatching { focusRequester.requestFocus() }
+    }
 
     LaunchedEffect(state.errorMessage) {
         state.errorMessage?.let {
@@ -82,7 +106,23 @@ fun JewelleryCheckoutScreen(
         }
     }
 
-    Box(modifier = modifier.fillMaxSize()) {
+    Box(
+        modifier = modifier
+            .fillMaxSize()
+            .focusRequester(focusRequester)
+            .focusable()
+            .onPreviewKeyEvent { event ->
+                if (!keyboardListening || event.key == Key.Back) {
+                    false
+                } else {
+                    wedge.onKey(event)?.let { code ->
+                        val epc = code.trim().uppercase()
+                        if (isValidEpc(epc)) onKeyboardTag?.invoke(epc)
+                    }
+                    true
+                }
+            }
+    ) {
         Column(
             modifier = Modifier
                 .fillMaxSize()
@@ -103,7 +143,7 @@ fun JewelleryCheckoutScreen(
                 verticalArrangement = Arrangement.spacedBy(12.dp)
             ) {
                 when (state.phase) {
-                    CheckoutPhase.WAITING -> WaitingCard()
+                    CheckoutPhase.WAITING -> WaitingCard(desktopState, onRetryDesktop)
 
                     CheckoutPhase.LOOKING_UP -> LookingUpCard()
 
@@ -260,7 +300,7 @@ fun JewelleryCheckoutScreen(
 
 /** The initial waiting state — cashier hasn't placed a piece yet. */
 @Composable
-private fun WaitingCard() {
+private fun WaitingCard(desktopState: Dr90xState, onRetryDesktop: () -> Unit) {
     Column(
         modifier = Modifier
             .fillMaxWidth()
@@ -299,6 +339,23 @@ private fun WaitingCard() {
                 fontSize = 12.sp,
                 color = InfoText
             )
+        }
+        // Desktop reader status; nothing shown when it isn't in use (sled or keyboard mode).
+        when (desktopState) {
+            is Dr90xState.Ready -> {
+                Spacer(Modifier.height(8.dp))
+                Text("Desktop reader connected", fontSize = 12.sp, color = InfoText)
+            }
+            is Dr90xState.Opening -> {
+                Spacer(Modifier.height(8.dp))
+                Text("Connecting to the desktop reader…", fontSize = 12.sp, color = InfoText)
+            }
+            is Dr90xState.Failed -> {
+                Spacer(Modifier.height(8.dp))
+                Text("Desktop reader not answering; using keyboard mode", fontSize = 12.sp, color = WarningText)
+                TextButton(onClick = onRetryDesktop) { Text("Retry", color = InfoText) }
+            }
+            is Dr90xState.Closed -> Unit
         }
     }
 }

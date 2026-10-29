@@ -23,6 +23,8 @@ class TagScoutApplication : Application() {
         // Desktop reader (DR90X, USB): watch plug/unplug and drive
         // ReaderAvailability.desktopConnected for the Unit enroll tab.
         DesktopReaderUsb.start(this)
+        // Serial session with the DR90X; opens when the reader is plugged in and allowed.
+        desktopReader.start()
     }
 
     // Database (created when first accessed)
@@ -60,5 +62,11 @@ class TagScoutApplication : Application() {
         } else {
             com.snainfotech.tagscout.sdk.FakeRfidScanner()
         }
+    }
+
+    // Bluebird DR90X desktop reader (USB serial). Separate from rfidScanner (the
+    // Bluetooth sled): enrollment, unit details and checkout use this when it's Ready.
+    val desktopReader: com.snainfotech.tagscout.sdk.Dr90xReader by lazy {
+        com.snainfotech.tagscout.sdk.Dr90xReader(this)
     }
 }

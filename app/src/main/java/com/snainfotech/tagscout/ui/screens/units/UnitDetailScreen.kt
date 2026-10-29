@@ -22,6 +22,7 @@ import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.FilterChip
 import androidx.compose.material3.FilterChipDefaults
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
@@ -61,6 +62,7 @@ import com.snainfotech.tagscout.ui.components.FormHint
 import com.snainfotech.tagscout.ui.components.FormPane
 import com.snainfotech.tagscout.ui.components.FormSection
 import com.snainfotech.tagscout.ui.components.FormTextField
+import com.snainfotech.tagscout.sdk.Dr90xState
 import com.snainfotech.tagscout.ui.components.KeyboardWedgeBuffer
 import com.snainfotech.tagscout.ui.components.LabeledDropdown
 import com.snainfotech.tagscout.ui.components.PrimaryActionButton
@@ -97,7 +99,9 @@ fun UnitDetailScreen(
     viewModel: UnitDetailViewModel,
     sledConnected: Boolean,
     onBack: () -> Unit,
-    onConnectSled: () -> Unit
+    onConnectSled: () -> Unit,
+    desktopState: Dr90xState = Dr90xState.Closed,
+    onRetryDesktop: () -> Unit = {}
 ) {
     val state by viewModel.state.collectAsState()
     val context = LocalContext.current
@@ -163,7 +167,9 @@ fun UnitDetailScreen(
                     vm = viewModel,
                     sledConnected = sledConnected,
                     onConnectSled = onConnectSled,
-                    onSearchFocus = { searchFocused = it }
+                    onSearchFocus = { searchFocused = it },
+                    desktopState = desktopState,
+                    onRetryDesktop = onRetryDesktop
                 )
             }
         }
@@ -179,7 +185,9 @@ private fun LookupPane(
     vm: UnitDetailViewModel,
     sledConnected: Boolean,
     onConnectSled: () -> Unit,
-    onSearchFocus: (Boolean) -> Unit
+    onSearchFocus: (Boolean) -> Unit,
+    desktopState: Dr90xState,
+    onRetryDesktop: () -> Unit
 ) {
     FormPane {
         FormSection("Read a tag") {
@@ -196,7 +204,7 @@ private fun LookupPane(
                     )
                 }
             }
-            ReaderPrompt(state, sledConnected, onConnectSled)
+            ReaderPrompt(state, sledConnected, onConnectSled, desktopState, onRetryDesktop)
         }
 
         FormSection("Or search") {
@@ -235,7 +243,13 @@ private fun LookupPane(
 }
 
 @Composable
-private fun ReaderPrompt(state: UnitDetailState, sledConnected: Boolean, onConnectSled: () -> Unit) {
+private fun ReaderPrompt(
+    state: UnitDetailState,
+    sledConnected: Boolean,
+    onConnectSled: () -> Unit,
+    desktopState: Dr90xState,
+    onRetryDesktop: () -> Unit
+) {
     val waiting = state.isListening && (state.reader != ReaderMode.SLED || sledConnected)
     Column(
         modifier = Modifier
@@ -258,7 +272,24 @@ private fun ReaderPrompt(state: UnitDetailState, sledConnected: Boolean, onConne
                 fontWeight = FontWeight.SemiBold,
                 color = InfoText
             )
+            if (state.reader == ReaderMode.DESKTOP) {
+                DesktopReaderLine(desktopState, onRetryDesktop)
+            }
         }
+    }
+}
+
+/** One line under the desktop prompt: is the reader talking to us, or typing (keyboard mode)? */
+@Composable
+private fun DesktopReaderLine(desktopState: Dr90xState, onRetry: () -> Unit) {
+    when (desktopState) {
+        is Dr90xState.Ready -> Text("Desktop reader connected", fontSize = 12.sp, color = InfoText)
+        is Dr90xState.Opening -> Text("Connecting to the desktop reader…", fontSize = 12.sp, color = InfoText)
+        is Dr90xState.Failed -> {
+            Text("Reader not answering; using keyboard mode", fontSize = 12.sp, color = WarningText)
+            TextButton(onClick = onRetry) { Text("Retry", color = Primary) }
+        }
+        is Dr90xState.Closed -> Text("Keyboard mode: set the reader to keyboard output", fontSize = 12.sp, color = InfoText)
     }
 }
 

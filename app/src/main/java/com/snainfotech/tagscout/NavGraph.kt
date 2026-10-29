@@ -133,6 +133,7 @@ import com.snainfotech.tagscout.ui.screens.products.CatalogLookupsScreen
 import com.snainfotech.tagscout.ui.screens.products.CatalogLookupsViewModel
 import com.snainfotech.tagscout.ui.screens.products.CatalogLookupsViewModelFactory
 import com.snainfotech.tagscout.data.reader.ReaderAvailability
+import com.snainfotech.tagscout.sdk.Dr90xState
 import com.snainfotech.tagscout.ui.screens.enrollment.EnrollHubScreen
 import com.snainfotech.tagscout.ui.screens.enrollment.EnrollPhase
 import com.snainfotech.tagscout.ui.screens.enrollment.ReaderMode
@@ -1460,6 +1461,27 @@ fun TagScoutNavGraph(
             val ctx = LocalContext.current
             val bulkBusy = inwardState.step == InwardStep.VALIDATING || inwardState.step == InwardStep.COMMITTING
 
+            // Desktop reader over USB serial. Reads only while the Unit tab waits for a
+            // tag: leaving SCANNING (a piece read in single mode, Back) cancels the
+            // collection, which stops the reader. When the session isn't Ready, the
+            // screen's keyboard-mode capture is the fallback.
+            val app = ctx.applicationContext as com.snainfotech.tagscout.TagScoutApplication
+            val desktopState by app.desktopReader.state.collectAsState()
+            val desktopReading = unitState.reader == ReaderMode.DESKTOP &&
+                    unitState.isListening && desktopState is Dr90xState.Ready
+            LaunchedEffect(desktopReading) {
+                if (!desktopReading) return@LaunchedEffect
+                try {
+                    app.desktopReader.readTags(withTid = true).collect { tag ->
+                        unitVm.onTagScanned(tag.epc, tag.tid)
+                    }
+                } catch (e: kotlinx.coroutines.CancellationException) {
+                    throw e
+                } catch (e: Exception) {
+                    android.util.Log.e("UnitEnroll", "Desktop reader read failed", e)
+                }
+            }
+
             EnrollHubScreen(
                 unitReaderConnected = unitReaderConnected,
                 bulkBusy = bulkBusy,
@@ -1483,7 +1505,9 @@ fun TagScoutNavGraph(
                         sledConnected = deviceState.isConnected,
                         onBack = { navController.popBackStack() },
                         onConnectSled = { navController.navigate(Routes.CONNECT_DEVICE) },
-                        showHeader = false
+                        showHeader = false,
+                        desktopState = desktopState,
+                        onRetryDesktop = app.desktopReader::reconnect
                     )
                 }
             )
@@ -1495,6 +1519,34 @@ fun TagScoutNavGraph(
                 val detailState by vm.state.collectAsState()
                 val deviceState by sharedHomeViewModel.deviceState.collectAsState()
                 val useSled = detailState.reader == ReaderMode.SLED
+                val desktopState by app.desktopReader.state.collectAsState()
+                val desktopReady = desktopState is Dr90xState.Ready
+
+                // Desktop reader ready and no sled connected: start on the desktop reader.
+                // Once per visit, so a reader the user picks by hand isn't overridden.
+                var readerAutoPicked by rememberSaveable { mutableStateOf(false) }
+                LaunchedEffect(desktopReady) {
+                    if (desktopReady && !readerAutoPicked && useSled && !deviceState.isConnected) {
+                        vm.setReader(ReaderMode.DESKTOP)
+                        readerAutoPicked = true
+                    }
+                }
+
+                // Desktop reader over USB serial: reads (EPC only) while the screen waits
+                // for a tag; opening a unit cancels the collection, which stops the reader.
+                // When it isn't Ready, the screen's keyboard-mode capture is the fallback.
+                val desktopReading = detailState.reader == ReaderMode.DESKTOP &&
+                        detailState.isListening && desktopReady
+                LaunchedEffect(desktopReading) {
+                    if (!desktopReading) return@LaunchedEffect
+                    try {
+                        app.desktopReader.readTags(withTid = false).collect { tag -> vm.onTagScanned(tag.epc) }
+                    } catch (e: kotlinx.coroutines.CancellationException) {
+                        throw e
+                    } catch (e: Exception) {
+                        android.util.Log.e("UnitDetail", "Desktop reader read failed", e)
+                    }
+                }
 
                 // Low power: look up the one piece in hand, not the tray beside it.
                 LaunchedEffect(deviceState.isConnected, useSled) {
@@ -1525,7 +1577,9 @@ fun TagScoutNavGraph(
                     viewModel = vm,
                     sledConnected = deviceState.isConnected,
                     onBack = { navController.popBackStack() },
-                    onConnectSled = { navController.navigate(Routes.CONNECT_DEVICE) }
+                    onConnectSled = { navController.navigate(Routes.CONNECT_DEVICE) },
+                    desktopState = desktopState,
+                    onRetryDesktop = app.desktopReader::reconnect
                 )
             }
         // ============================================
@@ -1586,12 +1640,31 @@ fun TagScoutNavGraph(
                 onDispose { runCatching { app.rfidScanner.stopScanning() } }
             }
 
+            // Desktop reader over USB serial, alongside the sled: reads (EPC only)
+            // while the screen waits for a tag. The first tag from either reader
+            // moves the screen on, which cancels this and stops the reader.
+            val desktopState by app.desktopReader.state.collectAsState()
+            val desktopReading = checkoutState.isWaitingForTag && desktopState is Dr90xState.Ready
+            LaunchedEffect(desktopReading) {
+                if (!desktopReading) return@LaunchedEffect
+                try {
+                    app.desktopReader.readTags(withTid = false).collect { tag -> vm.onEpcScanned(tag.epc) }
+                } catch (e: kotlinx.coroutines.CancellationException) {
+                    throw e
+                } catch (e: Exception) {
+                    android.util.Log.e("JewelleryCheckout", "Desktop reader read failed", e)
+                }
+            }
+
             JewelleryCheckoutScreen(
                 state = checkoutState,
                 onBackClick = { navController.popBackStack() },
                 onMarkSoldClick = { vm.confirmSold() },
                 onScanAnotherClick = { vm.clearScan() },
-                onMessageDismissed = { vm.dismissMessage() }
+                onMessageDismissed = { vm.dismissMessage() },
+                desktopState = desktopState,
+                onRetryDesktop = app.desktopReader::reconnect,
+                onKeyboardTag = vm::onEpcScanned
             )
         }
         // ============================================

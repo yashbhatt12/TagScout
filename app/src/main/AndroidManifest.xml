@@ -22,6 +22,10 @@
     <!-- Bluetooth feature is required but not strictly hardware required -->
     <uses-feature android:name="android.hardware.bluetooth_le"
         android:required="false" />
+
+    <!-- USB host for the Bluebird DR90X desktop reader; not required so phones without OTG can still install -->
+    <uses-feature android:name="android.hardware.usb.host"
+        android:required="false" />
     <application
         android:name=".TagScoutApplication"
         android:allowBackup="false"
@@ -38,6 +42,7 @@
             android:name=".MainActivity"
             android:exported="true"
             android:label="@string/app_name"
+            android:launchMode="singleTop"
             android:screenOrientation="portrait"
             android:theme="@style/Theme.TagScout">
             <intent-filter>
@@ -45,6 +50,15 @@
 
                 <category android:name="android.intent.category.LAUNCHER" />
             </intent-filter>
+
+            <!-- DR90X plugged in: Android offers to open TagScout and, if the user
+                 ticks "always", grants USB access without asking again. -->
+            <intent-filter>
+                <action android:name="android.hardware.usb.action.USB_DEVICE_ATTACHED" />
+            </intent-filter>
+            <meta-data
+                android:name="android.hardware.usb.action.USB_DEVICE_ATTACHED"
+                android:resource="@xml/dr90x_device_filter" />
         </activity>
 
         <!-- Camera photos for products: the camera app saves the full-size photo here. -->

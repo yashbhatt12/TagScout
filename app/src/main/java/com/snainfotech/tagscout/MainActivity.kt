@@ -1,5 +1,7 @@
 package com.snainfotech.tagscout
 
+import android.content.Intent
+import android.hardware.usb.UsbManager
 import android.os.Bundle
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
@@ -10,6 +12,7 @@ import androidx.compose.material3.Scaffold
 import androidx.compose.ui.Modifier
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.ViewModelProvider
+import com.snainfotech.tagscout.data.reader.DesktopReaderUsb
 import com.snainfotech.tagscout.data.repository.DeviceRepository
 import com.snainfotech.tagscout.data.repository.QuickScanRepository
 import com.snainfotech.tagscout.ui.screens.home.HomeViewModel
@@ -30,6 +33,23 @@ class MainActivity : ComponentActivity() {
                 }
             }
         }
+    }
+
+    // The activity is singleTop, so a DR90X plugged in while the app is open
+    // arrives here instead of stacking a second MainActivity.
+    override fun onNewIntent(intent: Intent) {
+        super.onNewIntent(intent)
+        setIntent(intent)
+        if (intent.action == UsbManager.ACTION_USB_DEVICE_ATTACHED) {
+            DesktopReaderUsb.refresh()
+        }
+    }
+
+    // Catches a reader plugged or unplugged while the app was in the background,
+    // and picks up USB access granted through the "open with TagScout" prompt.
+    override fun onResume() {
+        super.onResume()
+        DesktopReaderUsb.refresh()
     }
 
     override fun onDestroy() {

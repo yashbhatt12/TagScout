@@ -3,6 +3,7 @@ package com.snainfotech.tagscout
 import android.app.Application
 import com.google.firebase.crashlytics.FirebaseCrashlytics
 import com.snainfotech.tagscout.data.AppDatabase
+import com.snainfotech.tagscout.data.reader.DesktopReaderUsb
 import com.snainfotech.tagscout.data.repository.DeviceRepository
 import com.snainfotech.tagscout.data.repository.InventoryScanRepository
 import com.snainfotech.tagscout.data.repository.QuickScanRepository
@@ -18,6 +19,10 @@ class TagScoutApplication : Application() {
         // Gradle level so the plugin stays uniformly applied across variants
         // (mapping-file uploads etc. are still handled per build type).
         FirebaseCrashlytics.getInstance().isCrashlyticsCollectionEnabled = !BuildConfig.DEBUG
+
+        // Desktop reader (DR90X, USB): watch plug/unplug and drive
+        // ReaderAvailability.desktopConnected for the Unit enroll tab.
+        DesktopReaderUsb.start(this)
     }
 
     // Database (created when first accessed)

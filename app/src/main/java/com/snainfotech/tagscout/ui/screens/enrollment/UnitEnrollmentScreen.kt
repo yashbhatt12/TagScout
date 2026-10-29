@@ -71,6 +71,7 @@ import com.snainfotech.tagscout.ui.components.FormHint
 import com.snainfotech.tagscout.ui.components.FormPane
 import com.snainfotech.tagscout.ui.components.FormSection
 import com.snainfotech.tagscout.ui.components.FormTextField
+import com.snainfotech.tagscout.data.reader.DesktopReaderUsb
 import com.snainfotech.tagscout.sdk.Dr90xState
 import com.snainfotech.tagscout.ui.components.KeyboardWedgeBuffer
 import com.snainfotech.tagscout.ui.components.LabeledDropdown
@@ -348,10 +349,24 @@ private fun DesktopReaderStatus(desktopState: Dr90xState, onRetry: () -> Unit) {
             actionLabel = "Retry",
             onAction = onRetry
         )
-        is Dr90xState.Closed -> FormHint(
-            "Plug the reader into this device's USB port, set to keyboard mode. " +
-                    "Keep its power low so it reads only the piece on the pad."
-        )
+        is Dr90xState.Closed -> {
+            // Plugged in but no session: usually USB access hasn't been allowed.
+            val usb by DesktopReaderUsb.status.collectAsState()
+            when (usb.state) {
+                DesktopReaderUsb.State.PERMISSION_DENIED -> Notice(
+                    text = "TagScout isn't allowed to use the desktop reader, so it's in keyboard mode.",
+                    actionLabel = "Allow",
+                    onAction = DesktopReaderUsb::requestPermissionAgain
+                )
+                DesktopReaderUsb.State.NEEDS_PERMISSION -> FormHint(
+                    "Allow TagScout to use the desktop reader when Android asks."
+                )
+                else -> FormHint(
+                    "Plug the reader into this device's USB port, set to keyboard mode. " +
+                            "Keep its power low so it reads only the piece on the pad."
+                )
+            }
+        }
     }
 }
 

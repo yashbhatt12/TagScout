@@ -62,6 +62,7 @@ import com.snainfotech.tagscout.ui.components.FormHint
 import com.snainfotech.tagscout.ui.components.FormPane
 import com.snainfotech.tagscout.ui.components.FormSection
 import com.snainfotech.tagscout.ui.components.FormTextField
+import com.snainfotech.tagscout.data.reader.DesktopReaderUsb
 import com.snainfotech.tagscout.sdk.Dr90xState
 import com.snainfotech.tagscout.ui.components.KeyboardWedgeBuffer
 import com.snainfotech.tagscout.ui.components.LabeledDropdown
@@ -289,7 +290,20 @@ private fun DesktopReaderLine(desktopState: Dr90xState, onRetry: () -> Unit) {
             Text("Reader not answering; using keyboard mode", fontSize = 12.sp, color = WarningText)
             TextButton(onClick = onRetry) { Text("Retry", color = Primary) }
         }
-        is Dr90xState.Closed -> Text("Keyboard mode: set the reader to keyboard output", fontSize = 12.sp, color = InfoText)
+        is Dr90xState.Closed -> {
+            // Plugged in but no session: usually USB access hasn't been allowed.
+            val usb by DesktopReaderUsb.status.collectAsState()
+            when (usb.state) {
+                DesktopReaderUsb.State.PERMISSION_DENIED -> {
+                    Text("Reader not allowed; using keyboard mode", fontSize = 12.sp, color = WarningText)
+                    TextButton(onClick = DesktopReaderUsb::requestPermissionAgain) { Text("Allow", color = Primary) }
+                }
+                DesktopReaderUsb.State.NEEDS_PERMISSION ->
+                    Text("Allow TagScout to use the reader when Android asks", fontSize = 12.sp, color = InfoText)
+                else ->
+                    Text("Keyboard mode: set the reader to keyboard output", fontSize = 12.sp, color = InfoText)
+            }
+        }
     }
 }
 

@@ -5,39 +5,64 @@ package com.snainfotech.tagscout.sdk
  * serial port (115200 8N1).
  *
  * Bluebird only ships a Windows .NET SDK for this reader. Everything here was
- * recovered from that SDK (Bluebird.Bcp.dll v1.5.7.2) and has NOT been checked
- * against a live reader yet. Lines marked VERIFY are the guesses; the raw-frame
- * log (Frame.hex) is how we check them on the tablet or against BLUE_DEMO's log.
+ * recovered from that SDK (Bluebird.Bcp.dll v1.5.7.2, its DR90X code path) and
+ * has NOT been checked against a live reader yet. Lines marked VERIFY are the
+ * least certain; the raw-frame log (Frame.hex) is how we check them.
  *
  * Pure Kotlin, no Android imports, so it can be unit-tested on the PC.
  *
- * Command frame (host -> reader):
- *   A3 A0 | seq | flag | LEN(u16 BE) | type | code | payload | SUM(u16 BE)
- *   LEN  = total frame length (payload + 10)
- *   flag = 0x03 when type == 1, else 0x01
- *   SUM  = 16-bit sum of all bytes before it
+ * Both directions use the same frame layout:
+ *   preamble(2) | seq | flag | LEN(u16 BE) | type | code | payload | SUM(u16 BE)
+ *   preamble = A3 A0 host -> reader, B3 .. reader -> host
+ *   LEN      = total frame length (payload + 10)
+ *   flag     = 0x03 when type == 1, else 0x01 (host side)
+ *   type     = 0 command; 1 acknowledgement; 2..4 data / notifications
+ *   SUM      = 16-bit sum of all bytes before it
  *
- * Reply frame (reader -> host):
- *   B3 .. | LEN(u16 BE) at [4..5] | type at [6] | code at [7] | body | SUM(u16 BE)
- *   type 1 = acknowledgement; 2..4 = data / notifications.
+ * A reply carries the code of the command it answers; tag reads arrive as
+ * separate notifications with code 0x03.
  */
 object Dr90xProtocol {
 
-    // ── Command codes (host -> reader) ───────────────────────────────────
+    // ── Command codes (host -> reader; replies use the same code) ────────
     const val CMD_STOP_READ = 0x02
+    const val CMD_GET_POWER = 0x04
+    const val CMD_SET_POWER = 0x05
+    const val CMD_GET_REGION = 0x23
+    const val CMD_SET_REGION = 0x24
+    const val CMD_GET_USER_SETTINGS = 0x69
     const val CMD_GET_MCU_VERSION = 0x6A
-    const val CMD_START_READ = 0xA3            // EPC only
+    const val CMD_SET_GAIN_MODE = 0x76
+    const val CMD_START_READ = 0xA3            // EPC (+ RSSI when the reader has RSSI tracking on)
     const val CMD_START_READ_WITH_TID = 0xA4   // EPC + TID
 
-    // ── Reply codes (reader -> host), from the SDK's reply dispatcher ────
-    const val RSP_TAG = 0x22                   // PC + EPC
-    const val RSP_TAG_WITH_TID = 0x25          // PC + EPC + TID
-    const val RSP_MCU_VERSION = 0x6A
+    // ── Reply-only codes ─────────────────────────────────────────────────
+    const val RSP_TAG = 0x03                   // one tag read during an inventory
     const val RSP_FAILURE = 0xFF
+
+    @Deprecated("Replies carry the command code", ReplaceWith("CMD_GET_MCU_VERSION"))
+    const val RSP_MCU_VERSION = CMD_GET_MCU_VERSION
 
     // ── Frame types ──────────────────────────────────────────────────────
     const val TYPE_COMMAND = 0x00
     const val TYPE_ACK = 0x01
+
+    // ── Values ───────────────────────────────────────────────────────────
+    /** Region code for India (865–867 MHz) in the reader's region table. */
+    const val REGION_INDIA = 9
+
+    /** Highest region code the SDK accepts. */
+    const val REGION_MAX = 38
+
+    /** Output power range the SDK accepts, in whole dBm. */
+    const val POWER_MIN_DBM = 5
+    const val POWER_MAX_DBM = 27
+
+    /** At or above this power the reader needs high-gain mode; below it, low-gain. */
+    const val HIGH_GAIN_FROM_DBM = 20
+
+    /** Result byte the reader puts first in a failed start/stop reply. */
+    private const val RESULT_FAILED = 0x02
 
     private const val CMD_PREAMBLE_0 = 0xA3
     private const val CMD_PREAMBLE_1 = 0xA0
@@ -112,6 +137,32 @@ object Dr90xProtocol {
         /** Doubles as the connect handshake: a reply proves the reader is alive. */
         fun getMcuVersion(): ByteArray = frame(CMD_GET_MCU_VERSION)
 
+        fun getRegion(): ByteArray = frame(CMD_GET_REGION)
+
+        /** Region code as a u32; see [REGION_INDIA]. */
+        fun setRegion(region: Int): ByteArray {
+            require(region in 0..REGION_MAX) { "Region $region out of range" }
+            return frame(CMD_SET_REGION, u32(region.toLong()))
+        }
+
+        fun getPower(): ByteArray = frame(CMD_GET_POWER)
+
+        /**
+         * Output power. The SDK sends gain mode first and power ~100 ms later:
+         * use [setGainModeFor] then [setPower], in that order, with a pause.
+         * Power goes on the wire as dBm x 100 (u32).
+         */
+        fun setPower(dbm: Int): ByteArray {
+            require(dbm in POWER_MIN_DBM..POWER_MAX_DBM) { "Power $dbm dBm out of range" }
+            return frame(CMD_SET_POWER, u32(dbm * 100L))
+        }
+
+        /** High gain (0) at or above 20 dBm, low gain (1) below, as the SDK does. */
+        fun setGainModeFor(dbm: Int): ByteArray =
+            frame(CMD_SET_GAIN_MODE, byteArrayOf(if (dbm >= HIGH_GAIN_FROM_DBM) 0x00 else 0x01))
+
+        fun getUserSettings(): ByteArray = frame(CMD_GET_USER_SETTINGS)
+
         private fun u32(v: Long) = byteArrayOf(
             (v shr 24).toByte(), (v shr 16).toByte(), (v shr 8).toByte(), v.toByte()
         )
@@ -126,23 +177,11 @@ object Dr90xProtocol {
         val code: Int get() = raw[7].u
         val isAck: Boolean get() = type == TYPE_ACK
 
-        /** Everything between the 8-byte header and the checksum. */
-        val body: ByteArray get() = raw.copyOfRange(8, raw.size - 2)
+        /** The payload: everything between the 8-byte header and the checksum. */
+        val data: ByteArray get() = raw.copyOfRange(8, raw.size - 2)
 
-        /**
-         * The body without its inner u16 length prefix, if it carries one.
-         * VERIFY: the SDK's dispatcher reads a length right before the data,
-         * so the prefix is stripped only when it matches the body exactly.
-         */
-        val data: ByteArray
-            get() {
-                val b = body
-                return if (b.size >= 2 && ((b[0].u shl 8) or b[1].u) == b.size - 2) {
-                    b.copyOfRange(2, b.size)
-                } else {
-                    b
-                }
-            }
+        @Deprecated("Same as data", ReplaceWith("data"))
+        val body: ByteArray get() = data
 
         fun hex(): String = raw.toHex(" ")
 
@@ -226,62 +265,128 @@ object Dr90xProtocol {
 
     // ── Payload decoders ─────────────────────────────────────────────────
 
-    /** One tag read. Hex strings, upper case; [tid] is empty for EPC-only reads. */
-    data class TagRead(val pc: String, val epc: String, val tid: String)
+    /**
+     * One tag read. Hex strings, upper case.
+     * @property tid  empty unless the reader was asked for TID
+     * @property rssi signal strength in dBm (e.g. -55), null if not reported
+     */
+    data class TagRead(val pc: String, val epc: String, val tid: String, val rssi: Int? = null)
 
     /**
-     * Splits a tag payload into PC, EPC and (optionally) TID.
-     * The EPC length comes from the PC word: top 5 bits of PC[0] = EPC length
-     * in 16-bit words. Same rule as the SDK: ((PC[0] >> 2) & 0xFE) + 2 bytes
-     * of PC + EPC. Anything after that is the TID (for 0x25 replies).
-     * VERIFY: whether EPC-only (0x22) replies carry trailing bytes (e.g. RSSI).
+     * Decodes a tag notification (code 0x03) payload, as the SDK does:
+     *   [0]                 EPC length in bytes (L)
+     *   [1..2]              PC
+     *   [3 .. 3+L)          EPC
+     *   [L+3 .. L+4]        RSSI, signed 16-bit little-endian, dBm x 10
+     *   [L+12]              TID length in bytes (T), in TID mode
+     *   [L+13 .. L+13+T)    TID
+     * VERIFY: the 7 bytes between RSSI and the TID length are not used by the SDK.
+     *
+     * @param withTid kept for callers; TID is read whenever the payload carries one.
      */
-    fun decodeTag(data: ByteArray, withTid: Boolean): TagRead? {
-        if (data.size < 2) return null
-        val pcEpcLen = ((data[0].u shr 2) and 0xFE) + 2
-        if (pcEpcLen <= 2 || pcEpcLen > data.size) return null
+    @Suppress("UNUSED_PARAMETER")
+    fun decodeTag(data: ByteArray, withTid: Boolean = true): TagRead? {
+        if (data.size < 3) return null
+        val epcLen = data[0].u
+        val epcEnd = 3 + epcLen
+        if (epcLen == 0 || epcEnd > data.size) return null
+
+        val n = epcLen + 2  // the SDK's offset base (PC + EPC length)
+        val rssi = if (data.size > n + 2) {
+            val raw = (data[n + 1].u or (data[n + 2].u shl 8)).toShort().toInt()
+            raw / 10
+        } else {
+            null
+        }
+
+        val tidLenAt = n + 10
+        val tid = if (data.size > tidLenAt) {
+            val tidLen = data[tidLenAt].u
+            val from = tidLenAt + 1
+            if (tidLen > 0 && from + tidLen <= data.size) data.toHex(from = from, to = from + tidLen) else ""
+        } else {
+            ""
+        }
+
         return TagRead(
-            pc = data.toHex(from = 0, to = 2),
-            epc = data.toHex(from = 2, to = pcEpcLen),
-            tid = if (withTid) data.toHex(from = pcEpcLen, to = data.size) else ""
+            pc = data.toHex(from = 1, to = 3),
+            epc = data.toHex(from = 3, to = epcEnd),
+            tid = tid,
+            rssi = rssi
         )
     }
 
-    /** Tag carried by a frame, or null if the frame is not a tag reply. */
-    fun tagFrom(frame: Frame): TagRead? = when (frame.code) {
-        RSP_TAG_WITH_TID -> decodeTag(frame.data, withTid = true)
-        RSP_TAG -> decodeTag(frame.data, withTid = false)
-        else -> null
-    }
+    /**
+     * Tag carried by a frame, or null if the frame is not a tag notification.
+     * Matched on code alone: no command uses 0x03, and the frame type the reader
+     * uses for notifications is not known yet (VERIFY).
+     */
+    fun tagFrom(frame: Frame): TagRead? =
+        if (frame.code == RSP_TAG) decodeTag(frame.data) else null
 
     /**
-     * Error code from a failure reply (0xFF). The SDK takes byte 2 of the data
-     * when there are at least 3 bytes, else the first byte.
+     * Error from a reply, or null if the reply is not a failure:
+     * code 0xFF, or a start/stop reply whose first byte is 0x02 (the SDK reports
+     * both through onFailureReceived). Returns the payload's second byte when
+     * present (VERIFY), else the first.
      * Command errors: 01 unknown, 02 busy, 03 not ready, 04 checksum, 06 bad parameter.
-     * Tag-access errors: 80 no tag reply, 82 wrong password, 04 memory locked, 0B low power.
      */
     fun failureCode(frame: Frame): Int? {
-        if (frame.code != RSP_FAILURE) return null
         val d = frame.data
+        val failed = when (frame.code) {
+            RSP_FAILURE -> true
+            CMD_START_READ, CMD_START_READ_WITH_TID, 0xA2 -> d.isNotEmpty() && d[0].u == RESULT_FAILED
+            else -> false
+        }
+        if (!failed) return null
         return when {
-            d.size >= 3 -> d[2].u
+            d.size >= 2 -> d[1].u
             d.isNotEmpty() -> d[0].u
-            else -> null
+            else -> 0
         }
     }
 
+    /** Region code from a get-region reply (u32 after a result byte), or null. */
+    fun regionFrom(frame: Frame): Int? {
+        if (frame.code != CMD_GET_REGION) return null
+        val d = frame.data
+        return if (d.size >= 5) d[4].u else null
+    }
+
+    /** Current output power in whole dBm from a get-power reply, or null. */
+    fun powerDbmFrom(frame: Frame): Int? {
+        if (frame.code != CMD_GET_POWER) return null
+        val d = frame.data
+        if (d.size < 5) return null
+        val centi = (d[1].u shl 24) or (d[2].u shl 16) or (d[3].u shl 8) or d[4].u
+        return centi / 100
+    }
+
     /**
-     * Readable form of the MCU version reply (serial number, hardware and
-     * firmware versions). VERIFY: field layout unknown; printable ASCII is
-     * kept and other bytes are shown as hex until the log shows the layout.
+     * Readable form of the MCU version reply: serial number, hardware version
+     * and firmware version, each a 32-byte ASCII field after a result byte.
      */
     fun describeMcuVersion(frame: Frame): String {
         val d = frame.data
-        val ascii = d.filter { it.u in 0x20..0x7E }
-        return if (ascii.size >= d.size / 2) {
-            ascii.map { it.toInt().toChar() }.joinToString("").trim()
-        } else {
+        fun field(from: Int): String {
+            if (from >= d.size) return ""
+            val to = minOf(from + 32, d.size)
+            return d.copyOfRange(from, to)
+                .takeWhile { it.u != 0 }
+                .filter { it.u in 0x20..0x7E }
+                .map { it.toInt().toChar() }
+                .joinToString("")
+                .trim()
+        }
+        val sn = field(1)
+        val hw = field(33)
+        val fw = field(65)
+        return if (sn.isEmpty() && hw.isEmpty() && fw.isEmpty()) {
             d.toHex(" ")
+        } else {
+            listOf("SN" to sn, "HW" to hw, "FW" to fw)
+                .filter { it.second.isNotEmpty() }
+                .joinToString(" ") { "${it.first} ${it.second}" }
         }
     }
 

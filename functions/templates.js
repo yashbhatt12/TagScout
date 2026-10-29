@@ -17,7 +17,7 @@
  * settings doc records which version it was built from.
  */
 
-const TEMPLATE_VERSION = "2026-10-28";
+const TEMPLATE_VERSION = "2026-10-29";
 const SCHEMA_VERSION = 1;
 
 const P = "product";
@@ -289,7 +289,6 @@ const PRESETS = {
       warehouse: { singular: "Store", plural: "Stores" },
       rack: { singular: "Counter", plural: "Counters" },
       bin: { singular: "Tray", plural: "Trays" },
-      product: { singular: "Design", plural: "Designs" },
     },
     capabilities: {},
   },
@@ -308,7 +307,6 @@ const PRESETS = {
       warehouse: { singular: "Site", plural: "Sites" },
       rack: { singular: "Zone", plural: "Zones" },
       bin: { singular: "Spot", plural: "Spots" },
-      product: { singular: "Asset model", plural: "Asset models" },
     },
     capabilities: {},
   },

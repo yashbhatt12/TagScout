@@ -34,8 +34,8 @@ import com.snainfotech.tagscout.ui.theme.MediumGray
  * brands. Opened from Home and never feature-gated, so a retail-only or
  * asset-only company doesn't need Warehouse Management switched on.
  *
- * Names follow the company's labels: a jeweller sees Store / Counter / Tray
- * and Designs.
+ * Location names follow the company's labels (a jeweller sees Store /
+ * Counter / Tray). Catalog names are the same for every company.
  */
 @Composable
 fun CompanySetupScreen(
@@ -57,7 +57,6 @@ fun CompanySetupScreen(
     val warehouses = labels.plural(LabelKey.WAREHOUSE).lowercase()
     val racks = labels.plural(LabelKey.RACK).lowercase()
     val bins = labels.plural(LabelKey.BIN).lowercase()
-    val products = labels.plural(LabelKey.PRODUCT)
 
     Column(
         modifier = modifier
@@ -92,8 +91,8 @@ fun CompanySetupScreen(
             SectionLabel("CATALOG")
             FeatureButton(
                 icon = R.drawable.ic_inventory,
-                title = products,
-                description = "Add, edit and search ${products.lowercase()}",
+                title = "Product Catalog",
+                description = "Add, edit and search products",
                 enabled = true,
                 onClick = onProductsClick
             )
@@ -108,8 +107,8 @@ fun CompanySetupScreen(
             if (config.isEnabled(Feature.CATALOG_EXCEL)) {
                 FeatureButton(
                     icon = R.drawable.ic_inventory,
-                    title = "Product catalog (Excel)",
-                    description = "Bulk import, export and sample file",
+                    title = "Bulk Catalog Creation",
+                    description = "Import, export and sample Excel file",
                     enabled = true,
                     onClick = onCatalogExcelClick
                 )

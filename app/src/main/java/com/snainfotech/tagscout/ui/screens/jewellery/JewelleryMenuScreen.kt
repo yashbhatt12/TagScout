@@ -30,6 +30,7 @@ import com.snainfotech.tagscout.R
 import com.snainfotech.tagscout.data.config.CompanyConfig
 import com.snainfotech.tagscout.data.config.ConfigRepository
 import com.snainfotech.tagscout.data.config.Feature
+import com.snainfotech.tagscout.data.config.LabelKey
 import com.snainfotech.tagscout.ui.components.AppHeader
 import com.snainfotech.tagscout.ui.components.FeatureButton
 import com.snainfotech.tagscout.ui.components.GatedFeatureButton
@@ -105,8 +106,8 @@ fun JewelleryMenuScreen(
 
             FeatureButton(
                 icon = R.drawable.ic_jewellery,
-                title = "Enroll Piece",
-                description = "Scan tags, enter weights, HUID and tag price",
+                title = "Enroll stock",
+                description = "Bulk by Excel, or one at a time with a desktop or fixed reader",
                 enabled = true,
                 onClick = onEnrollClick
             )
@@ -124,11 +125,12 @@ fun JewelleryMenuScreen(
                 enabled = true,
                 onClick = onPieceDetailsClick
             )
+            // Same screen as WMS cycle count; it counts by bin (tray for jewellers).
             FeatureButton(
                 icon = R.drawable.ic_scan,
                 title = "Cycle Count",
-                description = "Coming soon — retail-specific stock reconciliation",
-                enabled = false,
+                description = "${config.labels.singular(LabelKey.BIN)}-level stock reconciliation",
+                enabled = true,
                 onClick = onCycleCountClick
             )
 

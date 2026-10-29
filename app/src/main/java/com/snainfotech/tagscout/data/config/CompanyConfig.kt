@@ -190,7 +190,7 @@ enum class Feature(val key: String, val displayName: String, val defaultOn: Bool
     SHOP("shop", "Order Supplies"),
 
     /** Bulk product import / export by Excel, under Company Set Up. Admin-only, off by default. */
-    CATALOG_EXCEL("catalogExcel", "Product catalog (Excel)", defaultOn = false);
+    CATALOG_EXCEL("catalogExcel", "Bulk Catalog Creation", defaultOn = false);
 
     companion object {
         val TAG_OPERATIONS = listOf(QUICK_SCAN, INVENTORY_SCAN, ORDER_PICKING, WRITE_TAG, KILL_TAG, LOCATE_TAG)

@@ -102,7 +102,7 @@ fun ProductImportScreen(
             .background(LightGray)
     ) {
         AppHeader(
-            title = "Product catalog (Excel)",
+            title = "Bulk Catalog Creation",
             showBackButton = true,
             onBackClick = { if (!saving) onBack() },
             showMenu = false

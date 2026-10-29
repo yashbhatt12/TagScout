@@ -88,17 +88,11 @@ fun WmsMenuScreen(
                 modifier = Modifier.padding(start = 4.dp, top = 4.dp, bottom = 2.dp)
             )
 
-            FeatureButton(
-                icon = R.drawable.ic_inventory,
-                title = "Inward (GRN)",
-                description = "Receive goods into inventory via Excel upload",
-                enabled = true,
-                onClick = onInwardClick
-            )
+            // Excel upload (bulk) and desktop / fixed reader (unit) share one screen.
             FeatureButton(
                 icon = R.drawable.ic_rfid_tag,
-                title = "Enroll units",
-                description = "Scan tags and enroll stock with its details",
+                title = "Enroll stock",
+                description = "Bulk by Excel, or one at a time with a desktop or fixed reader",
                 enabled = true,
                 onClick = onEnrollUnitsClick
             )

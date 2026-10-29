@@ -96,7 +96,7 @@ fun ProductListScreen(
             .background(LightGray)
     ) {
         AppHeader(
-            title = "Products",
+            title = "Product Catalog",
             showBackButton = true,
             onBackClick = onBack,
             showMenu = false

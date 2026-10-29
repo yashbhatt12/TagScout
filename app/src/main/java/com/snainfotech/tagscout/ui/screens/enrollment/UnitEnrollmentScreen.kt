@@ -106,7 +106,8 @@ fun UnitEnrollmentScreen(
     viewModel: UnitEnrollmentViewModel,
     sledConnected: Boolean,
     onBack: () -> Unit,
-    onConnectSled: () -> Unit
+    onConnectSled: () -> Unit,
+    showHeader: Boolean = true              // false inside the Enroll screen's tabs
 ) {
     val state by viewModel.state.collectAsState()
     val context = LocalContext.current
@@ -162,7 +163,7 @@ fun UnitEnrollmentScreen(
                 }
             }
     ) {
-        AppHeader(
+        if (showHeader) AppHeader(
             title = "Enroll stock",
             showBackButton = true,
             onBackClick = { handleBack() },
@@ -286,7 +287,8 @@ private fun ReaderSection(
     onConnectSled: () -> Unit
 ) {
     FormSection("Reader") {
-        ReaderMode.entries.forEach { mode ->
+        // The handheld sled isn't used for enrollment; bulk goes by Excel.
+        ReaderMode.entries.filter { it != ReaderMode.SLED }.forEach { mode ->
             ChoiceRow(
                 title = mode.label,
                 subtitle = mode.description,
@@ -321,7 +323,7 @@ private fun ReaderSection(
             )
         }
         if (state.reader == ReaderMode.FIXED) {
-            Notice(text = "Chamber connection is coming next. Use the sled or desktop reader for now.")
+            Notice(text = "Chamber connection is coming next. Use the desktop reader for now.")
         }
     }
 }
@@ -332,7 +334,7 @@ private fun ProductSection(state: UnitEnrollmentState, vm: UnitEnrollmentViewMod
     var query by remember { mutableStateOf("") }
     val product = state.product
 
-    FormSection(state.config.labels.singular(LabelKey.PRODUCT)) {
+    FormSection("Product") {
         if (product != null && !picking) {
             ProductRow(product, state.config.typeDef(product.typeKey()).label, onClick = null)
             TextButton(onClick = { picking = true }) { Text("Change", color = Primary) }
@@ -497,7 +499,7 @@ private fun ReaderPrompt(state: UnitEnrollmentState, sledConnected: Boolean, onC
             else if (single) "Read one piece" to "Hold the sled close to a single piece."
             else "Read the pieces" to "Tags appear below as they're read. Tap Continue when done."
         ReaderMode.DESKTOP -> "Place a piece on the reader" to "Its details open as soon as the tag is read."
-        ReaderMode.FIXED -> "Chamber not connected yet" to "Use the sled or desktop reader for now."
+        ReaderMode.FIXED -> "Chamber not connected yet" to "Use the desktop reader for now."
     }
     val waiting = state.isListening && (state.reader != ReaderMode.SLED || sledConnected) &&
             state.reader != ReaderMode.FIXED

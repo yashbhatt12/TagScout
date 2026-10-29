@@ -88,8 +88,9 @@ data class UnitEnrollmentState(
     val loading: Boolean = true,
     val config: CompanyConfig = CompanyConfig.DEFAULT,
     val phase: EnrollPhase = EnrollPhase.SETUP,
-    val reader: ReaderMode = ReaderMode.SLED,
-    val capture: CaptureMode = ReaderMode.SLED.defaultCapture,
+    // Enrollment uses a desktop or fixed reader only; the sled is never offered.
+    val reader: ReaderMode = ReaderMode.DESKTOP,
+    val capture: CaptureMode = ReaderMode.DESKTOP.defaultCapture,
 
     val products: List<Product> = emptyList(),
     val product: Product? = null,

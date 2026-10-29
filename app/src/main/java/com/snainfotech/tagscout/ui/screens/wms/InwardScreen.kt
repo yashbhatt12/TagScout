@@ -58,6 +58,7 @@ fun InwardScreen(
     onReset: () -> Unit,
     onDismissMessage: () -> Unit,
     onDownloadTemplate: ((() -> java.io.OutputStream?) -> Unit)? = null,
+    showHeader: Boolean = true,              // false inside the Enroll screen's tabs
     modifier: Modifier = Modifier
 ) {
     val context = androidx.compose.ui.platform.LocalContext.current
@@ -90,7 +91,7 @@ fun InwardScreen(
                 .fillMaxSize()
                 .background(LightGray)
         ) {
-            AppHeader(
+            if (showHeader) AppHeader(
                 title = when (state.step) {
                     InwardStep.ENTER_GRN -> "Inward (GRN)"
                     InwardStep.VALIDATING -> "Validating…"

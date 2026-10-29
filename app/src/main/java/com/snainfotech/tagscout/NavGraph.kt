@@ -132,8 +132,11 @@ import com.snainfotech.tagscout.ui.screens.products.ProductListViewModelFactory
 import com.snainfotech.tagscout.ui.screens.products.CatalogLookupsScreen
 import com.snainfotech.tagscout.ui.screens.products.CatalogLookupsViewModel
 import com.snainfotech.tagscout.ui.screens.products.CatalogLookupsViewModelFactory
-import com.snainfotech.tagscout.ui.screens.enrollment.CaptureMode
+import com.snainfotech.tagscout.data.reader.ReaderAvailability
+import com.snainfotech.tagscout.ui.screens.enrollment.EnrollHubScreen
+import com.snainfotech.tagscout.ui.screens.enrollment.EnrollPhase
 import com.snainfotech.tagscout.ui.screens.enrollment.ReaderMode
+import com.snainfotech.tagscout.ui.screens.wms.InwardStep
 import com.snainfotech.tagscout.ui.screens.enrollment.UnitEnrollmentScreen
 import com.snainfotech.tagscout.ui.screens.enrollment.UnitEnrollmentViewModel
 import com.snainfotech.tagscout.ui.screens.enrollment.UnitEnrollmentViewModelFactory
@@ -1445,50 +1448,46 @@ fun TagScoutNavGraph(
         // Unit enrollment — shared by WMS and Retail
         // ============================================
         composable(Routes.UNIT_ENROLL) {
-            val app = LocalContext.current.applicationContext as com.snainfotech.tagscout.TagScoutApplication
-            val vm: UnitEnrollmentViewModel = viewModel(factory = UnitEnrollmentViewModelFactory())
-            val enrollState by vm.state.collectAsState()
+            // One Enroll screen for WMS and Retail: Bulk (Excel) tab, always
+            // available, and Unit tab, only with a desktop or fixed reader.
+            // The sled is not used for enrollment, so it is never started here.
+            val unitVm: UnitEnrollmentViewModel = viewModel(factory = UnitEnrollmentViewModelFactory())
+            val unitState by unitVm.state.collectAsState()
+            val inwardVm: InwardViewModel = viewModel(factory = InwardViewModelFactory())
+            val inwardState by inwardVm.state.collectAsState()
             val deviceState by sharedHomeViewModel.deviceState.collectAsState()
-            val useSled = enrollState.reader == ReaderMode.SLED
+            val unitReaderConnected by ReaderAvailability.unitReaderConnected.collectAsState()
+            val ctx = LocalContext.current
+            val bulkBusy = inwardState.step == InwardStep.VALIDATING || inwardState.step == InwardStep.COMMITTING
 
-            // Sled power: low for one piece at a time (reads only the piece in hand),
-            // normal for many together. Only once connected: the Bluebird SDK
-            // crashes if called without a Bluetooth session.
-            LaunchedEffect(deviceState.isConnected, useSled, enrollState.capture) {
-                if (deviceState.isConnected && useSled) {
-                    val power = if (enrollState.capture == CaptureMode.SINGLE) 1 else 20
-                    runCatching { app.rfidScanner.setAntennaPower(power) }
-                        .onFailure { android.util.Log.e("UnitEnroll", "setAntennaPower failed", it) }
+            EnrollHubScreen(
+                unitReaderConnected = unitReaderConnected,
+                bulkBusy = bulkBusy,
+                tabsLocked = bulkBusy || unitState.phase != EnrollPhase.SETUP,
+                bulkContent = {
+                    InwardScreen(
+                        state = inwardState,
+                        onBackClick = { navController.popBackStack() },
+                        onGrnReferenceChange = inwardVm::updateGrnReference,
+                        onFilePicked = { uri, fileName -> inwardVm.onFilePicked(ctx, uri, fileName) },
+                        onConfirm = inwardVm::confirmInward,
+                        onReset = inwardVm::reset,
+                        onDismissMessage = inwardVm::clearMessage,
+                        onDownloadTemplate = inwardVm::writeTemplate,
+                        showHeader = false
+                    )
+                },
+                unitContent = {
+                    UnitEnrollmentScreen(
+                        viewModel = unitVm,
+                        sledConnected = deviceState.isConnected,
+                        onBack = { navController.popBackStack() },
+                        onConnectSled = { navController.navigate(Routes.CONNECT_DEVICE) },
+                        showHeader = false
+                    )
                 }
-            }
-
-            // Sled runs iff the screen is listening, the sled is the chosen reader,
-            // and it's connected. The desktop reader is handled inside the screen.
-            LaunchedEffect(enrollState.isListening, deviceState.isConnected, useSled) {
-                if (enrollState.isListening && deviceState.isConnected && useSled) {
-                    runCatching {
-                        app.rfidScanner.startScanning().collect { tag ->
-                            vm.onTagScanned(tag.epc, tag.tid)
-                        }
-                    }.onFailure {
-                        android.util.Log.e("UnitEnroll", "startScanning failed", it)
-                    }
-                } else {
-                    runCatching { app.rfidScanner.stopScanning() }
-                }
-            }
-
-            // Safety net on exit: always stop the scanner.
-            DisposableEffect(Unit) {
-                onDispose { runCatching { app.rfidScanner.stopScanning() } }
-            }
-
-            UnitEnrollmentScreen(
-                viewModel = vm,
-                sledConnected = deviceState.isConnected,
-                onBack = { navController.popBackStack() },
-                onConnectSled = { navController.navigate(Routes.CONNECT_DEVICE) }
             )
+        }
 
             composable(Routes.UNIT_DETAIL) {
                 val app = LocalContext.current.applicationContext as com.snainfotech.tagscout.TagScoutApplication
@@ -1529,7 +1528,6 @@ fun TagScoutNavGraph(
                     onConnectSled = { navController.navigate(Routes.CONNECT_DEVICE) }
                 )
             }
-        }
         // ============================================
         // Jewellery — Retail module
         // ============================================
@@ -1541,8 +1539,8 @@ fun TagScoutNavGraph(
                 onEnrollClick = { navController.navigate(Routes.UNIT_ENROLL) },
                 onCheckoutClick = { navController.navigate(Routes.JEWELLERY_CHECKOUT) },
                 onPieceDetailsClick = { navController.navigate(Routes.UNIT_DETAIL) },
-                onManagerAlertsClick = { navController.navigate(Routes.MANAGER_ALERTS) }
-                // Cycle Count will reuse the existing WMS cycle count flow in a later file.
+                onManagerAlertsClick = { navController.navigate(Routes.MANAGER_ALERTS) },
+                onCycleCountClick = { navController.navigate(Routes.WMS_CYCLE_COUNT) }
             )
         }
 

@@ -37,8 +37,10 @@ object FeatureRoutes {
 
             Routes.WMS_MENU,
             Routes.WMS_DASHBOARD,
-            Routes.WMS_CYCLE_COUNT,
             Routes.WMS_INWARD -> config.isEnabled(Feature.WMS)
+
+            // Cycle count opens from WMS and from Retail.
+            Routes.WMS_CYCLE_COUNT -> canManageProducts(config)
 
             // Company Set Up: every company sets up locations and products,
             // whatever modules it has, so these are never gated.
@@ -67,7 +69,7 @@ object FeatureRoutes {
         }
     }
 
-    /** Enrollment and unit details open from WMS and from Retail, so either flag is enough. */
+    /** Enrollment, unit details and cycle count open from WMS and from Retail, so either flag is enough. */
     fun canManageProducts(config: CompanyConfig): Boolean =
         config.isEnabled(Feature.WMS) || config.isEnabled(Feature.RETAIL)
 }

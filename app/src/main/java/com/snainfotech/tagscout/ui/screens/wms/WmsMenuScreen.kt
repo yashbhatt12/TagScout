@@ -25,15 +25,13 @@ import com.snainfotech.tagscout.ui.theme.MediumGray
 /**
  * The WMS submenu — hub for all warehouse operations.
  *
- * Two admin screens (Warehouse Setup, Product Catalog) are enabled now.
- * The four workflow features (Inward, Cycle Count, Pick List, Dispatch)
- * appear here disabled/coming-soon and are built in later sessions.
+ * Set-up screens (locations, products, categories & brands) live in
+ * Company Set Up on Home, so every business type can reach them.
+ * Pick List and Dispatch appear here disabled until they are built.
  */
 @Composable
 fun WmsMenuScreen(
     onBackClick: () -> Unit,
-    onWarehouseSetupClick: () -> Unit,
-    onProductCatalogClick: () -> Unit,
     onDashboardClick: () -> Unit = {},
     onInwardClick: () -> Unit = {},
     onEnrollUnitsClick: () -> Unit = {},
@@ -62,32 +60,6 @@ fun WmsMenuScreen(
                 .padding(horizontal = 12.dp, vertical = 12.dp),
             verticalArrangement = Arrangement.spacedBy(10.dp)
         ) {
-            // ── Setup ────────────────────────────────
-            Text(
-                text = "SETUP",
-                fontSize = 11.sp,
-                fontWeight = FontWeight.Bold,
-                color = MediumGray,
-                modifier = Modifier.padding(start = 4.dp, top = 4.dp, bottom = 2.dp)
-            )
-
-            FeatureButton(
-                icon = R.drawable.ic_config,
-                title = "Warehouse Setup",
-                description = "Create warehouses, racks and bins",
-                enabled = true,
-                onClick = onWarehouseSetupClick
-            )
-            FeatureButton(
-                icon = R.drawable.ic_inventory,
-                title = "Product Catalog",
-                description = "Create and manage products (SKUs)",
-                enabled = true,
-                onClick = onProductCatalogClick
-            )
-
-            Spacer(modifier = Modifier.height(4.dp))
-
             // ── Overview ─────────────────────────────
             Text(
                 text = "OVERVIEW",

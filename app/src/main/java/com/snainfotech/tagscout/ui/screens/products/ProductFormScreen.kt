@@ -40,6 +40,7 @@ import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.KeyboardCapitalization
+import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.core.content.FileProvider
@@ -115,7 +116,6 @@ fun ProductFormScreen(
                 BasicsSection(state, viewModel)
                 PhotoSection(state, viewModel)
                 ClassificationSection(state, viewModel)
-                ClassificationSection(state, viewModel)
                 DetailsSection(state, viewModel)
                 CustomFieldsSection(state, viewModel)
             }
@@ -159,6 +159,15 @@ private fun BasicsSection(state: ProductFormState, vm: ProductFormViewModel) {
             capitalization = KeyboardCapitalization.Words
         )
         FormTextField(
+            value = state.hsnCode,
+            onChange = vm::onHsn,
+            label = "HSN code",
+            required = true,
+            error = state.coreErrors["hsnCode"],
+            keyboardType = KeyboardType.Number,
+            supporting = "4, 6 or 8 digits"
+        )
+        FormTextField(
             value = state.shortName,
             onChange = { if (it.length <= Product.SHORT_NAME_MAX) vm.onShortName(it) },
             label = "Short name",
@@ -180,14 +189,6 @@ private fun ClassificationSection(state: ProductFormState, vm: ProductFormViewMo
                 selectedId = state.categoryId,
                 onSelect = vm::onCategory
             )
-            if (state.subCategories.isNotEmpty()) {
-                CategoryPicker(
-                    label = "Sub-category",
-                    options = state.subCategories,
-                    selectedId = state.subCategoryId,
-                    onSelect = vm::onSubCategory
-                )
-            }
         }
         BrandField(
             value = state.brandName,

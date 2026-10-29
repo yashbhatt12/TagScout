@@ -60,6 +60,7 @@ import com.snainfotech.tagscout.ui.screens.connect.ConnectDeviceViewModel
 import com.snainfotech.tagscout.ui.screens.connect.DeleteDeviceConfirmationDialog
 import com.snainfotech.tagscout.ui.screens.connect.DeviceLimitReachedDialog
 import com.snainfotech.tagscout.ui.screens.home.HomeScreen
+import com.snainfotech.tagscout.ui.screens.setup.CompanySetupScreen
 import com.snainfotech.tagscout.ui.screens.home.HomeViewModel
 import com.snainfotech.tagscout.ui.screens.inventory.InventoryScanScreen
 import com.snainfotech.tagscout.ui.screens.inventory.InventoryScanViewModel
@@ -160,6 +161,7 @@ object Routes {
     const val MFA_ENROLL = "mfa_enroll"
     const val MFA_VERIFY = "mfa_verify"
     const val HOME = "home"
+    const val COMPANY_SETUP = "company_setup"
     const val QUICK_SCAN = "quick_scan"
     const val ABOUT = "about"
     const val CONNECT_DEVICE = "connect_device"
@@ -460,6 +462,7 @@ fun TagScoutNavGraph(
                     onShopClick = { navController.navigate(Routes.SHOP) },
                     onWmsClick = { navController.navigate(Routes.WMS_MENU) },
                     onRetailClick = { navController.navigate(Routes.JEWELLERY_MENU) },
+                    onCompanySetupClick = { navController.navigate(Routes.COMPANY_SETUP) },
                     onDeviceConfigClick = { navController.navigate(Routes.DEVICE_CONFIG) },
                     onTagOperationsClick = { navController.navigate(Routes.TAG_OPERATIONS) }
                 )
@@ -1416,11 +1419,19 @@ fun TagScoutNavGraph(
         // ============================================
         // WMS — Warehouse Management System
         // ============================================
+        composable(Routes.COMPANY_SETUP) {
+            CompanySetupScreen(
+                onBackClick = { navController.popBackStack() },
+                onLocationsClick = { navController.navigate(Routes.WMS_WAREHOUSE_SETUP) },
+                onProductsClick = { navController.navigate(Routes.PRODUCTS) },
+                onCategoriesClick = { navController.navigate(Routes.PRODUCT_LOOKUPS) },
+                onCatalogExcelClick = { navController.navigate(Routes.PRODUCT_IMPORT) }
+            )
+        }
+
         composable(Routes.WMS_MENU) {
             WmsMenuScreen(
                 onBackClick = { navController.popBackStack() },
-                onWarehouseSetupClick = { navController.navigate(Routes.WMS_WAREHOUSE_SETUP) },
-                onProductCatalogClick = { navController.navigate(Routes.PRODUCTS) },
                 onDashboardClick = { navController.navigate(Routes.WMS_DASHBOARD) },
                 onCycleCountClick = { navController.navigate(Routes.WMS_CYCLE_COUNT) },
                 onInwardClick = { navController.navigate(Routes.WMS_INWARD) },
@@ -1530,8 +1541,7 @@ fun TagScoutNavGraph(
                 onEnrollClick = { navController.navigate(Routes.UNIT_ENROLL) },
                 onCheckoutClick = { navController.navigate(Routes.JEWELLERY_CHECKOUT) },
                 onPieceDetailsClick = { navController.navigate(Routes.UNIT_DETAIL) },
-                onManagerAlertsClick = { navController.navigate(Routes.MANAGER_ALERTS) },
-                onProductsClick = { navController.navigate(Routes.PRODUCTS) }
+                onManagerAlertsClick = { navController.navigate(Routes.MANAGER_ALERTS) }
                 // Cycle Count will reuse the existing WMS cycle count flow in a later file.
             )
         }
@@ -1633,9 +1643,7 @@ fun TagScoutNavGraph(
                 viewModel = vm,
                 onBack = { navController.popBackStack() },
                 onAddProduct = { navController.navigate(Routes.PRODUCT_NEW) },
-                onEditProduct = { id -> navController.navigate(Routes.productEdit(id)) },
-                onManageLookups = { navController.navigate(Routes.PRODUCT_LOOKUPS) },
-                onImportProducts = { navController.navigate(Routes.PRODUCT_IMPORT) }
+                onEditProduct = { id -> navController.navigate(Routes.productEdit(id)) }
             )
         }
 

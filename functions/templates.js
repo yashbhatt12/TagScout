@@ -17,7 +17,7 @@
  * settings doc records which version it was built from.
  */
 
-const TEMPLATE_VERSION = "2026-10-27";
+const TEMPLATE_VERSION = "2026-10-28";
 const SCHEMA_VERSION = 1;
 
 const P = "product";
@@ -88,14 +88,12 @@ const ATTRIBUTE_GROUPS = [
     num("sellingPrice", "Selling price", P, "INR"),
     num("costPrice", "Cost price", P, "INR"),
     num("discountPct", "Discount", P, "%"),
-    text("hsnCode", "HSN code", P),
     num("gstRate", "GST rate", P, "%"),
   ]),
 
   group("supplierOrigin", "Supplier and origin", 6, null, [
     text("supplier", "Supplier / manufacturer", P),
     text("supplierSku", "Supplier SKU", P),
-    text("countryOfOrigin", "Country of origin", P),
   ]),
 
   // batchNo / mfgDate / expiryDate are core unit fields owned by the capability.
@@ -247,8 +245,8 @@ const STARTER_CATEGORIES = {
     { name: "Vehicle" }, { name: "Tool" }, { name: "Fixture" },
   ],
   apparel: [
-    { name: "Tops", children: ["T-shirts", "Shirts", "Kurtas"] },
-    { name: "Bottoms", children: ["Jeans", "Trousers", "Skirts"] },
+    { name: "Tops" },
+    { name: "Bottoms" },
     { name: "Dresses" }, { name: "Outerwear" }, { name: "Footwear" }, { name: "Accessories" },
   ],
   jewellery: [
@@ -264,6 +262,8 @@ const STARTER_CATEGORIES = {
 const ALL_FEATURES_ON = {
   quickScan: true, inventoryScan: true, orderPicking: true, writeTag: true, killTag: true,
   locateTag: true, wms: true, retail: true, managerAlerts: true, shop: true,
+  // Admin-only: SNA switches this on per company in the console.
+  catalogExcel: false,
 };
 
 const PRESETS = {

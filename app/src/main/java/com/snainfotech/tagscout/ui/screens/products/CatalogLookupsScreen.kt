@@ -27,7 +27,6 @@ import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.FilterChip
 import androidx.compose.material3.FilterChipDefaults
 import androidx.compose.material3.FloatingActionButton
-import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.OutlinedTextFieldDefaults
@@ -239,13 +238,10 @@ private fun CategoriesTab(
             verticalArrangement = Arrangement.spacedBy(8.dp),
             modifier = Modifier.fillMaxSize()
         ) {
+            // Sub-categories are hidden for now; only top-level categories are listed.
             items(tree, key = { it.category.id }) { node ->
                 ListCard {
-                    CategoryRow(node.category, isSub = false, vm = vm, openDialog = openDialog)
-                    node.children.forEach { child ->
-                        HorizontalDivider(color = BorderGray)
-                        CategoryRow(child, isSub = true, vm = vm, openDialog = openDialog)
-                    }
+                    CategoryRow(node.category, vm = vm, openDialog = openDialog)
                 }
             }
         }
@@ -255,16 +251,10 @@ private fun CategoriesTab(
 @Composable
 private fun CategoryRow(
     category: Category,
-    isSub: Boolean,
     vm: CatalogLookupsViewModel,
     openDialog: (LookupDialog) -> Unit
 ) {
     val actions = buildList {
-        if (!isSub) add("Add sub-category" to {
-            openDialog(LookupDialog.EnterName("New sub-category in ${category.name}", "", "Add") {
-                vm.addCategory(it, parentId = category.id)
-            })
-        })
         add("Rename" to {
             openDialog(LookupDialog.EnterName("Rename category", category.name, "Save") {
                 vm.renameCategory(category, it)
@@ -274,15 +264,15 @@ private fun CategoryRow(
         add("Delete" to {
             openDialog(LookupDialog.ConfirmDelete(
                 title = "Delete ${category.name}?",
-                body = "Only possible if no products use it and it has no sub-categories. Otherwise, hide it instead."
+                body = "Only possible if no products use it. Otherwise, hide it instead."
             ) { vm.deleteCategory(category) })
         })
     }
     ItemRow(
         name = category.name,
         active = category.isActive,
-        indent = isSub,
-        bold = !isSub,
+        indent = false,
+        bold = true,
         actions = actions
     )
 }
@@ -360,30 +350,37 @@ private fun ItemRow(
             .fillMaxWidth()
             .padding(start = if (indent) 32.dp else 14.dp, end = 4.dp, top = 4.dp, bottom = 4.dp)
     ) {
-        if (indent) {
-            Text("└", fontSize = 13.sp, color = MediumGray)
-            Spacer(Modifier.width(8.dp))
-        }
-        Text(
-            text = name,
-            fontSize = 14.sp,
-            fontWeight = if (bold) FontWeight.SemiBold else FontWeight.Normal,
-            color = if (active) DarkText else MediumGray,
-            maxLines = 1,
-            overflow = TextOverflow.Ellipsis,
-            modifier = Modifier.weight(1f, fill = false)
-        )
-        if (!active) {
-            Spacer(Modifier.width(8.dp))
-            Box(
-                modifier = Modifier
-                    .background(BorderGray, RoundedCornerShape(4.dp))
-                    .padding(horizontal = 6.dp, vertical = 2.dp)
-            ) {
-                Text("Hidden", fontSize = 10.sp, fontWeight = FontWeight.SemiBold, color = MediumGray)
+        // Name and badge take all the space left of the ⋮ button, so the
+        // button always sits at the right edge. (Before, a second weighted
+        // Spacer split that space in half and left the button mid-row.)
+        Row(
+            verticalAlignment = Alignment.CenterVertically,
+            modifier = Modifier.weight(1f)
+        ) {
+            if (indent) {
+                Text("└", fontSize = 13.sp, color = MediumGray)
+                Spacer(Modifier.width(8.dp))
+            }
+            Text(
+                text = name,
+                fontSize = 14.sp,
+                fontWeight = if (bold) FontWeight.SemiBold else FontWeight.Normal,
+                color = if (active) DarkText else MediumGray,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
+                modifier = Modifier.weight(1f, fill = false)
+            )
+            if (!active) {
+                Spacer(Modifier.width(8.dp))
+                Box(
+                    modifier = Modifier
+                        .background(BorderGray, RoundedCornerShape(4.dp))
+                        .padding(horizontal = 6.dp, vertical = 2.dp)
+                ) {
+                    Text("Hidden", fontSize = 10.sp, fontWeight = FontWeight.SemiBold, color = MediumGray)
+                }
             }
         }
-        Spacer(Modifier.weight(1f))
         Box {
             IconButton(onClick = { menuOpen = true }) {
                 Text("⋮", fontSize = 20.sp, color = MediumGray)

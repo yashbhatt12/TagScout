@@ -43,9 +43,7 @@ import com.snainfotech.tagscout.ui.theme.MediumGray
  * The Retail Management submenu — hub for all retail operations.
  *
  * Mirrors WmsMenuScreen's structure so the UX feels consistent.
- *
- * Products opens the shared product catalog (the same one WMS uses), so a
- * retail-only company manages its designs / SKUs here without WMS.
+ * Products are managed in Company Set Up on Home.
  *
  * Enroll opens the shared unit enrollment screen, which works with the
  * sled or a desktop reader and handles a missing sled itself, so it is
@@ -66,7 +64,6 @@ fun JewelleryMenuScreen(
     onPieceDetailsClick: () -> Unit = {},
     onCycleCountClick: () -> Unit = {},
     onManagerAlertsClick: () -> Unit = {},
-    onProductsClick: () -> Unit = {},
     modifier: Modifier = Modifier
 ) {
     // Live company config. Previews can't start Firebase, so they use defaults.
@@ -133,17 +130,6 @@ fun JewelleryMenuScreen(
                 description = "Coming soon — retail-specific stock reconciliation",
                 enabled = false,
                 onClick = onCycleCountClick
-            )
-
-            // ── Catalog ──────────────────────────────
-            SectionLabel("CATALOG", topPadding = 8)
-
-            FeatureButton(
-                icon = R.drawable.ic_inventory,
-                title = "Products",
-                description = "Designs and SKUs — add, edit, search",
-                enabled = true,
-                onClick = onProductsClick
             )
 
             // ── Alerts ───────────────────────────────

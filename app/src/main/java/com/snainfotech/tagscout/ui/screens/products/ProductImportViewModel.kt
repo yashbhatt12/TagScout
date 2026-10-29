@@ -4,6 +4,7 @@ import androidx.lifecycle.ViewModel
 import androidx.lifecycle.ViewModelProvider
 import androidx.lifecycle.viewModelScope
 import com.snainfotech.tagscout.data.config.ConfigRepository
+import com.snainfotech.tagscout.data.file.ProductExcelExporter
 import com.snainfotech.tagscout.data.file.ProductExcelImporter
 import com.snainfotech.tagscout.data.file.ProductExcelSchema
 import kotlinx.coroutines.Dispatchers
@@ -31,6 +32,7 @@ data class ProductImportState(
     val progressDone: Int = 0,
     val progressTotal: Int = 0,
     val outcome: ProductExcelImporter.Outcome? = null,
+    val exporting: Boolean = false,
     val message: String? = null
 ) {
     /** Rows that Import will save with the current choice. */
@@ -108,7 +110,7 @@ class ProductImportViewModel(
     }
 
     /** Back to choosing a file (keeps the update-existing choice). */
-    fun reset() = _state.update { ProductImportState(updateExisting = it.updateExisting) }
+    fun reset() = _state.update { ProductImportState(updateExisting = it.updateExisting, exporting = it.exporting) }
 
     /** Writes the "Download sample" workbook to [open]'s stream. */
     fun writeSample(open: () -> OutputStream?) {
@@ -122,6 +124,27 @@ class ProductImportViewModel(
             }
             _state.update {
                 it.copy(message = result.fold({ "Sample saved" }, { e -> "Couldn't save the sample: ${e.message}" }))
+            }
+        }
+    }
+
+    /** Writes the whole catalog to [open]'s stream, one sheet per product type. */
+    fun exportTo(open: () -> OutputStream?) {
+        if (_state.value.exporting) return
+        _state.update { it.copy(exporting = true) }
+        viewModelScope.launch {
+            val result = runCatching {
+                val out = withContext(Dispatchers.IO) { open() } ?: error("Could not create the file")
+                out.use { ProductExcelExporter().export(it, ConfigRepository.current).getOrThrow() }
+            }
+            _state.update {
+                it.copy(
+                    exporting = false,
+                    message = result.fold(
+                        { s -> "Exported ${s.products} product${if (s.products == 1) "" else "s"}" },
+                        { e -> "Export failed: ${e.message}" }
+                    )
+                )
             }
         }
     }

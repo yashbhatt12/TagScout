@@ -85,6 +85,8 @@ class ProductRepository(
             sku = sku,
             skuKey = getString("skuKey") ?: Product.skuKeyOf(sku),
             title = getString("title") ?: "",
+            hsnCode = getString("hsnCode")?.takeIf { it.isNotBlank() }
+                ?: (get("customFields") as? Map<*, *>)?.get(Product.HSN_FIELD_KEY)?.toString()?.trim().orEmpty(),
             shortName = getString("shortName") ?: "",
             productType = getString("productType") ?: ProductTypeKey.GENERAL.key,
             categoryId = getString("categoryId") ?: "",
@@ -113,6 +115,7 @@ class ProductRepository(
      */
     private fun editableData(p: Product): Map<String, Any> = mapOf(
         "title" to p.title.trim(),
+        "hsnCode" to Product.normaliseHsn(p.hsnCode),
         "shortName" to p.shortName.trim(),
         "productType" to (ProductTypeKey.fromKey(p.productType) ?: ProductTypeKey.GENERAL).key,
         "categoryId" to p.categoryId.trim(),
@@ -124,6 +127,7 @@ class ProductRepository(
         "imageUrl" to p.imageUrl.trim(),
         "status" to (ProductStatus.fromKey(p.status) ?: ProductStatus.ACTIVE).key,
         "customFields" to p.customFields
+            .filterKeys { it != Product.HSN_FIELD_KEY }
             .filterValues { v -> v != null && !(v is String && v.isBlank()) }
             .mapValues { (_, v) -> v!! }
     )
@@ -132,6 +136,8 @@ class ProductRepository(
     private fun validateCore(p: Product, requireSku: Boolean): String? = when {
         requireSku && p.sku.isBlank() -> "SKU is required"
         p.title.isBlank() -> "Full name is required"
+        p.hsnCode.isBlank() -> "HSN code is required"
+        !Product.isValidHsn(Product.normaliseHsn(p.hsnCode)) -> Product.HSN_RULE
         p.shortName.trim().length > Product.SHORT_NAME_MAX ->
             "Short name can be at most ${Product.SHORT_NAME_MAX} characters"
         p.productType.isNotBlank() && ProductTypeKey.fromKey(p.productType) == null ->

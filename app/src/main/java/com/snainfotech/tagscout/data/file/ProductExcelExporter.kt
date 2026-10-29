@@ -87,9 +87,9 @@ class ProductExcelExporter(
     ): String = when (core) {
         ProductExcelSchema.Core.SKU -> p.sku
         ProductExcelSchema.Core.NAME -> p.title
+        ProductExcelSchema.Core.HSN -> p.hsnCode
         ProductExcelSchema.Core.SHORT_NAME -> p.shortName
         ProductExcelSchema.Core.CATEGORY -> categories[p.categoryId]?.name.orEmpty()
-        ProductExcelSchema.Core.SUB_CATEGORY -> categories[p.subCategoryId]?.name.orEmpty()
         ProductExcelSchema.Core.BRAND -> brands[p.brandId]?.name.orEmpty()
         ProductExcelSchema.Core.DESCRIPTION -> p.description
         ProductExcelSchema.Core.BARCODE -> p.barcode

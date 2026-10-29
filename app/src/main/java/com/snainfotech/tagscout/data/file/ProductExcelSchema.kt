@@ -45,17 +45,17 @@ object ProductExcelSchema {
             "Product name", listOf("Name", "Title", "Product"), true,
             "Full name of the product."
         ),
+        HSN(
+            "HSN code", listOf("HSN", "HSN no", "HSN number", "HSN/SAC"), true,
+            "GST HSN code, 4, 6 or 8 digits. Format the column as Text so leading zeros are kept (0401)."
+        ),
         SHORT_NAME(
             "Short name", listOf("Label name"), false,
             "Up to ${Product.SHORT_NAME_MAX} characters, for small labels."
         ),
         CATEGORY(
             "Category", emptyList(), false,
-            "Must match an existing category for this product type (Products → Categories & brands)."
-        ),
-        SUB_CATEGORY(
-            "Sub-category", listOf("Subcategory", "Sub category"), false,
-            "Must belong to the category in the same row."
+            "Must match an existing category for this product type (Company Set Up → Categories & brands)."
         ),
         BRAND(
             "Brand", emptyList(), false,
@@ -117,9 +117,9 @@ object ProductExcelSchema {
         val core = Core.entries
             .filter { includeType || it != Core.PRODUCT_TYPE }
             .map { c -> Column(c.header, c.required, coreFormat(c), c.hint, core = c) }
-        val fields = config.fieldsFor(type, FieldLevel.PRODUCT).map { f ->
-            Column(f.exportHeader, f.required, fieldFormat(f), "", field = f)
-        }
+        val fields = config.fieldsFor(type, FieldLevel.PRODUCT)
+            .filterNot { it.key == Product.HSN_FIELD_KEY }
+            .map { f -> Column(f.exportHeader, f.required, fieldFormat(f), "", field = f) }
         return core + fields
     }
 
@@ -128,6 +128,7 @@ object ProductExcelSchema {
         val core = columnsFor(config, ProductTypeKey.GENERAL, includeType = true).filter { it.core != null }
         val fields = config.enabledTypes
             .flatMap { config.fieldsFor(it.key, FieldLevel.PRODUCT) }
+            .filterNot { it.key == Product.HSN_FIELD_KEY }
             .distinctBy { it.key.lowercase() }
             .map { f -> Column(f.exportHeader, false, fieldFormat(f), "", field = f) }
         return core + fields
@@ -137,6 +138,7 @@ object ProductExcelSchema {
         Core.STATUS -> "Active / Discontinued"
         Core.UOM -> "Unit"
         Core.PRODUCT_TYPE -> "Type name"
+        Core.HSN -> "4, 6 or 8 digits"
         else -> "Text"
     }
 

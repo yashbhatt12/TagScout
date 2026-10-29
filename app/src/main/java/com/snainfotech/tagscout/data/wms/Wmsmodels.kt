@@ -83,6 +83,7 @@ data class Product(
     val sku: String = "",               // unique within the company, e.g. "SKU-1001"
     val skuKey: String = "",            // sku.trim().lowercase(), for uniqueness queries
     val title: String = "",             // full name, e.g. "Widget Model X"
+    val hsnCode: String = "",           // GST HSN code, 4, 6 or 8 digits; required
     val shortName: String = "",         // optional, max SHORT_NAME_MAX chars, for small labels
     val productType: String = ProductTypeKey.GENERAL.key,
     val categoryId: String = "",
@@ -106,6 +107,20 @@ data class Product(
 
         /** The normalised form stored in [skuKey]. */
         fun skuKeyOf(sku: String): String = sku.trim().lowercase()
+
+        /** Custom-field key that held HSN before it became a core field (older settings). */
+        const val HSN_FIELD_KEY = "hsnCode"
+
+        /** Allowed HSN lengths: 4 and 6 for invoices by turnover, 8 for exports. */
+        val HSN_LENGTHS = setOf(4, 6, 8)
+        const val HSN_RULE = "HSN code must be 4, 6 or 8 digits"
+
+        /** As typed → stored: spaces, dots and dashes removed ("7113 19" → "711319"). */
+        fun normaliseHsn(raw: String): String =
+            raw.filterNot { it.isWhitespace() || it == '.' || it == '-' }
+
+        fun isValidHsn(code: String): Boolean =
+            code.length in HSN_LENGTHS && code.all { it in '0'..'9' }
     }
 }
 

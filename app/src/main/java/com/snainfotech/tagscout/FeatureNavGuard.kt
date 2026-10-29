@@ -36,17 +36,23 @@ object FeatureRoutes {
             Routes.SHOP, Routes.CART -> config.isEnabled(Feature.SHOP)
 
             Routes.WMS_MENU,
-            Routes.WMS_WAREHOUSE_SETUP,
             Routes.WMS_DASHBOARD,
             Routes.WMS_CYCLE_COUNT,
             Routes.WMS_INWARD -> config.isEnabled(Feature.WMS)
 
-            // Products and unit enrollment are shared: any module that manages stock can open them.
+            // Company Set Up: every company sets up locations and products,
+            // whatever modules it has, so these are never gated.
+            Routes.COMPANY_SETUP,
+            Routes.WMS_WAREHOUSE_SETUP,
             Routes.PRODUCTS,
             Routes.PRODUCT_NEW,
             Routes.PRODUCT_EDIT,
-            Routes.PRODUCT_LOOKUPS,
-            Routes.PRODUCT_IMPORT,
+            Routes.PRODUCT_LOOKUPS -> true
+
+            // Bulk catalog by Excel: admin-only, switched on per company by SNA.
+            Routes.PRODUCT_IMPORT -> config.isEnabled(Feature.CATALOG_EXCEL)
+
+            // Shared stock screens: any module that manages stock can open them.
             Routes.UNIT_ENROLL,
             Routes.UNIT_DETAIL -> canManageProducts(config)
 
@@ -61,7 +67,7 @@ object FeatureRoutes {
         }
     }
 
-    /** Products open from WMS and from Retail, so either flag is enough. */
+    /** Enrollment and unit details open from WMS and from Retail, so either flag is enough. */
     fun canManageProducts(config: CompanyConfig): Boolean =
         config.isEnabled(Feature.WMS) || config.isEnabled(Feature.RETAIL)
 }

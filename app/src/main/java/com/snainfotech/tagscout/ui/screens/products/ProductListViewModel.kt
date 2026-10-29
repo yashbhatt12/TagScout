@@ -7,29 +7,24 @@ import com.snainfotech.tagscout.data.config.CompanyConfig
 import com.snainfotech.tagscout.data.config.ConfigRepository
 import com.snainfotech.tagscout.data.config.ProductTypeDef
 import com.snainfotech.tagscout.data.config.ProductTypeKey
-import com.snainfotech.tagscout.data.file.ProductExcelExporter
-import com.snainfotech.tagscout.data.file.ProductExcelSchema
 import com.snainfotech.tagscout.data.wms.CatalogLookupsRepository
 import com.snainfotech.tagscout.data.wms.Product
 import com.snainfotech.tagscout.data.wms.ProductRepository
 import com.snainfotech.tagscout.data.wms.ProductStatus
 import com.snainfotech.tagscout.data.wms.productStatus
 import com.snainfotech.tagscout.data.wms.type
-import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.async
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
-import kotlinx.coroutines.withContext
-import java.io.OutputStream
 
 /** One row in the list, with ids already resolved to display names. */
 data class ProductRow(
     val product: Product,
     val typeLabel: String,
-    val categoryName: String,      // "Rings › Bands" when a sub-category is set
+    val categoryName: String,
     val brandName: String
 )
 
@@ -41,7 +36,6 @@ data class ProductListState(
     val typeFilter: ProductTypeKey? = null,        // null = all types
     val showDiscontinued: Boolean = false,
     val deleting: Boolean = false,
-    val exporting: Boolean = false,
     val message: String? = null
 ) {
     /** Types offered as filter chips: enabled types plus any type that has products. */
@@ -104,12 +98,10 @@ class ProductListViewModel(
             val config = _state.value.config
 
             val rows = products.map { p ->
-                val top = categories[p.categoryId]?.name.orEmpty()
-                val sub = categories[p.subCategoryId]?.name.orEmpty()
                 ProductRow(
                     product = p,
                     typeLabel = config.typeDef(p.type()).label,
-                    categoryName = listOf(top, sub).filter { it.isNotEmpty() }.joinToString(" › "),
+                    categoryName = categories[p.categoryId]?.name.orEmpty(),
                     brandName = brands[p.brandId]?.name.orEmpty()
                 )
             }
@@ -121,42 +113,6 @@ class ProductListViewModel(
     fun onTypeFilter(type: ProductTypeKey?) = _state.update { it.copy(typeFilter = type) }
     fun onShowDiscontinued(show: Boolean) = _state.update { it.copy(showDiscontinued = show) }
     fun clearMessage() = _state.update { it.copy(message = null) }
-    /** Writes the whole catalog to [open]'s stream, one sheet per product type. */
-    fun exportTo(open: () -> OutputStream?) {
-        if (_state.value.exporting) return
-        _state.update { it.copy(exporting = true) }
-        viewModelScope.launch {
-            val result = runCatching {
-                val out = withContext(Dispatchers.IO) { open() } ?: error("Could not create the file")
-                out.use { ProductExcelExporter().export(it, ConfigRepository.current).getOrThrow() }
-            }
-            _state.update {
-                it.copy(
-                    exporting = false,
-                    message = result.fold(
-                        { s -> "Exported ${s.products} product${if (s.products == 1) "" else "s"}" },
-                        { e -> "Export failed: ${e.message}" }
-                    )
-                )
-            }
-        }
-    }
-
-    /** Writes the "Download sample" workbook to [open]'s stream. */
-    fun writeSample(open: () -> OutputStream?) {
-        viewModelScope.launch {
-            val result = runCatching {
-                withContext(Dispatchers.IO) {
-                    (open() ?: error("Could not create the file")).use { out ->
-                        ProductExcelSchema.writeSample(out, ConfigRepository.current)
-                    }
-                }
-            }
-            _state.update {
-                it.copy(message = result.fold({ "Sample saved" }, { e -> "Couldn't save the sample: ${e.message}" }))
-            }
-        }
-    }
 
     /** Repository blocks the delete if any unit still references the product. */
     fun delete(product: Product) {

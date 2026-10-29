@@ -55,13 +55,16 @@ import com.snainfotech.tagscout.ui.theme.WarningText
 
 private const val XLSX_MIME = "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
 private const val SAMPLE_FILE_NAME = "TagScout products sample.xlsx"
+private const val EXPORT_FILE_PREFIX = "TagScout products"
 
 /** Rows drawn at once; the counts above always cover the whole file. */
 private const val MAX_ROWS_SHOWN = 200
 
 /**
- * Import products from Excel: choose a file → preview every row (new /
- * update / error) → import → results. Nothing is written before Import.
+ * Product catalog by Excel, under Company Set Up (admin-only, behind the
+ * catalogExcel flag). Export the catalog, download a sample, or import:
+ * choose a file → preview every row (new / update / error) → import →
+ * results. Nothing is written before Import.
  */
 @Composable
 fun ProductImportScreen(
@@ -86,6 +89,9 @@ fun ProductImportScreen(
     val saveSample = rememberLauncherForActivityResult(ActivityResultContracts.CreateDocument(XLSX_MIME)) { uri: Uri? ->
         if (uri != null) viewModel.writeSample { context.contentResolver.openOutputStream(uri) }
     }
+    val saveExport = rememberLauncherForActivityResult(ActivityResultContracts.CreateDocument(XLSX_MIME)) { uri: Uri? ->
+        if (uri != null) viewModel.exportTo { context.contentResolver.openOutputStream(uri) }
+    }
 
     val saving = state.phase == ImportPhase.SAVING
     BackHandler(enabled = saving) { /* stay until the save finishes */ }
@@ -96,7 +102,7 @@ fun ProductImportScreen(
             .background(LightGray)
     ) {
         AppHeader(
-            title = "Import products",
+            title = "Product catalog (Excel)",
             showBackButton = true,
             onBackClick = { if (!saving) onBack() },
             showMenu = false
@@ -109,8 +115,10 @@ fun ProductImportScreen(
         ) {
             when (state.phase) {
                 ImportPhase.CHOOSE -> ChoosePane(
+                    exporting = state.exporting,
                     onChoose = { pickFile.launch(arrayOf(XLSX_MIME, "application/octet-stream")) },
-                    onSample = { saveSample.launch(SAMPLE_FILE_NAME) }
+                    onSample = { saveSample.launch(SAMPLE_FILE_NAME) },
+                    onExport = { saveExport.launch("$EXPORT_FILE_PREFIX ${java.time.LocalDate.now()}.xlsx") }
                 )
                 ImportPhase.READING -> Busy("Reading ${state.fileName.ifBlank { "the file" }}…")
                 ImportPhase.PREVIEW -> PreviewPane(state, viewModel)
@@ -124,12 +132,22 @@ fun ProductImportScreen(
 // ── Choose ────────────────────────────────────────────────────────────────
 
 @Composable
-private fun ChoosePane(onChoose: () -> Unit, onSample: () -> Unit) {
+private fun ChoosePane(
+    exporting: Boolean,
+    onChoose: () -> Unit,
+    onSample: () -> Unit,
+    onExport: () -> Unit
+) {
     FormPane(
         bar = {
             Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
                 PrimaryActionButton("Choose Excel file", onClick = onChoose)
                 SecondaryActionButton("Download sample", onClick = onSample)
+                SecondaryActionButton(
+                    label = if (exporting) "Exporting…" else "Export catalog",
+                    enabled = !exporting,
+                    onClick = onExport
+                )
             }
         }
     ) {

@@ -214,6 +214,15 @@ class ProductExcelImporter(
             errors += "SKU $sku already exists as ${config.typeDef(current.type()).label}. Change its type in the app first."
         }
 
+        // HSN: required for new products; a blank cell keeps an existing product's code.
+        val hsnCell = core(ProductExcelSchema.Core.HSN)
+        val hsn = hsnFromCell(hsnCell)
+        when {
+            hsnCell.isNotBlank() && !Product.isValidHsn(hsn) ->
+                errors += "HSN code \"$hsnCell\" isn't valid: use 4, 6 or 8 digits"
+            hsnCell.isBlank() && current?.hsnCode.isNullOrBlank() -> errors += "HSN code is blank"
+        }
+
         // Short name
         val shortName = core(ProductExcelSchema.Core.SHORT_NAME)
         if (shortName.length > Product.SHORT_NAME_MAX) errors += "Short name is longer than ${Product.SHORT_NAME_MAX} characters"
@@ -228,9 +237,9 @@ class ProductExcelImporter(
         val status = if (statusCell.isBlank()) null else ProductExcelSchema.parseStatus(statusCell)
         if (statusCell.isNotBlank() && status == null) errors += "Status must be Active or Discontinued"
 
-        // Category / sub-category, per type
+        // Category, per type. Sub-categories are hidden for now: a changed
+        // category clears any old sub-category; otherwise it's kept.
         val categoryCell = core(ProductExcelSchema.Core.CATEGORY)
-        val subCell = core(ProductExcelSchema.Core.SUB_CATEGORY)
         var categoryId: String? = null
         var subCategoryId: String? = null
         if (type != null && categoryCell.isNotBlank()) {
@@ -242,18 +251,8 @@ class ProductExcelImporter(
             } else {
                 if (!cat.isActive) warnings += "Category \"${cat.name}\" is hidden"
                 categoryId = cat.id
-                if (subCell.isNotBlank()) {
-                    val sub = categories.firstOrNull {
-                        it.parentId == cat.id && it.nameKey == CatalogLookupsRepository.nameKeyOf(subCell)
-                    }
-                    if (sub == null) errors += "Unknown sub-category \"$subCell\" under ${cat.name}"
-                    else subCategoryId = sub.id
-                } else if (current == null || categoryId != current.categoryId) {
-                    subCategoryId = ""
-                }
+                if (current != null && cat.id != current.categoryId) subCategoryId = ""
             }
-        } else if (subCell.isNotBlank() && categoryCell.isBlank()) {
-            errors += "Sub-category needs a category in the same row"
         }
 
         // Brand: resolved at commit; new names are created then.
@@ -287,10 +286,10 @@ class ProductExcelImporter(
             Product(
                 sku = sku,
                 title = title,
+                hsnCode = hsn,
                 shortName = shortName,
                 productType = type.key,
                 categoryId = categoryId.orEmpty(),
-                subCategoryId = subCategoryId.orEmpty(),
                 description = core(ProductExcelSchema.Core.DESCRIPTION),
                 barcode = core(ProductExcelSchema.Core.BARCODE),
                 unitOfMeasure = (uom ?: UnitOfMeasure.DEFAULT).key,
@@ -300,6 +299,7 @@ class ProductExcelImporter(
         } else {
             current.copy(
                 title = title.ifBlank { current.title },
+                hsnCode = hsn.ifBlank { current.hsnCode },
                 shortName = shortName.ifBlank { current.shortName },
                 categoryId = categoryId ?: current.categoryId,
                 subCategoryId = subCategoryId ?: current.subCategoryId,
@@ -322,6 +322,16 @@ class ProductExcelImporter(
             brandName = brandCell,
             warnings = warnings
         )
+    }
+
+    /**
+     * HSN typed into a number-formatted cell loses its leading zero (0401 → 401)
+     * and may come back as "401.0". HSN codes always have an even length, so an
+     * odd length from a number cell gets the zero back.
+     */
+    private fun hsnFromCell(cell: String): String {
+        val digits = Product.normaliseHsn(cell.trim().removeSuffix(".0"))
+        return if (digits.isNotEmpty() && digits.all { it in '0'..'9' } && digits.length % 2 == 1) "0$digits" else digits
     }
 
     // ── 2. Commit ─────────────────────────────────────────────

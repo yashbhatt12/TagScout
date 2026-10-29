@@ -36,6 +36,7 @@ import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -44,9 +45,13 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.platform.LocalInspectionMode
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import com.snainfotech.tagscout.data.config.CompanyConfig
+import com.snainfotech.tagscout.data.config.ConfigRepository
+import com.snainfotech.tagscout.data.config.LabelKey
 import com.snainfotech.tagscout.data.wms.Bin
 import com.snainfotech.tagscout.data.wms.Rack
 import com.snainfotech.tagscout.data.wms.Warehouse
@@ -79,6 +84,20 @@ fun WarehouseSetupScreen(
     onDismissMessage: () -> Unit,
     modifier: Modifier = Modifier
 ) {
+    // Names follow the company's labels: a jeweller sees Store / Counter / Tray.
+    // Previews can't start Firebase, so they use defaults.
+    val labels = if (LocalInspectionMode.current) {
+        CompanyConfig.DEFAULT.labels
+    } else {
+        ConfigRepository.config.collectAsState().value.labels
+    }
+    val whLabel = labels.singular(LabelKey.WAREHOUSE)
+    val whPlural = labels.plural(LabelKey.WAREHOUSE)
+    val rackLabel = labels.singular(LabelKey.RACK)
+    val rackPlural = labels.plural(LabelKey.RACK)
+    val binLabel = labels.singular(LabelKey.BIN)
+    val binPlural = labels.plural(LabelKey.BIN)
+
     // Add-dialog visibility flags
     var showAddWarehouseDialog by remember { mutableStateOf(false) }
     var showAddRackDialog by remember { mutableStateOf(false) }
@@ -99,12 +118,12 @@ fun WarehouseSetupScreen(
         var address by remember { mutableStateOf("") }
         AlertDialog(
             onDismissRequest = { showAddWarehouseDialog = false },
-            title = { Text("Add Warehouse", fontWeight = FontWeight.SemiBold, color = DarkText) },
+            title = { Text("Add $whLabel", fontWeight = FontWeight.SemiBold, color = DarkText) },
             text = {
                 Column {
                     OutlinedTextField(
                         value = name, onValueChange = { name = it },
-                        label = { Text("Warehouse Name") },
+                        label = { Text("$whLabel name") },
                         placeholder = { Text("e.g. Mumbai Main") },
                         singleLine = true, modifier = Modifier.fillMaxWidth(),
                         shape = RoundedCornerShape(8.dp),
@@ -137,7 +156,7 @@ fun WarehouseSetupScreen(
         var rackName by remember { mutableStateOf("") }
         AlertDialog(
             onDismissRequest = { showAddRackDialog = false },
-            title = { Text("Add Rack", fontWeight = FontWeight.SemiBold, color = DarkText) },
+            title = { Text("Add $rackLabel", fontWeight = FontWeight.SemiBold, color = DarkText) },
             text = {
                 Column {
                     Text(
@@ -147,7 +166,7 @@ fun WarehouseSetupScreen(
                     )
                     OutlinedTextField(
                         value = rackName, onValueChange = { rackName = it },
-                        label = { Text("Rack Name") },
+                        label = { Text("$rackLabel name") },
                         placeholder = { Text("e.g. RACK-A") },
                         singleLine = true, modifier = Modifier.fillMaxWidth(),
                         shape = RoundedCornerShape(8.dp),
@@ -173,7 +192,7 @@ fun WarehouseSetupScreen(
         var binName by remember { mutableStateOf("") }
         AlertDialog(
             onDismissRequest = { showAddBinDialog = false },
-            title = { Text("Add Bin", fontWeight = FontWeight.SemiBold, color = DarkText) },
+            title = { Text("Add $binLabel", fontWeight = FontWeight.SemiBold, color = DarkText) },
             text = {
                 Column {
                     Text(
@@ -183,7 +202,7 @@ fun WarehouseSetupScreen(
                     )
                     OutlinedTextField(
                         value = binCode, onValueChange = { binCode = it },
-                        label = { Text("Bin Code (matches printed barcode)") },
+                        label = { Text("$binLabel code (matches printed barcode)") },
                         placeholder = { Text("e.g. BIN-A-03") },
                         singleLine = true, modifier = Modifier.fillMaxWidth(),
                         shape = RoundedCornerShape(8.dp),
@@ -193,7 +212,7 @@ fun WarehouseSetupScreen(
                     OutlinedTextField(
                         value = binName, onValueChange = { binName = it },
                         label = { Text("Display Name (optional)") },
-                        placeholder = { Text("Defaults to Bin Code") },
+                        placeholder = { Text("Defaults to ${binLabel.lowercase()} code") },
                         singleLine = true, modifier = Modifier.fillMaxWidth(),
                         shape = RoundedCornerShape(8.dp),
                         colors = OutlinedTextFieldDefaults.colors(focusedBorderColor = Primary, cursorColor = Primary, focusedLabelColor = Primary)
@@ -218,12 +237,12 @@ fun WarehouseSetupScreen(
         var address by remember { mutableStateOf(editing.address) }
         AlertDialog(
             onDismissRequest = { editingWarehouse = null },
-            title = { Text("Edit Warehouse", fontWeight = FontWeight.SemiBold, color = DarkText) },
+            title = { Text("Edit $whLabel", fontWeight = FontWeight.SemiBold, color = DarkText) },
             text = {
                 Column {
                     OutlinedTextField(
                         value = name, onValueChange = { name = it },
-                        label = { Text("Warehouse Name") },
+                        label = { Text("$whLabel name") },
                         singleLine = true, modifier = Modifier.fillMaxWidth(),
                         shape = RoundedCornerShape(8.dp),
                         colors = OutlinedTextFieldDefaults.colors(focusedBorderColor = Primary, cursorColor = Primary, focusedLabelColor = Primary)
@@ -255,12 +274,12 @@ fun WarehouseSetupScreen(
         var rackName by remember { mutableStateOf(editing.name) }
         AlertDialog(
             onDismissRequest = { editingRack = null },
-            title = { Text("Edit Rack", fontWeight = FontWeight.SemiBold, color = DarkText) },
+            title = { Text("Edit $rackLabel", fontWeight = FontWeight.SemiBold, color = DarkText) },
             text = {
                 Column {
                     OutlinedTextField(
                         value = rackName, onValueChange = { rackName = it },
-                        label = { Text("Rack Name") },
+                        label = { Text("$rackLabel name") },
                         singleLine = true, modifier = Modifier.fillMaxWidth(),
                         shape = RoundedCornerShape(8.dp),
                         colors = OutlinedTextFieldDefaults.colors(focusedBorderColor = Primary, cursorColor = Primary, focusedLabelColor = Primary)
@@ -284,12 +303,12 @@ fun WarehouseSetupScreen(
         var binName by remember { mutableStateOf(editing.name) }
         AlertDialog(
             onDismissRequest = { editingBin = null },
-            title = { Text("Edit Bin", fontWeight = FontWeight.SemiBold, color = DarkText) },
+            title = { Text("Edit $binLabel", fontWeight = FontWeight.SemiBold, color = DarkText) },
             text = {
                 Column {
                     // Bin code is immutable — shown here as context only.
                     Text(
-                        text = "Bin Code: ${editing.binCode}",
+                        text = "$binLabel code: ${editing.binCode}",
                         fontSize = 12.sp, color = MediumGray,
                         modifier = Modifier.padding(bottom = 8.dp)
                     )
@@ -318,10 +337,10 @@ fun WarehouseSetupScreen(
     deletingWarehouse?.let { target ->
         AlertDialog(
             onDismissRequest = { deletingWarehouse = null },
-            title = { Text("Delete warehouse?", fontWeight = FontWeight.SemiBold, color = DarkText) },
+            title = { Text("Delete ${whLabel.lowercase()}?", fontWeight = FontWeight.SemiBold, color = DarkText) },
             text = {
                 Text(
-                    "\"${target.name}\" and all its racks and bins will be permanently deleted. " +
+                    "\"${target.name}\" and all its ${rackPlural.lowercase()} and ${binPlural.lowercase()} will be permanently deleted. " +
                             "This cannot be undone. If any inventory is still stored under it, the delete will be blocked."
                 )
             },
@@ -341,10 +360,10 @@ fun WarehouseSetupScreen(
     deletingRack?.let { target ->
         AlertDialog(
             onDismissRequest = { deletingRack = null },
-            title = { Text("Delete rack?", fontWeight = FontWeight.SemiBold, color = DarkText) },
+            title = { Text("Delete ${rackLabel.lowercase()}?", fontWeight = FontWeight.SemiBold, color = DarkText) },
             text = {
                 Text(
-                    "\"${target.name}\" and all its bins will be permanently deleted. " +
+                    "\"${target.name}\" and all its ${binPlural.lowercase()} will be permanently deleted. " +
                             "This cannot be undone. If any inventory is still stored under it, the delete will be blocked."
                 )
             },
@@ -364,10 +383,10 @@ fun WarehouseSetupScreen(
     deletingBin?.let { target ->
         AlertDialog(
             onDismissRequest = { deletingBin = null },
-            title = { Text("Delete bin?", fontWeight = FontWeight.SemiBold, color = DarkText) },
+            title = { Text("Delete ${binLabel.lowercase()}?", fontWeight = FontWeight.SemiBold, color = DarkText) },
             text = {
                 Text(
-                    "Bin \"${target.binCode}\" will be permanently deleted. " +
+                    "$binLabel \"${target.binCode}\" will be permanently deleted. " +
                             "This cannot be undone. If any inventory is still stored in it, the delete will be blocked."
                 )
             },
@@ -390,7 +409,7 @@ fun WarehouseSetupScreen(
                 .background(LightGray)
         ) {
             AppHeader(
-                title = "Warehouse Setup",
+                title = "$whLabel setup",
                 showBackButton = true,
                 onBackClick = onBackClick,
                 showMenu = false
@@ -405,13 +424,13 @@ fun WarehouseSetupScreen(
             ) {
                 // ── WAREHOUSES SECTION ─────────────
                 SectionCard(
-                    title = "Warehouses",
+                    title = whPlural,
                     count = state.warehouses.size,
                     onAdd = { showAddWarehouseDialog = true },
-                    addLabel = "Add Warehouse"
+                    addLabel = "Add $whLabel"
                 ) {
                     if (state.warehouses.isEmpty()) {
-                        EmptyHint("No warehouses yet. Add one to get started.")
+                        EmptyHint("No ${whPlural.lowercase()} yet. Add one to get started.")
                     } else {
                         state.warehouses.forEach { wh ->
                             SelectableRow(
@@ -429,13 +448,13 @@ fun WarehouseSetupScreen(
                 // ── RACKS SECTION ──────────────────
                 if (state.selectedWarehouse != null) {
                     SectionCard(
-                        title = "Racks in ${state.selectedWarehouse.name}",
+                        title = "$rackPlural in ${state.selectedWarehouse.name}",
                         count = state.racks.size,
                         onAdd = { showAddRackDialog = true },
-                        addLabel = "Add Rack"
+                        addLabel = "Add $rackLabel"
                     ) {
                         if (state.racks.isEmpty()) {
-                            EmptyHint("No racks yet in this warehouse.")
+                            EmptyHint("No ${rackPlural.lowercase()} yet in this ${whLabel.lowercase()}.")
                         } else {
                             state.racks.forEach { rack ->
                                 SelectableRow(
@@ -454,13 +473,13 @@ fun WarehouseSetupScreen(
                 // ── BINS SECTION ───────────────────
                 if (state.selectedRack != null) {
                     SectionCard(
-                        title = "Bins in ${state.selectedRack.name}",
+                        title = "$binPlural in ${state.selectedRack.name}",
                         count = state.bins.size,
                         onAdd = { showAddBinDialog = true },
-                        addLabel = "Add Bin"
+                        addLabel = "Add $binLabel"
                     ) {
                         if (state.bins.isEmpty()) {
-                            EmptyHint("No bins yet in this rack.")
+                            EmptyHint("No ${binPlural.lowercase()} yet in this ${rackLabel.lowercase()}.")
                         } else {
                             state.bins.forEach { bin ->
                                 BinRow(

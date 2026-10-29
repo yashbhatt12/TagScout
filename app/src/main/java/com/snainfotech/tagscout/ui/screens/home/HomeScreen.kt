@@ -58,6 +58,7 @@ fun HomeScreen(
     onShopClick: () -> Unit = {},
     onWmsClick: () -> Unit = {},
     onRetailClick: () -> Unit = {},
+    onCompanySetupClick: () -> Unit = {},
     onTagOperationsClick: () -> Unit = {},
     onDeviceConfigClick: () -> Unit = {}
 ) {
@@ -129,6 +130,16 @@ fun HomeScreen(
                 onClick = onConnectDeviceClick
             )
 
+            // Every business type sets up its locations and products here,
+            // so this tile is never feature-gated either.
+            FeatureButton(
+                icon = R.drawable.ic_config,
+                title = "Company Set Up",
+                description = "Locations, products, categories and brands",
+                enabled = true,
+                onClick = onCompanySetupClick
+            )
+
             GatedFeatureButton(
                 available = config.anyTagOperationEnabled(),
                 icon = R.drawable.ic_rfid_tag,
@@ -151,9 +162,9 @@ fun HomeScreen(
                 available = config.isEnabled(Feature.RETAIL),
                 icon = R.drawable.ic_jewellery,
                 title = "Retail Management",
-                description = "Enroll pieces, checkout, products and manager alerts",
+                description = "Enroll pieces, checkout and manager alerts",
                 // Always open: the menu disables its reader-only actions itself,
-                // and Products / Manager Alerts need no reader.
+                // and Manager Alerts needs no reader.
                 enabled = true,
                 onClick = onRetailClick,
                 onUpgrade = { upgradeFor = it }

@@ -142,10 +142,10 @@ data class CompanyConfig(
         const val DEFAULT_PLAN = "standard"
 
         /**
-         * Defaults = everything currently shipped is ON, so a company with no
-         * settings doc behaves exactly as today.
+         * Defaults = every customer feature ON, so a company with no settings
+         * doc behaves exactly as today. Admin-only tools stay OFF.
          */
-        val DEFAULT_FEATURES: Map<Feature, Boolean> = Feature.entries.associateWith { true }
+        val DEFAULT_FEATURES: Map<Feature, Boolean> = Feature.entries.associateWith { it.defaultOn }
 
         /**
          * All six types are defined; only GENERAL (every existing WMS product)
@@ -172,8 +172,12 @@ enum class ConfigSource { DEFAULTS, CACHE, SERVER }
  * Flaggable screens. [key] is the Firestore map key — never rename a key
  * once a customer doc uses it. Connect Device and Device Config are not
  * flaggable (the app is useless without them).
+ *
+ * [defaultOn] is the value when a company's settings don't mention the
+ * flag. Admin-only tools default to off, so a new company never sees them
+ * until SNA switches them on in the console.
  */
-enum class Feature(val key: String, val displayName: String) {
+enum class Feature(val key: String, val displayName: String, val defaultOn: Boolean = true) {
     QUICK_SCAN("quickScan", "Quick Scan"),
     INVENTORY_SCAN("inventoryScan", "Inventory"),
     ORDER_PICKING("orderPicking", "Order Picking"),
@@ -183,7 +187,10 @@ enum class Feature(val key: String, val displayName: String) {
     WMS("wms", "Warehouse Management"),
     RETAIL("retail", "Retail Management"),
     MANAGER_ALERTS("managerAlerts", "Manager Alerts"),
-    SHOP("shop", "Order Supplies");
+    SHOP("shop", "Order Supplies"),
+
+    /** Bulk product import / export by Excel, under Company Set Up. Admin-only, off by default. */
+    CATALOG_EXCEL("catalogExcel", "Product catalog (Excel)", defaultOn = false);
 
     companion object {
         val TAG_OPERATIONS = listOf(QUICK_SCAN, INVENTORY_SCAN, ORDER_PICKING, WRITE_TAG, KILL_TAG, LOCATE_TAG)

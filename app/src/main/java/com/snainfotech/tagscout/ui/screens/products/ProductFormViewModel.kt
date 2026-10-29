@@ -49,6 +49,7 @@ data class ProductFormState(
     // Core fields
     val sku: String = "",
     val title: String = "",
+    val hsnCode: String = "",
     val shortName: String = "",
     val productType: ProductTypeKey = ProductTypeKey.GENERAL,
     val categoryId: String = "",
@@ -74,7 +75,7 @@ data class ProductFormState(
     val brands: List<Brand> = emptyList(),
 
     // Feedback
-    val coreErrors: Map<String, String> = emptyMap(),   // keys: sku, title, shortName
+    val coreErrors: Map<String, String> = emptyMap(),   // keys: sku, title, hsnCode, shortName
     val fieldErrors: Map<String, String> = emptyMap(),  // custom field key → message
     val saving: Boolean = false,
     val savedProductId: String? = null,                 // set once a save succeeds; screen navigates back
@@ -89,16 +90,11 @@ data class ProductFormState(
         }
 
     val productFields: List<FieldDef>
-        get() = config.fieldsFor(productType, FieldLevel.PRODUCT)
+        get() = config.fieldsFor(productType, FieldLevel.PRODUCT).filterNot { it.key == Product.HSN_FIELD_KEY }
 
     val topCategories: List<Category>
         get() = categories.filter {
             it.productType == productType.key && it.isTopLevel() && (it.isActive || it.id == categoryId)
-        }
-
-    val subCategories: List<Category>
-        get() = if (categoryId.isEmpty()) emptyList() else categories.filter {
-            it.parentId == categoryId && (it.isActive || it.id == subCategoryId)
         }
 
     val hasErrors: Boolean get() = coreErrors.isNotEmpty() || fieldErrors.isNotEmpty()
@@ -162,6 +158,7 @@ class ProductFormViewModel(
                             original = product,
                             sku = product.sku,
                             title = product.title,
+                            hsnCode = product.hsnCode,
                             shortName = product.shortName,
                             productType = product.type(),
                             categoryId = product.categoryId,
@@ -197,6 +194,11 @@ class ProductFormViewModel(
 
     fun onSku(v: String) = _state.update { it.copy(sku = v, coreErrors = it.coreErrors - "sku") }
     fun onTitle(v: String) = _state.update { it.copy(title = v, coreErrors = it.coreErrors - "title") }
+    fun onHsn(v: String) {
+        val cleaned = v.filter { it.isDigit() || it == ' ' }
+        if (cleaned.count { it.isDigit() } > 8) return
+        _state.update { it.copy(hsnCode = cleaned, coreErrors = it.coreErrors - "hsnCode") }
+    }
     fun onShortName(v: String) = _state.update { it.copy(shortName = v, coreErrors = it.coreErrors - "shortName") }
     fun onDescription(v: String) = _state.update { it.copy(description = v) }
     fun onBarcode(v: String) = _state.update { it.copy(barcode = v) }
@@ -210,12 +212,13 @@ class ProductFormViewModel(
         else it.copy(productType = v, categoryId = "", subCategoryId = "", fieldErrors = emptyMap())
     }
 
-    /** Changing category clears the sub-category. */
+    /**
+     * Changing category clears any stored sub-category (sub-categories are
+     * hidden for now, but old products may still carry one).
+     */
     fun onCategory(id: String) = _state.update {
         if (id == it.categoryId) it else it.copy(categoryId = id, subCategoryId = "")
     }
-
-    fun onSubCategory(id: String) = _state.update { it.copy(subCategoryId = id) }
 
     fun onCustomValue(key: String, value: String) = _state.update {
         it.copy(customValues = it.customValues + (key to value), fieldErrors = it.fieldErrors - key)
@@ -275,6 +278,11 @@ class ProductFormViewModel(
         val coreErrors = buildMap {
             if (s.sku.isBlank()) put("sku", "SKU is required")
             if (s.title.isBlank()) put("title", "Full name is required")
+            val hsn = Product.normaliseHsn(s.hsnCode)
+            when {
+                hsn.isEmpty() -> put("hsnCode", "HSN code is required")
+                !Product.isValidHsn(hsn) -> put("hsnCode", Product.HSN_RULE)
+            }
             if (s.shortName.trim().length > Product.SHORT_NAME_MAX) {
                 put("shortName", "At most ${Product.SHORT_NAME_MAX} characters")
             }
@@ -315,6 +323,7 @@ class ProductFormViewModel(
             val product = (s.original ?: Product()).copy(
                 sku = s.sku.trim(),
                 title = s.title.trim(),
+                hsnCode = Product.normaliseHsn(s.hsnCode),
                 shortName = s.shortName.trim(),
                 productType = s.productType.key,
                 categoryId = s.categoryId,

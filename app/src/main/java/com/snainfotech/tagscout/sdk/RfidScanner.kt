@@ -98,15 +98,20 @@ object RfidConstants {
     // Default password used by tags that haven't been password-protected
     const val DEFAULT_PASSWORD = "00000000"
 
-    // Valid EPC lengths in hex characters. EPC Gen2 allows the EPC memory bank
-    // to be sized in 16-bit words, so valid EPCs come in multiples of 4 hex
-    // characters (16 bits) — commonly 24 (96-bit) or 32 (128-bit), but also
-    // 28 (112-bit) and others in between. We accept the practical range rather
-    // than only two hardcoded lengths, which was rejecting valid real-world tags.
+    // Valid EPC lengths in hex characters. EPC Gen2 sizes the EPC in 16-bit
+    // words, so a real EPC is a multiple of 4 hex characters (16 bits):
+    // commonly 24 (96-bit) or 32 (128-bit), up to 124 (496-bit, the Gen2
+    // maximum, e.g. Alien Higgs 9).
+    //
+    // This is the ONE EPC rule in the app: scanning, enrollment, GRN upload,
+    // Write Tag and Kill Tag all use it (data.wms.isValidEpc delegates here).
     const val EPC_LENGTH_96_BIT = 24
     const val EPC_LENGTH_128_BIT = 32
     const val EPC_MIN_LENGTH = 16   // 64-bit
-    const val EPC_MAX_LENGTH = 32   // 128-bit
+    const val EPC_MAX_LENGTH = 124  // 496-bit (Gen2 maximum)
+
+    /** Human-readable form of the rule, for error messages. */
+    const val EPC_RULE_TEXT = "hex, 16–124 characters in groups of 4"
 
     // Validates that an EPC string is well-formed
     fun isValidEpc(epc: String): Boolean {

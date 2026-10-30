@@ -99,7 +99,7 @@ class GrnService(
             val epc = r.epc.trim().uppercase()
 
             // EPC: format and within-file duplicates
-            if (epc.isNotBlank() && !isValidEpc(epc)) errors += "EPC '$epc' isn't a valid tag ID (hex, 8–128 characters)"
+            if (epc.isNotBlank() && !isValidEpc(epc)) errors += "EPC '$epc' isn't a valid tag ID (${com.snainfotech.tagscout.sdk.RfidConstants.EPC_RULE_TEXT})"
             if (epc.isNotBlank() && (epcCounts[epc] ?: 0) > 1) errors += "EPC '$epc' appears in multiple rows of this file"
 
             // SKU

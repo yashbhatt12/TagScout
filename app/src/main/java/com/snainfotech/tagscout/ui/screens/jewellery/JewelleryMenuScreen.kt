@@ -48,8 +48,9 @@ import com.snainfotech.tagscout.ui.theme.MediumGray
  *
  * Enroll opens the shared unit enrollment screen, which works with the
  * sled or a desktop reader and handles a missing sled itself, so it is
- * always enabled. Checkout still needs a connected sled: opening it without
- * hardware would crash the Bluebird SDK. Products and Manager Alerts need
+ * always enabled. Checkout needs a reader: the sled or the desktop reader
+ * (isReaderConnected is either). The Checkout route only calls the sled SDK
+ * while a sled is connected. Products and Manager Alerts need
  * no reader: products are catalog data, and alerts arrive via Firestore
  * from the fixed-reader edge service.
  *

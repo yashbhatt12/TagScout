@@ -608,10 +608,12 @@ private const val MAX_SERIAL_MATCHES = 20L
 
 /** Statuses that count as stock on hand. Shared rule for status changes and (Phase 5) auto-expire. */
 val STOCK_STATUSES: Set<UnitStatus> = setOf(UnitStatus.IN_STOCK, UnitStatus.PICKED)
-/** Hex only, 8–128 chars. Rejects keyboard-wedge noise and anything unsafe as a doc id. */
-private val EPC_PATTERN = Regex("^[0-9A-Fa-f]{8,128}$")
-
-fun isValidEpc(epc: String): Boolean = EPC_PATTERN.matches(epc.trim())
+/**
+ * Same rule as the readers: hex, whole 16-bit words, 64–496 bits
+ * (see [com.snainfotech.tagscout.sdk.RfidConstants.isValidEpc]). Also rejects
+ * keyboard-wedge noise and anything unsafe as a doc id.
+ */
+fun isValidEpc(epc: String): Boolean = com.snainfotech.tagscout.sdk.RfidConstants.isValidEpc(epc)
 
 /** What every unit in one enrollment shares. */
 data class EnrollContext(

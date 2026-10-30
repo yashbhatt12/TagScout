@@ -1587,10 +1587,11 @@ fun TagScoutNavGraph(
         // ============================================
         composable(Routes.JEWELLERY_MENU) {
             val deviceState by sharedHomeViewModel.deviceState.collectAsState()
+            // Checkout works with the sled or the desktop reader (serial or keyboard mode).
+            val desktopConnected by ReaderAvailability.desktopConnected.collectAsState()
             JewelleryMenuScreen(
                 onBackClick = { navController.popBackStack() },
-                isReaderConnected = deviceState.isConnected,
-                onEnrollClick = { navController.navigate(Routes.UNIT_ENROLL) },
+                isReaderConnected = deviceState.isConnected || desktopConnected,            onEnrollClick = { navController.navigate(Routes.UNIT_ENROLL) },
                 onCheckoutClick = { navController.navigate(Routes.JEWELLERY_CHECKOUT) },
                 onPieceDetailsClick = { navController.navigate(Routes.UNIT_DETAIL) },
                 onManagerAlertsClick = { navController.navigate(Routes.MANAGER_ALERTS) },
@@ -1628,7 +1629,9 @@ fun TagScoutNavGraph(
                     }.onFailure {
                         android.util.Log.e("JewelleryCheckout", "startScanning failed", it)
                     }
-                } else {
+                } else if (deviceState.isConnected) {
+                    // Only touch the sled SDK when a sled is connected: Checkout can
+                    // now open with just the desktop reader.
                     runCatching { app.rfidScanner.stopScanning() }
                 }
             }
@@ -1637,7 +1640,11 @@ fun TagScoutNavGraph(
             // connection state we leave in. Swallows exceptions so an SDK error
             // never prevents screen teardown.
             DisposableEffect(Unit) {
-                onDispose { runCatching { app.rfidScanner.stopScanning() } }
+                onDispose {
+                    if (sharedHomeViewModel.deviceState.value.isConnected) {
+                        runCatching { app.rfidScanner.stopScanning() }
+                    }
+                }
             }
 
             // Desktop reader over USB serial, alongside the sled: reads (EPC only)

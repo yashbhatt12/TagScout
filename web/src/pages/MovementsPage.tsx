@@ -3,9 +3,9 @@ import { Badge, Button, Empty, ErrorNote, Loading, PageHeader, Panel, SearchBox,
 import { useCompany } from "../lib/CompanyProvider";
 import { MOVEMENT_TYPES, movementInfo, referenceLabel, statusInfo } from "../lib/config";
 import type { Movement } from "../lib/data";
-import { loadMovements, MOVEMENT_LIMIT } from "../lib/data";
+import { MOVEMENT_LIMIT } from "../lib/data";
 import { addDays, dayKey, downloadCsv, fmtDate, fmtDateTime, fmtNum, fmtTime, startOfDay } from "../lib/format";
-import { useAsync } from "../lib/useAsync";
+import { queries, recentWindow, useQuery } from "../lib/queries";
 
 type Range = "today" | "7" | "30" | "90" | "custom";
 const SHOW_ROWS = 500;
@@ -60,9 +60,18 @@ export function MovementsPage() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [range, customFrom, customTo, dayKey(today)]);
 
-  const result = useAsync(() => loadMovements(companyId, from, to), [companyId, from.getTime(), to.getTime()]);
+  // Today, 7 and 30 days are cut from the same 30-day read the Overview uses,
+  // so they open instantly; longer or custom ranges get their own read.
+  const recent = useMemo(() => recentWindow(), []);
+  const withinRecent = (range === "today" || range === "7" || range === "30") && from >= recent.from && to <= recent.to;
+  const result = useQuery(
+    withinRecent ? queries.movements(companyId, recent.from, recent.to) : queries.movements(companyId, from, to),
+  );
 
-  const all = result.data?.rows ?? [];
+  const all = useMemo(() => {
+    const rows = result.data?.rows ?? [];
+    return withinRecent ? rows.filter((m) => m.timestamp && m.timestamp >= from && m.timestamp < to) : rows;
+  }, [result.data, withinRecent, from, to]);
   const counts = useMemo(() => {
     const c: Record<string, number> = {};
     for (const m of all) c[m.type] = (c[m.type] ?? 0) + 1;

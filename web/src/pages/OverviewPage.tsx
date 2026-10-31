@@ -18,11 +18,8 @@ import { SignalRings } from "../components/Logo";
 import { Badge, Button, Empty, ErrorNote, Loading, Panel } from "../components/ui";
 import { useCompany } from "../lib/CompanyProvider";
 import { movementInfo, STOCK_STATUSES, UNIT_STATUSES } from "../lib/config";
-import { loadMovements, loadSkuAggregates, loadStatusCounts } from "../lib/data";
-import { addDays, dayKey, fmtDateTime, fmtDay, fmtNum, greeting, startOfDay } from "../lib/format";
-import { useAsync } from "../lib/useAsync";
-
-const DAYS = 30;
+import { addDays, dayKey, fmtDateTime, fmtDay, fmtNum, greeting } from "../lib/format";
+import { queries, RECENT_DAYS as DAYS, recentWindow, useQuery } from "../lib/queries";
 
 export function OverviewPage() {
   const company = useCompany();
@@ -30,20 +27,26 @@ export function OverviewPage() {
   const theme = useChartTheme();
   const tip = tooltipStyle(theme);
 
-  const data = useAsync(async () => {
-    const to = addDays(startOfDay(new Date()), 1);
-    const from = addDays(to, -DAYS);
-    const [counts, aggregates, movements] = await Promise.all([
-      loadStatusCounts(companyId),
-      loadSkuAggregates(companyId),
-      loadMovements(companyId, from, to),
-    ]);
-    return { counts, aggregates, movements, from, loadedAt: new Date() };
-  }, [companyId]);
+  const window30 = useMemo(() => recentWindow(), []);
+  const counts = useQuery(queries.statusCounts(companyId));
+  const stock = useQuery(queries.skuAggregates(companyId));
+  const movements = useQuery(queries.movements(companyId, window30.from, window30.to));
+
+  const queriesList = [counts, stock, movements];
+  const error = queriesList.find((q) => q.error)?.error;
+  const busy = queriesList.some((q) => q.loading);
+  const hasAll = !!(counts.data && stock.data && movements.data);
+  const reloadAll = () => queriesList.forEach((q) => q.reload());
 
   const view = useMemo(() => {
-    const d = data.data;
-    if (!d) return null;
+    if (!counts.data || !stock.data || !movements.data) return null;
+    const d = {
+      counts: counts.data,
+      aggregates: stock.data,
+      movements: movements.data,
+      from: window30.from,
+      loadedAt: counts.updatedAt ?? new Date(),
+    };
 
     const onHand = STOCK_STATUSES.reduce((sum, s) => sum + (d.counts.byStatus[s] ?? 0), 0);
 
@@ -111,7 +114,7 @@ export function OverviewPage() {
       recent: d.movements.rows.slice(0, 6),
       loadedAt: d.loadedAt,
     };
-  }, [data.data, locations.warehouses.length, company.warehouseById, productById, locationText]);
+  }, [counts.data, stock.data, movements.data, counts.updatedAt, window30, locations.warehouses.length, company.warehouseById, productById, locationText]);
 
   const company_name = profile.companyName || profile.name;
 
@@ -129,7 +132,7 @@ export function OverviewPage() {
               {view ? `Updated ${fmtDateTime(view.loadedAt)}` : "Reading your stock"}
             </p>
           </div>
-          <Button icon="refresh" variant="quiet" onClick={data.reload} busy={data.loading && !!data.data}>
+          <Button icon="refresh" variant="quiet" onClick={reloadAll} busy={busy && hasAll}>
             Refresh
           </Button>
         </div>
@@ -163,8 +166,8 @@ export function OverviewPage() {
         </dl>
       </section>
 
-      {data.error && !data.data ? <ErrorNote error={data.error} onRetry={data.reload} /> : null}
-      {!view && !data.error ? <Loading text="Reading stock and movements" /> : null}
+      {error && !hasAll ? <ErrorNote error={error} onRetry={reloadAll} /> : null}
+      {!view && !error ? <Loading text="Reading stock and movements" /> : null}
 
       {view ? (
         <div className="dash-grid">

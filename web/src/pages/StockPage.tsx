@@ -2,16 +2,16 @@ import { Fragment, useMemo, useState } from "react";
 import { Badge, Button, Empty, ErrorNote, Loading, PageHeader, Panel, SearchBox, Segmented } from "../components/ui";
 import { Icon } from "../components/Icon";
 import { useCompany } from "../lib/CompanyProvider";
-import { loadSkuAggregates, type SkuAggregate } from "../lib/data";
+import type { SkuAggregate } from "../lib/data";
 import { downloadCsv, fmtDateTime, fmtNum } from "../lib/format";
-import { useAsync } from "../lib/useAsync";
+import { queries, useQuery } from "../lib/queries";
 
 type Tab = "product" | "location";
 
 export function StockPage() {
   const { companyId, label } = useCompany();
   const [tab, setTab] = useState<Tab>("product");
-  const aggregates = useAsync(() => loadSkuAggregates(companyId), [companyId]);
+  const aggregates = useQuery(queries.skuAggregates(companyId));
 
   const lastComputed = useMemo(() => {
     const times = (aggregates.data ?? []).map((a) => a.lastComputedAt?.getTime() ?? 0);

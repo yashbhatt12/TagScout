@@ -2,9 +2,9 @@ import { Fragment, useMemo, useState } from "react";
 import { Icon } from "../components/Icon";
 import { Badge, Button, Empty, ErrorNote, Loading, PageHeader, Panel, SearchBox } from "../components/ui";
 import { useCompany } from "../lib/CompanyProvider";
-import { loadCycleCountMovements, type Movement } from "../lib/data";
+import type { Movement } from "../lib/data";
 import { downloadCsv, fmtDateTime, fmtNum } from "../lib/format";
-import { useAsync } from "../lib/useAsync";
+import { queries, useQuery } from "../lib/queries";
 
 type CountRun = {
   key: string;
@@ -21,7 +21,7 @@ type CountRun = {
  */
 export function CycleCountsPage() {
   const { companyId, label, locationText, productBySku } = useCompany();
-  const data = useAsync(() => loadCycleCountMovements(companyId), [companyId]);
+  const data = useQuery(queries.cycleCounts(companyId));
   const [open, setOpen] = useState<string | null>(null);
   const [search, setSearch] = useState("");
 

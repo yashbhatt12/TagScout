@@ -1,11 +1,6 @@
 import { createContext, useContext, useEffect, useMemo, useState, type ReactNode } from "react";
 import type { CompanyConfig } from "./config";
 import {
-  loadCategories,
-  loadConfig,
-  loadLocations,
-  loadProducts,
-  loadProfile,
   subscribeAlerts,
   type Alert,
   type Bin,
@@ -16,7 +11,7 @@ import {
   type Rack,
   type Warehouse,
 } from "./data";
-import { useAsync } from "./useAsync";
+import { prefetchDashboard, queries, useQuery } from "./queries";
 
 type Lookups = {
   warehouseById: Map<string, Warehouse>;
@@ -45,14 +40,6 @@ export type CompanyValue = Lookups & {
 
 const CompanyContext = createContext<CompanyValue | null>(null);
 
-type Basics = {
-  config: CompanyConfig;
-  profile: Profile;
-  locations: Locations;
-  products: Product[];
-  categories: Category[];
-};
-
 export function CompanyProvider({
   companyId,
   children,
@@ -64,16 +51,10 @@ export function CompanyProvider({
   loadingView: ReactNode;
   errorView: (error: Error, retry: () => void) => ReactNode;
 }) {
-  const basics = useAsync<Basics>(async () => {
-    const [config, profile, locations, products, categories] = await Promise.all([
-      loadConfig(companyId),
-      loadProfile(companyId),
-      loadLocations(companyId),
-      loadProducts(companyId),
-      loadCategories(companyId),
-    ]);
-    return { config, profile, locations, products, categories };
-  }, [companyId]);
+  const basics = useQuery(queries.basics(companyId));
+
+  // Start the screens' main reads now, alongside the company set-up, not after it.
+  useEffect(() => prefetchDashboard(companyId), [companyId]);
 
   const alertsOn = basics.data?.config.features.managerAlerts ?? false;
   const [alertList, setAlertList] = useState<Alert[]>([]);

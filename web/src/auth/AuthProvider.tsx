@@ -8,6 +8,7 @@ import {
   type User,
 } from "firebase/auth";
 import { auth } from "../firebase";
+import { clearCache } from "../lib/cache";
 
 type AuthValue = {
   user: User | null;
@@ -43,7 +44,10 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     signIn: async (email, password) => {
       await signInWithEmailAndPassword(auth, email.trim(), password);
     },
-    signOut: () => firebaseSignOut(auth),
+    signOut: async () => {
+      await firebaseSignOut(auth);
+      clearCache();
+    },
     resetPassword: (email) => sendPasswordResetEmail(auth, email.trim()),
     resendVerification: async () => {
       if (auth.currentUser) await sendEmailVerification(auth.currentUser);

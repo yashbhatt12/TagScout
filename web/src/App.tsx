@@ -1,4 +1,4 @@
-import { lazy, Suspense } from "react";
+import { lazy, Suspense, useEffect } from "react";
 import { Navigate, Route, Routes } from "react-router-dom";
 import { useAuth } from "./auth/AuthProvider";
 import { Layout } from "./components/Layout";
@@ -7,12 +7,20 @@ import { Button, ErrorNote, Loading } from "./components/ui";
 import { CompanyProvider, useCompany } from "./lib/CompanyProvider";
 import { LoginPage, VerifyEmailPage } from "./pages/LoginPage";
 
-// Pages load on demand so the sign-in screen stays light.
-const OverviewPage = lazy(() => import("./pages/OverviewPage").then((m) => ({ default: m.OverviewPage })));
-const StockPage = lazy(() => import("./pages/StockPage").then((m) => ({ default: m.StockPage })));
-const MovementsPage = lazy(() => import("./pages/MovementsPage").then((m) => ({ default: m.MovementsPage })));
-const CycleCountsPage = lazy(() => import("./pages/CycleCountsPage").then((m) => ({ default: m.CycleCountsPage })));
-const AlertsPage = lazy(() => import("./pages/AlertsPage").then((m) => ({ default: m.AlertsPage })));
+// Page code is split out so the sign-in screen stays light, then fetched
+// as soon as someone signs in so switching screens never waits for it.
+const pageCode = {
+  overview: () => import("./pages/OverviewPage"),
+  stock: () => import("./pages/StockPage"),
+  movements: () => import("./pages/MovementsPage"),
+  cycleCounts: () => import("./pages/CycleCountsPage"),
+  alerts: () => import("./pages/AlertsPage"),
+};
+const OverviewPage = lazy(() => pageCode.overview().then((m) => ({ default: m.OverviewPage })));
+const StockPage = lazy(() => pageCode.stock().then((m) => ({ default: m.StockPage })));
+const MovementsPage = lazy(() => pageCode.movements().then((m) => ({ default: m.MovementsPage })));
+const CycleCountsPage = lazy(() => pageCode.cycleCounts().then((m) => ({ default: m.CycleCountsPage })));
+const AlertsPage = lazy(() => pageCode.alerts().then((m) => ({ default: m.AlertsPage })));
 
 function Splash({ text }: { text: string }) {
   return (
@@ -43,6 +51,11 @@ function CompanyRoutes() {
 
 export default function App() {
   const { user, loading, signOut } = useAuth();
+  const signedIn = !!user?.emailVerified;
+
+  useEffect(() => {
+    if (signedIn) Object.values(pageCode).forEach((load) => void load());
+  }, [signedIn]);
 
   if (loading) return <Splash text="Starting TagScout" />;
   if (!user) return <LoginPage />;

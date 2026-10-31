@@ -49,3 +49,6 @@ node_modules/
 *.local
 
 keystore.properties
+
+# Firebase CLI deploy cache
+.firebase/

@@ -1,5 +1,6 @@
 {
   "projects": {
-    "default": "tagscout-a0cc3"
+    "default": "tagscout-in",
+    "old": "tagscout-a0cc3"
   }
 }

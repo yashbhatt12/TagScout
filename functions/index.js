@@ -33,7 +33,7 @@ const { setUpCompany } = require("./companySetup");
 exports.updateSkuAggregate = onDocumentCreated(
   {
     document: "companies/{companyId}/movements/{movementId}",
-    region: "us-central1",
+        region: "asia-south1",
   },
   async (event) => {
     const snap = event.data;
@@ -153,7 +153,7 @@ exports.updateSkuAggregate = onDocumentCreated(
 exports.setUpNewCompany = onDocumentCreated(
   {
     document: "users/{uid}",
-    region: "us-central1",
+    region: "asia-south1",
   },
   async (event) => {
     const { uid } = event.params;

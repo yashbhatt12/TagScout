@@ -7,7 +7,7 @@
     "dev": "vite",
     "build": "tsc -b && vite build",
     "preview": "vite preview",
-    "deploy": "npm run build && firebase deploy --only hosting --project tagscout-a0cc3"
+    "deploy": "npm run build && firebase deploy --only hosting --project tagscout-in"
   },
   "dependencies": {
     "firebase": "13.0.0",

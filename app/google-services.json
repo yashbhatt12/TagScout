@@ -1,13 +1,13 @@
 {
   "project_info": {
-    "project_number": "719883868126",
-    "project_id": "tagscout-a0cc3",
-    "storage_bucket": "tagscout-a0cc3.firebasestorage.app"
+    "project_number": "51338668091",
+    "project_id": "tagscout-in",
+    "storage_bucket": "tagscout-in.firebasestorage.app"
   },
   "client": [
     {
       "client_info": {
-        "mobilesdk_app_id": "1:719883868126:android:1c0a8f5105fe344763af4f",
+        "mobilesdk_app_id": "1:51338668091:android:e371a16f84678baaf5541e",
         "android_client_info": {
           "package_name": "com.snainfotech.tagscout"
         }
@@ -15,7 +15,7 @@
       "oauth_client": [],
       "api_key": [
         {
-          "current_key": "AIzaSyBEDLluLNrGwmHUe51fuzxGfnszeLUe2js"
+          "current_key": "AIzaSyA6a0vifWcWlEAKzH3dGxwMp_4k25sJhEg"
         }
       ],
       "services": {

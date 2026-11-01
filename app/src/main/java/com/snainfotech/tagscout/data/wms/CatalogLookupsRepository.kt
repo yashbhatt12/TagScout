@@ -2,11 +2,11 @@ package com.snainfotech.tagscout.data.wms
 
 import com.google.firebase.Timestamp
 import com.google.firebase.auth.FirebaseAuth
-import com.google.firebase.firestore.AggregateSource
 import com.google.firebase.firestore.CollectionReference
 import com.google.firebase.firestore.DocumentSnapshot
 import com.google.firebase.firestore.FirebaseFirestore
 import com.snainfotech.tagscout.data.auth.AuthReady
+import com.snainfotech.tagscout.data.server.ServerCalls
 import com.snainfotech.tagscout.data.config.ProductTypeKey
 import kotlinx.coroutines.tasks.await
 
@@ -57,24 +57,16 @@ class CatalogLookupsRepository {
     private val auth = FirebaseAuth.getInstance()
 
     private suspend fun companyId(): String? = AuthReady.awaitCompanyId()
-    private fun currentUserId(): String = auth.currentUser?.uid ?: ""
 
     private suspend fun collection(name: String): CollectionReference? =
         companyId()?.let { firestore.collection("companies").document(it).collection(name) }
 
     private suspend fun categoriesRef() = collection("categories")
     private suspend fun brandsRef() = collection("brands")
-    private suspend fun productsRef() = collection("products")
 
     companion object {
         const val MAX_NAME_LENGTH = 60
         fun nameKeyOf(name: String): String = name.trim().lowercase()
-    }
-
-    private fun checkName(name: String, what: String): String? = when {
-        name.isBlank() -> "$what name is required"
-        name.trim().length > MAX_NAME_LENGTH -> "$what name can be at most $MAX_NAME_LENGTH characters"
-        else -> null
     }
 
     // ── Mapping ───────────────────────────────────────────────
@@ -127,7 +119,11 @@ class CatalogLookupsRepository {
         } catch (e: Exception) { Result.failure(e) }
     }
 
-    // ── Categories: write ─────────────────────────────────────
+    // ── Categories: write (on the server: catalogV1) ──────────
+    //
+    // catalogV1 (functions/src/catalog.ts) applies the same rules as before
+    // (names unique among siblings, one level of sub-categories, no delete
+    // while in use) and allows owners and managers only.
 
     /** Creates a category, or a sub-category when [parentId] is given. Returns the new id. */
     suspend fun createCategory(
@@ -135,102 +131,23 @@ class CatalogLookupsRepository {
         type: ProductTypeKey,
         parentId: String = "",
         order: Int = 0
-    ): Result<String> {
-        return try {
-            checkName(name, "Category")?.let { return Result.failure(IllegalArgumentException(it)) }
-            val ref = categoriesRef() ?: return Result.failure(Exception("Not logged in"))
-            val all = ref.get().await().documents.map { it.toCategory() }
+    ): Result<String> = catalog(
+        "createCategory", "name" to name, "productType" to type.key, "parentId" to parentId, "order" to order
+    ).map { it["id"]?.toString().orEmpty() }
 
-            if (parentId.isNotEmpty()) {
-                val parent = all.firstOrNull { it.id == parentId }
-                    ?: return Result.failure(IllegalArgumentException("Parent category not found"))
-                if (!parent.isTopLevel()) {
-                    return Result.failure(IllegalArgumentException("Sub-categories can't have their own sub-categories"))
-                }
-                if (parent.productType != type.key) {
-                    return Result.failure(IllegalArgumentException("Parent category belongs to a different product type"))
-                }
-            }
+    suspend fun renameCategory(categoryId: String, newName: String): Result<Unit> =
+        catalog("renameCategory", "categoryId" to categoryId, "name" to newName).map { }
 
-            val key = nameKeyOf(name)
-            val clash = all.any { it.productType == type.key && it.parentId == parentId && it.nameKey == key }
-            if (clash) return Result.failure(IllegalArgumentException("Category '${name.trim()}' already exists here"))
-
-            val doc = ref.add(
-                mapOf(
-                    "name" to name.trim(),
-                    "nameKey" to key,
-                    "productType" to type.key,
-                    "parentId" to parentId,
-                    "order" to order,
-                    "isActive" to true,
-                    "createdAt" to Timestamp.now(),
-                    "createdBy" to currentUserId()
-                )
-            ).await()
-            Result.success(doc.id)
-        } catch (e: Exception) { Result.failure(e) }
-    }
-
-    suspend fun renameCategory(categoryId: String, newName: String): Result<Unit> {
-        return try {
-            checkName(newName, "Category")?.let { return Result.failure(IllegalArgumentException(it)) }
-            val ref = categoriesRef() ?: return Result.failure(Exception("Not logged in"))
-            val all = ref.get().await().documents.map { it.toCategory() }
-            val current = all.firstOrNull { it.id == categoryId }
-                ?: return Result.failure(Exception("Category not found"))
-            val key = nameKeyOf(newName)
-            val clash = all.any {
-                it.id != categoryId && it.productType == current.productType &&
-                        it.parentId == current.parentId && it.nameKey == key
-            }
-            if (clash) return Result.failure(IllegalArgumentException("Category '${newName.trim()}' already exists here"))
-
-            ref.document(categoryId).update(mapOf("name" to newName.trim(), "nameKey" to key)).await()
-            Result.success(Unit)
-        } catch (e: Exception) { Result.failure(e) }
-    }
-
-    suspend fun setCategoryOrder(categoryId: String, order: Int): Result<Unit> {
-        return try {
-            val ref = categoriesRef() ?: return Result.failure(Exception("Not logged in"))
-            ref.document(categoryId).update("order", order).await()
-            Result.success(Unit)
-        } catch (e: Exception) { Result.failure(e) }
-    }
+    suspend fun setCategoryOrder(categoryId: String, order: Int): Result<Unit> =
+        catalog("setCategoryOrder", "categoryId" to categoryId, "order" to order).map { }
 
     /** Hides from pickers without breaking products that use it. */
-    suspend fun setCategoryActive(categoryId: String, active: Boolean): Result<Unit> {
-        return try {
-            val ref = categoriesRef() ?: return Result.failure(Exception("Not logged in"))
-            ref.document(categoryId).update("isActive", active).await()
-            Result.success(Unit)
-        } catch (e: Exception) { Result.failure(e) }
-    }
+    suspend fun setCategoryActive(categoryId: String, active: Boolean): Result<Unit> =
+        catalog("setCategoryActive", "categoryId" to categoryId, "active" to active).map { }
 
     /** Blocked while it has sub-categories or any product uses it; deactivate instead. */
-    suspend fun deleteCategory(categoryId: String): Result<Unit> {
-        return try {
-            val ref = categoriesRef() ?: return Result.failure(Exception("Not logged in"))
-            val products = productsRef() ?: return Result.failure(Exception("Not logged in"))
-
-            val children = ref.whereEqualTo("parentId", categoryId)
-                .count().get(AggregateSource.SERVER).await().count
-            if (children > 0) {
-                return Result.failure(Exception("Delete or move its $children sub-categor${if (children == 1L) "y" else "ies"} first"))
-            }
-            val used = products.whereEqualTo("categoryId", categoryId)
-                .count().get(AggregateSource.SERVER).await().count +
-                    products.whereEqualTo("subCategoryId", categoryId)
-                        .count().get(AggregateSource.SERVER).await().count
-            if (used > 0) {
-                return Result.failure(Exception("$used product(s) use this category. Deactivate it instead."))
-            }
-
-            ref.document(categoryId).delete().await()
-            Result.success(Unit)
-        } catch (e: Exception) { Result.failure(e) }
-    }
+    suspend fun deleteCategory(categoryId: String): Result<Unit> =
+        catalog("deleteCategory", "categoryId" to categoryId).map { }
 
     // ── Brands: read ──────────────────────────────────────────
 
@@ -244,75 +161,43 @@ class CatalogLookupsRepository {
         } catch (e: Exception) { Result.failure(e) }
     }
 
-    // ── Brands: write ─────────────────────────────────────────
+    // ── Brands: write (on the server: catalogV1) ──────────────
 
     /**
      * Returns the brand with this name (case-insensitive), creating it if
      * missing. A deactivated brand with the name is reactivated rather than
      * duplicated. Used by product create and Excel import.
      */
-    suspend fun findOrCreateBrand(name: String): Result<Brand> {
-        return try {
-            checkName(name, "Brand")?.let { return Result.failure(IllegalArgumentException(it)) }
-            val ref = brandsRef() ?: return Result.failure(Exception("Not logged in"))
-            val key = nameKeyOf(name)
-
-            val existing = ref.whereEqualTo("nameKey", key).limit(1).get().await().documents.firstOrNull()
-            if (existing != null) {
-                val brand = existing.toBrand()
-                if (!brand.isActive) {
-                    existing.reference.update("isActive", true).await()
-                    return Result.success(brand.copy(isActive = true))
-                }
-                return Result.success(brand)
-            }
-
-            val data = mapOf(
-                "name" to name.trim(),
-                "nameKey" to key,
-                "isActive" to true,
-                "createdAt" to Timestamp.now(),
-                "createdBy" to currentUserId()
+    suspend fun findOrCreateBrand(name: String): Result<Brand> =
+        catalog("findOrCreateBrand", "name" to name).map { r ->
+            Brand(
+                id = r["id"]?.toString().orEmpty(),
+                name = r["name"]?.toString().orEmpty(),
+                nameKey = r["nameKey"]?.toString().orEmpty(),
+                isActive = r["isActive"] as? Boolean ?: true,
+                createdBy = r["createdBy"]?.toString().orEmpty()
             )
-            val doc = ref.add(data).await()
-            Result.success(Brand(id = doc.id, name = name.trim(), nameKey = key, createdBy = currentUserId()))
-        } catch (e: Exception) { Result.failure(e) }
-    }
+        }
 
-    suspend fun renameBrand(brandId: String, newName: String): Result<Unit> {
-        return try {
-            checkName(newName, "Brand")?.let { return Result.failure(IllegalArgumentException(it)) }
-            val ref = brandsRef() ?: return Result.failure(Exception("Not logged in"))
-            val key = nameKeyOf(newName)
-            val clash = ref.whereEqualTo("nameKey", key).limit(2).get().await()
-                .documents.any { it.id != brandId }
-            if (clash) return Result.failure(IllegalArgumentException("Brand '${newName.trim()}' already exists"))
+    suspend fun renameBrand(brandId: String, newName: String): Result<Unit> =
+        catalog("renameBrand", "brandId" to brandId, "name" to newName).map { }
 
-            ref.document(brandId).update(mapOf("name" to newName.trim(), "nameKey" to key)).await()
-            Result.success(Unit)
-        } catch (e: Exception) { Result.failure(e) }
-    }
-
-    suspend fun setBrandActive(brandId: String, active: Boolean): Result<Unit> {
-        return try {
-            val ref = brandsRef() ?: return Result.failure(Exception("Not logged in"))
-            ref.document(brandId).update("isActive", active).await()
-            Result.success(Unit)
-        } catch (e: Exception) { Result.failure(e) }
-    }
+    suspend fun setBrandActive(brandId: String, active: Boolean): Result<Unit> =
+        catalog("setBrandActive", "brandId" to brandId, "active" to active).map { }
 
     /** Blocked while any product uses it; deactivate instead. */
-    suspend fun deleteBrand(brandId: String): Result<Unit> {
-        return try {
-            val ref = brandsRef() ?: return Result.failure(Exception("Not logged in"))
-            val products = productsRef() ?: return Result.failure(Exception("Not logged in"))
-            val used = products.whereEqualTo("brandId", brandId)
-                .count().get(AggregateSource.SERVER).await().count
-            if (used > 0) {
-                return Result.failure(Exception("$used product(s) use this brand. Deactivate it instead."))
-            }
-            ref.document(brandId).delete().await()
-            Result.success(Unit)
-        } catch (e: Exception) { Result.failure(e) }
+    suspend fun deleteBrand(brandId: String): Result<Unit> =
+        catalog("deleteBrand", "brandId" to brandId).map { }
+
+    private suspend fun catalog(action: String, vararg fields: Pair<String, Any>): Result<Map<*, *>> = try {
+        if (companyId() == null) {
+            Result.failure(Exception("Not logged in"))
+        } else {
+            val data = mapOf<String, Any?>("action" to action) +
+                fields.map { (k, v) -> k to (if (v is String) v.trim() else v) }
+            Result.success(ServerCalls.call("catalogV1", data))
+        }
+    } catch (e: Exception) {
+        Result.failure(Exception(ServerCalls.message(e), e))
     }
 }

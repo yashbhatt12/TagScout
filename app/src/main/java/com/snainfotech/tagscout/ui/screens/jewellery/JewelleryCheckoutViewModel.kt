@@ -16,6 +16,7 @@ import com.snainfotech.tagscout.data.config.FieldValidator
 import com.snainfotech.tagscout.data.config.ProductTypeKey
 import com.snainfotech.tagscout.data.wms.BatchRepository
 import com.snainfotech.tagscout.data.wms.BatchStatus
+import com.snainfotech.tagscout.data.wms.InventoryRepository
 import com.snainfotech.tagscout.data.wms.InventoryUnit
 import com.snainfotech.tagscout.data.wms.Product
 import com.snainfotech.tagscout.data.wms.ProductRepository
@@ -95,7 +96,8 @@ data class JewelleryCheckoutState(
  */
 class JewelleryCheckoutViewModel(
     private val productRepo: ProductRepository = ProductRepository(),
-    private val batchRepo: BatchRepository = BatchRepository()
+    private val batchRepo: BatchRepository = BatchRepository(),
+    private val inventoryRepo: InventoryRepository = InventoryRepository()
 ) : ViewModel() {
 
     private val db: FirebaseFirestore = FirebaseFirestore.getInstance()
@@ -279,71 +281,20 @@ class JewelleryCheckoutViewModel(
             _state.update { it.copy(errorMessage = "Not signed in — please log in again.") }
             return
         }
-        val product = current.product
-
         _state.update { it.copy(phase = CheckoutPhase.SAVING, errorMessage = null) }
 
         viewModelScope.launch {
-            try {
-                val companyId = AuthReady.awaitCompanyId() ?: error("Not signed in — please log in again.")
-                val companyRef = db.collection("companies").document(companyId)
-                val unitRef = companyRef.collection("inventory_units").document(piece.epc)
-                val movementRef = companyRef.collection("movements").document()
-                val now = Timestamp.now()
-
-                db.runTransaction { txn ->
-                    // Re-check inside the transaction: another counter may have sold it.
-                    val snap = txn.get(unitRef)
-                    val status = snap.getString("status")
-                    if (!snap.exists() || status != "in_stock") {
-                        throw IllegalStateException(
-                            if (status == "sold") "This piece was just sold elsewhere." else "This piece is no longer in stock."
-                        )
-                    }
-
-                    txn.update(
-                        unitRef,
-                        mapOf(
-                            "status" to "sold",
-                            "soldAt" to now,
-                            "soldBy" to userId,
-                            "lastMovedAt" to now
-                        )
-                    )
-
-                    // productId / sku / from-location let the aggregate function drop
-                    // the stock count. Pilot pieces have no product, so it skips them as before.
-                    val movement = hashMapOf<String, Any>(
-                        "type" to "outward",
-                        "productId" to piece.productId,
-                        "sku" to (product?.sku ?: piece.sku),
-                        "epc" to piece.epc,
-                        "quantity" to -1,
-                        "fromWarehouseId" to piece.currentWarehouseId,
-                        "fromRackId" to piece.currentRackId,
-                        "fromBinId" to piece.currentBinId,
-                        "fromBinCode" to piece.currentBinCode,
-                        "toWarehouseId" to "",
-                        "toRackId" to "",
-                        "toBinId" to "",
-                        "toBinCode" to "",
-                        "referenceType" to if (product != null) "retail_sale" else "jewellery_sale",
-                        "referenceId" to (piece.itemCode ?: ""),
-                        "userId" to userId,
-                        "timestamp" to now,
-                        "notes" to "Sold at checkout",
-                        "batchId" to piece.batchId
-                    )
-                    txn.set(movementRef, movement)
-                    null
-                }.await()
-
-                val soldPiece = piece.copy(status = "sold", soldAt = now, soldBy = userId, lastMovedAt = now)
-                _state.update { it.copy(phase = CheckoutPhase.SOLD, foundPiece = soldPiece) }
-            } catch (e: Exception) {
-                val msg = (e.cause as? IllegalStateException)?.message ?: e.message ?: "unknown error"
-                _state.update { it.copy(phase = CheckoutPhase.FOUND, errorMessage = "Failed to mark sold: $msg") }
-            }
+            // On the server (markSoldV1): re-checks the piece is still in stock,
+            // marks it sold and logs the outward movement in one transaction.
+            inventoryRepo.markSold(piece.epc).fold(
+                onSuccess = { soldAt ->
+                    val soldPiece = piece.copy(status = "sold", soldAt = soldAt, soldBy = userId, lastMovedAt = soldAt)
+                    _state.update { it.copy(phase = CheckoutPhase.SOLD, foundPiece = soldPiece) }
+                },
+                onFailure = { e ->
+                    _state.update { it.copy(phase = CheckoutPhase.FOUND, errorMessage = "Failed to mark sold: ${e.message}") }
+                }
+            )
         }
     }
 

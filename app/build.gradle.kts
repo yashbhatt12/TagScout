@@ -129,6 +129,7 @@ dependencies {
     implementation(libs.firebase.firestore)
     implementation(libs.firebase.crashlytics)
     implementation(libs.firebase.storage)
+    implementation(libs.firebase.functions)
     implementation(libs.coil.compose)
 
     testImplementation(libs.junit)

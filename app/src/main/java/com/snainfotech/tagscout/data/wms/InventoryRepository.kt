@@ -4,11 +4,12 @@ import com.google.firebase.Timestamp
 import com.google.firebase.auth.FirebaseAuth
 import com.google.firebase.firestore.AggregateSource
 import com.google.firebase.firestore.FirebaseFirestore
+import com.snainfotech.tagscout.data.server.ServerCalls
 import com.snainfotech.tagscout.data.auth.AuthReady
-import kotlinx.coroutines.async
-import kotlinx.coroutines.awaitAll
-import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.tasks.await
+import java.text.SimpleDateFormat
+import java.util.Date
+import java.util.Locale
 import com.google.firebase.firestore.FieldValue
 import com.snainfotech.tagscout.data.config.UnitStatus
 /**
@@ -207,25 +208,28 @@ class InventoryRepository {
     // ── Enrollment (shared inward path) ────────────────────────
     //
     // One path for every inward that creates units: scan-based enrollment
-    // (sled, desktop reader, fixed reader) now, file-based GRN next.
-    // Validation of required and custom fields is the caller's job
-    // (FieldValidator + CompanyConfig); this layer enforces only what must
-    // never be wrong in the data: a sane EPC, no double enrollment, batch
-    // belongs to the product, unit + movement written atomically.
+    // (sled, desktop reader, fixed reader) and file-based GRN. The writes
+    // happen on the server (enrollUnitsV1): it checks the tag, refuses a
+    // known EPC, reads the product's SKU and the bin code itself, and writes
+    // each unit with its inward movement in one transaction. Validation of
+    // required and custom fields is still the caller's job (FieldValidator +
+    // CompanyConfig) until that moves to the server too.
 
     /**
      * Enrolls each tag in [units] as one unit of [context].product.
      *
-     * Each tag is its own transaction, so one bad tag never blocks the rest.
-     * Duplicate EPCs within [units] are reported once as DUPLICATE_IN_LIST.
-     * Returns failure only when nothing could be attempted (not signed in,
-     * product or batch invalid); per-tag problems are in the summary.
+     * Sent to the server in chunks of up to [SERVER_MAX_UNITS] tags. Each tag
+     * succeeds or fails on its own; a chunk that can't reach the server comes
+     * back as FAILED for its tags, so earlier chunks' results are never lost
+     * and tapping Save again is safe (already-saved tags show as already
+     * enrolled). Returns failure only when nothing could be attempted (not
+     * signed in, no product or location, batch of another product).
      */
     suspend fun enrollUnits(
         context: EnrollContext,
         units: List<EnrollUnitInput>
     ): Result<EnrollSummary> {
-        val company = companyDoc() ?: return Result.failure(Exception("Not logged in"))
+        if (companyId() == null) return Result.failure(Exception("Not logged in"))
         val product = context.product
 
         if (product.id.isBlank()) return Result.failure(IllegalArgumentException("Pick a product first"))
@@ -235,132 +239,58 @@ class InventoryRepository {
                 return Result.failure(IllegalArgumentException("Batch ${batch.batchNo} belongs to a different product"))
             }
         }
+        if (units.isEmpty()) return Result.success(EnrollSummary(emptyList()))
 
-        val uid = userId()
-        val enrolledBy = context.enrolledBy.ifBlank { uid }
-
-        // Split out bad and repeated EPCs before touching Firestore.
-        val seen = HashSet<String>()
-        val early = mutableListOf<EnrollResult>()
-        val toWrite = mutableListOf<EnrollUnitInput>()
-        units.forEach { input ->
-            val epc = input.epc.trim()
-            when {
-                !isValidEpc(epc) ->
-                    early += EnrollResult(epc, EnrollOutcome.INVALID_EPC, "Not a valid tag EPC")
-                !seen.add(epc) ->
-                    early += EnrollResult(epc, EnrollOutcome.DUPLICATE_IN_LIST, "Scanned more than once")
-                else -> toWrite += input.copy(epc = epc)
+        val results = units.chunked(SERVER_MAX_UNITS).flatMap { chunk ->
+            try {
+                callEnroll(context, chunk)
+            } catch (e: Exception) {
+                val message = ServerCalls.message(e)
+                chunk.map { EnrollResult(it.epc.trim().uppercase(), EnrollOutcome.FAILED, message) }
             }
         }
-
-        val written = coroutineScope {
-            toWrite.chunked(ENROLL_PARALLELISM).flatMap { chunk ->
-                chunk.map { input ->
-                    async { enrollOne(company, context, input, enrolledBy, uid) }
-                }.awaitAll()
-            }
-        }
-
-        return Result.success(EnrollSummary(early + written))
+        return Result.success(EnrollSummary(results))
     }
 
-    private suspend fun enrollOne(
-        company: com.google.firebase.firestore.DocumentReference,
-        context: EnrollContext,
-        input: EnrollUnitInput,
-        enrolledBy: String,
-        uid: String
-    ): EnrollResult {
-        val epc = input.epc
-        val product = context.product
-        val batch = context.batch
-        val unitRef = company.collection("inventory_units").document(epc)
-        val movementRef = company.collection("movements").document()
-        val now = Timestamp.now()
-
-        return try {
-            firestore.runTransaction { txn ->
-                val existing = txn.get(unitRef)
-                if (existing.exists()) {
-                    throw AlreadyEnrolledException(
-                        epc = epc,
-                        sku = existing.getString("sku").orEmpty(),
-                        status = existing.getString("status").orEmpty()
-                    )
-                }
-
-                val unitData = hashMapOf<String, Any>(
-                    "epc" to epc,
+    /** One enrollUnitsV1 call (opId and connection retries handled by ServerCalls). */
+    private suspend fun callEnroll(context: EnrollContext, chunk: List<EnrollUnitInput>): List<EnrollResult> {
+        val request = hashMapOf<String, Any?>(
+            "productId" to context.product.id,
+            "warehouseId" to context.warehouseId,
+            "rackId" to context.rackId,
+            "binId" to context.binId,
+            "batchId" to (context.batch?.id ?: ""),
+            "referenceType" to context.referenceType,
+            "referenceId" to context.referenceId.trim(),
+            "notes" to context.notes,
+            "units" to chunk.map { input ->
+                hashMapOf<String, Any>(
+                    "epc" to input.epc.trim(),
                     "tid" to input.tid.trim(),
-                    "productId" to product.id,
-                    "sku" to product.sku,
                     "serialNumber" to input.serialNumber.trim(),
-                    "currentWarehouseId" to context.warehouseId,
-                    "currentRackId" to context.rackId,
-                    "currentBinId" to context.binId,
-                    "currentBinCode" to context.binCode,
-                    "status" to "in_stock",
-                    "inwardedAt" to now,
-                    "lastMovedAt" to now,
-                    "enrolledAt" to now,
-                    "enrolledBy" to enrolledBy,
-                    "unitKind" to UnitKind.ITEM.key,
-                    "quantity" to 1,
-                    "customFields" to cleanCustomFields(input.customFields)
-                )
-                input.price?.let { unitData["price"] = it }
-                if (batch != null) {
-                    unitData["batchId"] = batch.id
-                    unitData["batchNo"] = batch.batchNo
-                    unitData["mfgDate"] = batch.mfgDate
-                    unitData["expiryDate"] = batch.expiryDate
-                }
-                txn.set(unitRef, unitData)
-
-                val movementData = hashMapOf<String, Any>(
-                    "type" to "inward",
-                    "productId" to product.id,
-                    "sku" to product.sku,
-                    "epc" to epc,
-                    "quantity" to 1,
-                    "fromWarehouseId" to "",
-                    "fromRackId" to "",
-                    "fromBinId" to "",
-                    "fromBinCode" to "",
-                    "toWarehouseId" to context.warehouseId,
-                    "toRackId" to context.rackId,
-                    "toBinId" to context.binId,
-                    "toBinCode" to context.binCode,
-                    "referenceType" to context.referenceType,
-                    "referenceId" to context.referenceId.trim(),
-                    "userId" to uid,
-                    "timestamp" to now,
-                    "notes" to context.notes,
-                    "batchId" to (batch?.id ?: "")
-                )
-                txn.set(movementRef, movementData)
-                null
-            }.await()
-            EnrollResult(epc, EnrollOutcome.ENROLLED)
-        } catch (e: Exception) {
-            val dup = (e as? AlreadyEnrolledException) ?: (e.cause as? AlreadyEnrolledException)
-            if (dup != null) {
-                val where = if (dup.sku.isNotBlank()) " as ${dup.sku}" else ""
-                EnrollResult(epc, EnrollOutcome.ALREADY_ENROLLED, "Already enrolled$where (${dup.status.ifBlank { "unknown" }})")
-            } else {
-                EnrollResult(epc, EnrollOutcome.FAILED, e.message ?: "Save failed")
+                    "customFields" to callableFields(input.customFields)
+                ).apply { input.price?.let { put("price", it) } }
             }
+        )
+        val data = ServerCalls.call("enrollUnitsV1", request, timeoutMinutes = 5)
+        val list = data["results"] as? List<*> ?: emptyList<Any>()
+        return list.mapNotNull { row ->
+            val r = row as? Map<*, *> ?: return@mapNotNull null
+            val outcome = runCatching { EnrollOutcome.valueOf(r["outcome"].toString()) }
+                .getOrDefault(EnrollOutcome.FAILED)
+            EnrollResult(r["epc"]?.toString().orEmpty(), outcome, r["message"]?.toString().orEmpty())
         }
     }
 
-    /** Drops nulls and blank strings so empty optional fields aren't stored. */
-    private fun cleanCustomFields(fields: Map<String, Any?>): Map<String, Any> =
+    /** Custom field values the server accepts: text, numbers, yes/no. Blanks dropped. */
+    private fun callableFields(fields: Map<String, Any?>): Map<String, Any> =
         fields.entries.mapNotNull { (k, v) ->
             when (v) {
                 null -> null
                 is String -> v.trim().takeIf { it.isNotEmpty() }?.let { k to it }
-                else -> k to v
+                is Number, is Boolean -> k to v
+                is Timestamp -> k to ISO_DATE.format(v.toDate())
+                else -> v.toString().trim().takeIf { it.isNotEmpty() }?.let { k to it }
             }
         }.toMap()
 
@@ -404,109 +334,51 @@ class InventoryRepository {
         serialNumber: String,
         price: Double?,
         customFields: Map<String, Any>
-    ): Result<Unit> {
-        return try {
-            val ref = companyDoc()?.collection("inventory_units")?.document(epc)
-                ?: return Result.failure(Exception("Not logged in"))
-            ref.update(
-                mapOf(
-                    "serialNumber" to serialNumber.trim(),
-                    "price" to (price ?: FieldValue.delete()),
-                    "customFields" to customFields
-                )
-            ).await()
-            Result.success(Unit)
-        } catch (e: Exception) { Result.failure(e) }
+    ): Result<Unit> = runServer {
+        ServerCalls.call(
+            "updateUnitDetailsV1",
+            mapOf(
+                "epc" to epc,
+                "serialNumber" to serialNumber.trim(),
+                "price" to price,
+                "customFields" to callableFields(customFields)
+            )
+        )
+        Unit
     }
 
     /**
-     * Changes a unit's status and logs it in the movement ledger, in one transaction.
+     * Changes a unit's status and logs it in the movement ledger, on the
+     * server (changeUnitStatusV1, one transaction):
      *
      *   counted → not counted   outward,  quantity -1, from the unit's location
      *   not counted → counted   inward,   quantity +1, into the unit's location
      *   otherwise               status_change, quantity 0 (history only)
      *
-     * "Counted" = [STOCK_STATUSES]. Leaving SOLD clears soldAt/soldBy;
-     * entering SOLD sets them. System-only statuses can't be set here.
+     * "Counted" = [STOCK_STATUSES]. The server also enforces the role limits:
+     * staff can't mark lost/disposed or edit details.
      */
     suspend fun changeUnitStatus(epc: String, newStatus: UnitStatus, note: String = ""): Result<Unit> {
-        return try {
-            require(!newStatus.systemOnly) { "${newStatus.displayName} is set automatically" }
-            val company = companyDoc() ?: return Result.failure(Exception("Not logged in"))
-            val unitRef = company.collection("inventory_units").document(epc)
-            val movementRef = company.collection("movements").document()
-            val uid = userId()
-            val now = Timestamp.now()
-
-            firestore.runTransaction { txn ->
-                val snap = txn.get(unitRef)
-                if (!snap.exists()) throw IllegalStateException("This tag is no longer enrolled")
-
-                val oldKey = snap.getString("status") ?: UnitStatus.IN_STOCK.key
-                val oldStatus = UnitStatus.fromKey(oldKey) ?: UnitStatus.IN_STOCK
-                if (oldStatus == newStatus) return@runTransaction null
-                if (oldStatus == UnitStatus.RETAGGED) throw IllegalStateException("A re-tagged unit can't change status")
-
-                val wasCounted = oldStatus in STOCK_STATUSES
-                val isCounted = newStatus in STOCK_STATUSES
-
-                val updates = hashMapOf<String, Any>(
-                    "status" to newStatus.key,
-                    "lastMovedAt" to now
-                )
-                if (newStatus == UnitStatus.SOLD) {
-                    updates["soldAt"] = now
-                    updates["soldBy"] = uid
-                } else if (oldStatus == UnitStatus.SOLD) {
-                    updates["soldAt"] = FieldValue.delete()
-                    updates["soldBy"] = FieldValue.delete()
-                }
-                txn.update(unitRef, updates)
-
-                val warehouseId = snap.getString("currentWarehouseId").orEmpty()
-                val rackId = snap.getString("currentRackId").orEmpty()
-                val binId = snap.getString("currentBinId").orEmpty()
-                val binCode = snap.getString("currentBinCode").orEmpty()
-                val leaving = wasCounted && !isCounted
-                val arriving = !wasCounted && isCounted
-
-                val movement = hashMapOf<String, Any>(
-                    "type" to when {
-                        leaving -> "outward"
-                        arriving -> "inward"
-                        else -> "status_change"
-                    },
-                    "productId" to snap.getString("productId").orEmpty(),
-                    "sku" to snap.getString("sku").orEmpty(),
-                    "epc" to epc,
-                    "quantity" to when {
-                        leaving -> -1
-                        arriving -> 1
-                        else -> 0
-                    },
-                    "fromWarehouseId" to if (arriving) "" else warehouseId,
-                    "fromRackId" to if (arriving) "" else rackId,
-                    "fromBinId" to if (arriving) "" else binId,
-                    "fromBinCode" to if (arriving) "" else binCode,
-                    "toWarehouseId" to if (leaving) "" else warehouseId,
-                    "toRackId" to if (leaving) "" else rackId,
-                    "toBinId" to if (leaving) "" else binId,
-                    "toBinCode" to if (leaving) "" else binCode,
-                    "referenceType" to "status_change",
-                    "referenceId" to "${oldStatus.key}→${newStatus.key}",
-                    "userId" to uid,
-                    "timestamp" to now,
-                    "notes" to note.trim(),
-                    "batchId" to snap.getString("batchId").orEmpty()
-                )
-                txn.set(movementRef, movement)
-                null
-            }.await()
-            Result.success(Unit)
-        } catch (e: Exception) {
-            Result.failure((e.cause as? IllegalStateException) ?: e)
+        if (newStatus.systemOnly) return Result.failure(IllegalStateException("${newStatus.displayName} is set automatically"))
+        return runServer {
+            ServerCalls.call("changeUnitStatusV1", mapOf("epc" to epc, "status" to newStatus.key, "note" to note.trim()))
+            Unit
         }
     }
+
+    /** Checkout: marks an in-stock piece sold (markSoldV1). Returns when it was sold. */
+    suspend fun markSold(epc: String): Result<Timestamp> = runServer {
+        val reply = ServerCalls.call("markSoldV1", mapOf("epc" to epc))
+        val millis = (reply["soldAt"] as? Number)?.toLong() ?: System.currentTimeMillis()
+        Timestamp(Date(millis))
+    }
+
+    private suspend fun <T> runServer(block: suspend () -> T): Result<T> = try {
+        if (companyId() == null) Result.failure(Exception("Not logged in")) else Result.success(block())
+    } catch (e: Exception) {
+        Result.failure(Exception(ServerCalls.message(e), e))
+    }
+
     // ── Dashboard reads ────────────────────────────────────────
 
     /**
@@ -602,7 +474,11 @@ class InventoryRepository {
     }
 }
 
-private const val ENROLL_PARALLELISM = 8
+/** Same limit as enrollUnitsV1 on the server. */
+private const val SERVER_MAX_UNITS = 500
+
+/** Custom date fields are stored as yyyy-MM-dd text. */
+private val ISO_DATE = SimpleDateFormat("yyyy-MM-dd", Locale.US)
 
 private const val MAX_SERIAL_MATCHES = 20L
 
@@ -656,9 +532,3 @@ data class EnrollSummary(val results: List<EnrollResult>) {
     val skipped: Int get() = results.size - enrolled
     val failures: List<EnrollResult> get() = results.filterNot { it.ok }
 }
-
-private class AlreadyEnrolledException(
-    val epc: String,
-    val sku: String,
-    val status: String
-) : IllegalStateException("EPC $epc is already enrolled")

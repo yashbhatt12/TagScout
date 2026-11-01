@@ -83,7 +83,7 @@ function text(value: unknown, max: number): string {
 }
 
 /** Same as the app's cleanCustomFields: drop nulls and blank text. Values must be text, numbers or yes/no. */
-function cleanCustomFields(raw: unknown): Record<string, string | number | boolean> {
+export function cleanCustomFields(raw: unknown): Record<string, string | number | boolean> {
   if (raw === undefined || raw === null) return {};
   if (typeof raw !== "object" || Array.isArray(raw)) throw new HttpsError("invalid-argument", "customFields must be an object.");
   const out: Record<string, string | number | boolean> = {};

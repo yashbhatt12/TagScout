@@ -4,6 +4,7 @@ import androidx.lifecycle.ViewModel
 import androidx.lifecycle.ViewModelProvider
 import androidx.lifecycle.viewModelScope
 import com.snainfotech.tagscout.data.auth.MembershipRepository
+import com.snainfotech.tagscout.data.auth.TeamRole
 import com.snainfotech.tagscout.data.config.Capability
 import com.snainfotech.tagscout.data.config.CompanyConfig
 import com.snainfotech.tagscout.data.config.ConfigRepository
@@ -114,7 +115,9 @@ data class UnitDetailState(
             }
         }
 
-    val canEdit: Boolean get() = unit != null && status != UnitStatus.RETAGGED
+    /** Staff can't edit details (the server refuses too). */
+    val canEdit: Boolean get() = unit != null && status != UnitStatus.RETAGGED &&
+        MembershipRepository.current?.role != TeamRole.STAFF
 
     /** NavGraph / the screen run the reader exactly while this is true. */
     val isListening: Boolean

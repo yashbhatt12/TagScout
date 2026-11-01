@@ -1,25 +1,31 @@
-"use strict";
-
 /**
  * Writes a company's settings doc from a template and seeds starter
- * categories. Shared by the signup trigger (index.js) and the admin
- * command (scripts/applyTemplate.js).
+ * categories. Shared by the signup trigger (setUpNewCompany) and the admin
+ * command (scripts/applyTemplate.js, which uses the built copy in lib/).
  *
  * Safe by default: an existing settings doc is never overwritten unless
  * `overwrite` is passed, and categories are only seeded for product types
  * that have none yet — re-running never duplicates anything.
+ *
+ * Takes the Firestore instance as a parameter (rather than importing it)
+ * so the admin scripts can pass their own.
  */
 
-const { FieldValue } = require("firebase-admin/firestore");
-const { buildSettings, starterCategoriesFor, DEFAULT_PRESET } = require("./templates");
+import {FieldValue, type Firestore} from "firebase-admin/firestore";
+import {
+  buildSettings,
+  starterCategoriesFor,
+  DEFAULT_PRESET,
+  type CompanySettings,
+} from "./templates";
 
 const ALREADY_EXISTS = 6; // gRPC status code returned by create() when the doc exists
 
-function companyRef(db, companyId) {
+export function companyRef(db: Firestore, companyId: string) {
   return db.collection("companies").doc(companyId);
 }
 
-function settingsRef(db, companyId) {
+export function settingsRef(db: Firestore, companyId: string) {
   return companyRef(db, companyId).collection("settings").doc("config");
 }
 
@@ -27,9 +33,14 @@ function settingsRef(db, companyId) {
  * Writes the settings doc. Returns true if written, false if one already
  * existed and `overwrite` was not set.
  */
-async function writeSettings(db, companyId, settings, { overwrite = false } = {}) {
+export async function writeSettings(
+  db: Firestore,
+  companyId: string,
+  settings: CompanySettings,
+  {overwrite = false}: { overwrite?: boolean } = {},
+): Promise<boolean> {
   const ref = settingsRef(db, companyId);
-  const data = { ...settings, updatedAt: FieldValue.serverTimestamp() };
+  const data = {...settings, updatedAt: FieldValue.serverTimestamp()};
   if (overwrite) {
     await ref.set(data);
     return true;
@@ -38,12 +49,12 @@ async function writeSettings(db, companyId, settings, { overwrite = false } = {}
     await ref.create(data);
     return true;
   } catch (e) {
-    if (e.code === ALREADY_EXISTS) return false;
+    if ((e as { code?: unknown }).code === ALREADY_EXISTS) return false;
     throw e;
   }
 }
 
-function categoryDoc(name, productType, parentId, order) {
+function categoryDoc(name: string, productType: string, parentId: string, order: number) {
   return {
     name,
     nameKey: name.trim().toLowerCase(),
@@ -60,7 +71,11 @@ function categoryDoc(name, productType, parentId, order) {
  * Adds the template's starter categories for each enabled type that has
  * no categories yet. Returns how many category docs were created.
  */
-async function seedStarterCategories(db, companyId, settings) {
+export async function seedStarterCategories(
+  db: Firestore,
+  companyId: string,
+  settings: Pick<CompanySettings, "productTypes">,
+): Promise<number> {
   const col = companyRef(db, companyId).collection("categories");
   const existing = await col.get();
   const typesWithCategories = new Set(existing.docs.map((d) => d.get("productType")));
@@ -68,7 +83,7 @@ async function seedStarterCategories(db, companyId, settings) {
   const batch = db.batch();
   let created = 0;
 
-  for (const { type, categories } of starterCategoriesFor(settings)) {
+  for (const {type, categories} of starterCategoriesFor(settings)) {
     if (typesWithCategories.has(type)) continue;
     categories.forEach((c, i) => {
       const parent = col.doc();
@@ -85,16 +100,24 @@ async function seedStarterCategories(db, companyId, settings) {
   return created;
 }
 
+export interface SetUpOptions {
+  preset?: string;
+  extraTypes?: string[];
+  overwrite?: boolean;
+}
+
 /**
  * Full set-up: settings from [preset] (+ [extraTypes] switched on), then
  * starter categories. Categories are only seeded when settings were
  * actually written, so a company that already has settings is untouched.
  */
-async function setUpCompany(db, companyId, { preset = DEFAULT_PRESET, extraTypes = [], overwrite = false } = {}) {
+export async function setUpCompany(
+  db: Firestore,
+  companyId: string,
+  {preset = DEFAULT_PRESET, extraTypes = [], overwrite = false}: SetUpOptions = {},
+) {
   const settings = buildSettings(preset, extraTypes);
-  const written = await writeSettings(db, companyId, settings, { overwrite });
+  const written = await writeSettings(db, companyId, settings, {overwrite});
   const categories = written ? await seedStarterCategories(db, companyId, settings) : 0;
-  return { companyId, preset, written, categories };
+  return {companyId, preset, written, categories};
 }
-
-module.exports = { setUpCompany, writeSettings, seedStarterCategories, settingsRef };

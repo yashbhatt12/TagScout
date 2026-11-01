@@ -1,5 +1,3 @@
-"use strict";
-
 /**
  * TagScout settings templates.
  *
@@ -17,33 +15,101 @@
  * settings doc records which version it was built from.
  */
 
-const TEMPLATE_VERSION = "2026-10-31";
+// ── Types (the shape CompanyConfigParser in the app reads) ────────
+
+export type FieldType = "text" | "number" | "date" | "boolean" | "dropdown";
+export type FieldLevel = "product" | "unit";
+type Extra = Record<string, unknown>;
+
+export interface FieldDef {
+  key: string;
+  label: string;
+  type: FieldType;
+  level: FieldLevel;
+  required: boolean;
+  active: boolean;
+  order?: number;
+  unit?: string;
+  options?: string[];
+  [extra: string]: unknown;
+}
+
+export interface GroupDef {
+  id: string;
+  label: string;
+  order: number;
+  capability?: string;
+  fields: FieldDef[];
+}
+
+export interface ProductTypeDef {
+  label: string;
+  groups: string[];
+  fields: FieldDef[];
+  required: Record<string, boolean>;
+}
+
+export interface LabelDef {
+  singular: string;
+  plural?: string;
+}
+
+export interface PresetDef {
+  label: string;
+  /** Business view the app opens: jewellery | retail | warehouse | assets | general. */
+  home: string;
+  types: string[];
+  features: Record<string, boolean>;
+  labels: Record<string, LabelDef>;
+  capabilities: Record<string, unknown>;
+}
+
+export interface StarterCategory {
+  name: string;
+  children?: string[];
+}
+
+export interface CompanySettings {
+  schemaVersion: number;
+  templateVersion: string;
+  template: string;
+  home: string;
+  plan: string;
+  features: Record<string, boolean>;
+  limits: { maxDevices: number };
+  labels: Record<string, LabelDef>;
+  attributeGroups: GroupDef[];
+  productTypes: Record<string, ProductTypeDef & { enabled: boolean }>;
+  capabilities: Record<string, unknown>;
+}
+
+export const TEMPLATE_VERSION = "2026-10-31";
 const SCHEMA_VERSION = 1;
 
-const P = "product";
-const U = "unit";
+const P: FieldLevel = "product";
+const U: FieldLevel = "unit";
 
 // ── Field helpers ─────────────────────────────────────────────────
 
-function field(key, label, type, level, extra = {}) {
+function field(key: string, label: string, type: FieldType, level: FieldLevel, extra: Extra = {}): FieldDef {
   return { key, label, type, level, required: false, active: true, ...extra };
 }
-const text = (key, label, level, extra) => field(key, label, "text", level, extra);
-const num = (key, label, level, unit, extra = {}) =>
+const text = (key: string, label: string, level: FieldLevel, extra?: Extra) => field(key, label, "text", level, extra);
+const num = (key: string, label: string, level: FieldLevel, unit?: string | null, extra: Extra = {}) =>
   field(key, label, "number", level, unit ? { unit, ...extra } : extra);
-const date = (key, label, level, extra) => field(key, label, "date", level, extra);
-const bool = (key, label, level, extra) => field(key, label, "boolean", level, extra);
-const pick = (key, label, level, options, extra = {}) =>
+const date = (key: string, label: string, level: FieldLevel, extra?: Extra) => field(key, label, "date", level, extra);
+const bool = (key: string, label: string, level: FieldLevel, extra?: Extra) => field(key, label, "boolean", level, extra);
+const pick = (key: string, label: string, level: FieldLevel, options: string[], extra: Extra = {}) =>
   field(key, label, "dropdown", level, { options, ...extra });
 const req = { required: true };
 
 /** Numbers fields in display order. */
-function ordered(fields) {
+function ordered(fields: FieldDef[]): FieldDef[] {
   return fields.map((f, i) => ({ order: i + 1, ...f }));
 }
 
-function group(id, label, order, capability, fields) {
-  const g = { id, label, order, fields: ordered(fields) };
+function group(id: string, label: string, order: number, capability: string | null, fields: FieldDef[]): GroupDef {
+  const g: GroupDef = { id, label, order, fields: ordered(fields) };
   if (capability) g.capability = capability;
   return g;
 }
@@ -52,7 +118,7 @@ function group(id, label, order, capability, fields) {
 // Rule: a field that can differ between two pieces of the same product
 // lives on the unit.
 
-const ATTRIBUTE_GROUPS = [
+export const ATTRIBUTE_GROUPS: GroupDef[] = [
   group("purchaseWarranty", "Purchase and warranty", 1, null, [
     date("purchaseDate", "Purchase date", U),
     text("vendor", "Vendor", U),
@@ -114,7 +180,7 @@ const ATTRIBUTE_GROUPS = [
 // `required` overrides apply to group fields and to core fields such as
 // serialNumber, batchNo, mfgDate and expiryDate. `enabled` is set per preset.
 
-const PRODUCT_TYPES = {
+export const PRODUCT_TYPES: Record<string, ProductTypeDef> = {
   it_asset: {
     label: "IT asset",
     groups: ["purchaseWarranty", "assignment", "audit", "depreciation"],
@@ -235,7 +301,7 @@ const PRODUCT_TYPES = {
 
 // ── Starter categories (seeded only if the type has none yet) ─────
 
-const STARTER_CATEGORIES = {
+export const STARTER_CATEGORIES: Record<string, StarterCategory[]> = {
   it_asset: [
     { name: "Laptop" }, { name: "Desktop" }, { name: "Monitor" }, { name: "Printer" },
     { name: "Network device" }, { name: "Phone / tablet" }, { name: "Server" }, { name: "Accessory" },
@@ -259,7 +325,7 @@ const STARTER_CATEGORIES = {
 
 // ── Presets ───────────────────────────────────────────────────────
 
-const ALL_FEATURES_ON = {
+const ALL_FEATURES_ON: Record<string, boolean> = {
   quickScan: true, inventoryScan: true, orderPicking: true, writeTag: true, killTag: true,
   locateTag: true, wms: true, retail: true, managerAlerts: true, shop: true,
   // Admin-only: SNA switches this on per company in the console.
@@ -282,7 +348,7 @@ const ALL_FEATURES_ON = {
 // Business views with their own demo login: jewellery, apparel, warehouse,
 // assets. `standard` stays the default for new signups (general home) and
 // `food` stays parked until a food customer comes on board.
-const PRESETS = {
+export const PRESETS: Record<string, PresetDef> = {
   standard: {
     label: "Standard (new signup)",
     home: "general",
@@ -361,17 +427,17 @@ const PRESETS = {
   },
 };
 
-const DEFAULT_PRESET = "standard";
+export const DEFAULT_PRESET = "standard";
 
 // ── Builders ──────────────────────────────────────────────────────
 
-const clone = (v) => JSON.parse(JSON.stringify(v));
+const clone = <T>(v: T): T => JSON.parse(JSON.stringify(v));
 
 /**
  * The full settings doc for a preset. [extraTypes] switches on more types
  * on top of the preset's own (e.g. keep "general" on for a pilot company).
  */
-function buildSettings(presetKey = DEFAULT_PRESET, extraTypes = []) {
+export function buildSettings(presetKey: string = DEFAULT_PRESET, extraTypes: string[] = []): CompanySettings {
   const preset = PRESETS[presetKey];
   if (!preset) throw new Error(`Unknown preset '${presetKey}'. Known: ${Object.keys(PRESETS).join(", ")}`);
 
@@ -380,7 +446,7 @@ function buildSettings(presetKey = DEFAULT_PRESET, extraTypes = []) {
     if (!PRODUCT_TYPES[t]) throw new Error(`Unknown product type '${t}'`);
   }
 
-  const productTypes = {};
+  const productTypes: CompanySettings["productTypes"] = {};
   for (const [key, def] of Object.entries(PRODUCT_TYPES)) {
     productTypes[key] = { ...clone(def), enabled: enabled.has(key) };
   }
@@ -402,20 +468,11 @@ function buildSettings(presetKey = DEFAULT_PRESET, extraTypes = []) {
 }
 
 /** Starter categories for the enabled types of a settings doc. */
-function starterCategoriesFor(settings) {
+export function starterCategoriesFor(
+  settings: Pick<CompanySettings, "productTypes">,
+): { type: string; categories: StarterCategory[] }[] {
   return Object.entries(settings.productTypes)
     .filter(([, def]) => def.enabled)
     .map(([type]) => ({ type, categories: STARTER_CATEGORIES[type] || [] }))
     .filter((x) => x.categories.length > 0);
 }
-
-module.exports = {
-  TEMPLATE_VERSION,
-  DEFAULT_PRESET,
-  PRESETS,
-  PRODUCT_TYPES,
-  ATTRIBUTE_GROUPS,
-  STARTER_CATEGORIES,
-  buildSettings,
-  starterCategoriesFor,
-};

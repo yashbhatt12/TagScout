@@ -17,14 +17,17 @@
  *   --overwrite         Replace an existing settings doc (admin edits in it are lost)
  *   --dry-run           Show what would be written; write nothing
  *
- * Needs GOOGLE_APPLICATION_CREDENTIALS pointing at a service account key.
+ * Needs GOOGLE_APPLICATION_CREDENTIALS pointing at a service account key,
+ * and a build of the functions (`npm run build`), because it uses lib/.
  */
 
 const { initializeApp } = require("firebase-admin/app");
 const { getFirestore } = require("firebase-admin/firestore");
 const { getAuth } = require("firebase-admin/auth");
-const { buildSettings, starterCategoriesFor, PRESETS } = require("../templates");
-const { setUpCompany, settingsRef } = require("../companySetup");
+// The shared code is TypeScript (src/); scripts use the built copy in lib/.
+// Run `npm run build` in functions/ first if lib/ is missing or out of date.
+const { buildSettings, starterCategoriesFor, PRESETS } = require("../lib/templates");
+const { setUpCompany, settingsRef } = require("../lib/companySetup");
 
 initializeApp();
 const db = getFirestore();

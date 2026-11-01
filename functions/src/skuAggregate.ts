@@ -1,10 +1,9 @@
 /**
- * TagScout WMS — Cloud Functions
+ * updateSkuAggregate
  *
- * Purpose: Keep the inventory_sku aggregate cache in sync with the
- *          movements ledger automatically, so the Android app and
- *          future web dashboards can read SKU-level quantities without
- *          scanning through unit records every time.
+ * Keeps the inventory_sku aggregate cache in sync with the movements
+ * ledger automatically, so the Android app and the web dashboard can read
+ * SKU-level quantities without scanning through unit records every time.
  *
  * How it works:
  *   1. App writes a document to /companies/{companyId}/movements/{movementId}
@@ -17,33 +16,25 @@
  * be rebuilt from the ledger if it ever drifts.
  */
 
-const { onDocumentCreated } = require("firebase-functions/v2/firestore");
-const { initializeApp } = require("firebase-admin/app");
-const { getFirestore, FieldValue } = require("firebase-admin/firestore");
-const logger = require("firebase-functions/logger");
+import {onDocumentCreated} from "firebase-functions/v2/firestore";
+import {FieldValue} from "firebase-admin/firestore";
+import * as logger from "firebase-functions/logger";
+import {db, REGION} from "./firebase";
 
-initializeApp();
-const db = getFirestore();
-const { setUpCompany } = require("./companySetup");
-
-/**
- * Fires whenever a new movement is created in any company's ledger.
- * Updates /companies/{companyId}/inventory_sku/{productId} accordingly.
- */
-exports.updateSkuAggregate = onDocumentCreated(
+export const updateSkuAggregate = onDocumentCreated(
   {
     document: "companies/{companyId}/movements/{movementId}",
-        region: "asia-south1",
+    region: REGION,
   },
   async (event) => {
     const snap = event.data;
     if (!snap) {
-      logger.warn("No snapshot on movement event", { params: event.params });
+      logger.warn("No snapshot on movement event", {params: event.params});
       return;
     }
 
     const movement = snap.data();
-    const { companyId } = event.params;
+    const {companyId} = event.params;
 
     // Only unit-tracked movements affect the aggregate (SKU-only tracking
     // will be handled differently in the future).
@@ -54,7 +45,7 @@ exports.updateSkuAggregate = onDocumentCreated(
       return;
     }
 
-    const quantity = movement.quantity || 0;
+    const quantity: number = movement.quantity || 0;
     if (quantity === 0 && movement.type !== "relocation") {
       // Nothing to change on the aggregate for a zero-quantity, non-relocation move
       return;
@@ -69,8 +60,8 @@ exports.updateSkuAggregate = onDocumentCreated(
     try {
       await db.runTransaction(async (txn) => {
         const doc = await txn.get(aggregateRef);
-        const existing = doc.exists ? doc.data() : {};
-        const byLocation = existing.byLocation || {};
+        const existing = doc.exists ? doc.data() ?? {} : {};
+        const byLocation: Record<string, number> = existing.byLocation || {};
 
         // ── Adjust the by-location breakdown ──────────────────────
         // For inward: add quantity to the destination bin
@@ -104,10 +95,7 @@ exports.updateSkuAggregate = onDocumentCreated(
         // ── Recompute total quantity as the sum of by-location values ──
         // Safer than incrementing a separate counter — stays consistent
         // with the by-location breakdown even if quantities were tweaked.
-        const totalQuantity = Object.values(byLocation).reduce(
-          (sum, n) => sum + n,
-          0
-        );
+        const totalQuantity = Object.values(byLocation).reduce((sum, n) => sum + n, 0);
 
         txn.set(
           aggregateRef,
@@ -118,7 +106,7 @@ exports.updateSkuAggregate = onDocumentCreated(
             byLocation,
             lastComputedAt: FieldValue.serverTimestamp(),
           },
-          { merge: true }
+          {merge: true},
         );
       });
 
@@ -130,38 +118,10 @@ exports.updateSkuAggregate = onDocumentCreated(
       });
     } catch (err) {
       logger.error("Failed to update SKU aggregate", {
-        error: err.message,
+        error: err instanceof Error ? err.message : String(err),
         movementId: event.params.movementId,
       });
-      throw err; // Firebase retries automatically on failure
+      throw err;
     }
-  }
-);
-
-/**
- * New registration → company settings.
- *
- * The app writes users/{uid} when someone registers (AuthRepository.register),
- * and companyId == uid until multi-user lands. This gives the new company
- * the "standard" preset plus starter categories.
- *
- * Idempotent: if a settings doc already exists (e.g. set up by hand or by
- * applyTemplate.js first), nothing is overwritten. A failure here never
- * blocks registration — the app runs on built-in defaults until settings
- * exist, and applyTemplate.js can fix the company afterwards.
- */
-exports.setUpNewCompany = onDocumentCreated(
-  {
-    document: "users/{uid}",
-    region: "asia-south1",
   },
-  async (event) => {
-    const { uid } = event.params;
-    try {
-      const result = await setUpCompany(db, uid);
-      logger.info("Company set-up", result);
-    } catch (e) {
-      logger.error("Company set-up failed", { uid, error: e.message });
-    }
-  }
 );

@@ -1,20 +1,24 @@
 {
   "name": "functions",
-  "description": "Cloud Functions for TagScout WMS",
+  "description": "Cloud Functions for TagScout (all functions, one codebase)",
   "scripts": {
-    "serve": "firebase emulators:start --only functions",
-    "shell": "firebase functions:shell",
-    "start": "npm run shell",
-    "deploy": "firebase deploy --only functions:updateSkuAggregate,functions:setUpNewCompany",
-    "logs": "firebase functions:log"
+    "build": "tsc",
+    "build:watch": "tsc --watch",
+    "serve": "npm run build && firebase emulators:start --only functions",
+    "deploy": "firebase deploy --only functions --project tagscout-in",
+    "logs": "firebase functions:log --project tagscout-in"
   },
   "engines": {
     "node": "24"
   },
-  "main": "index.js",
+  "main": "lib/index.js",
   "dependencies": {
-    "firebase-admin": "^12.7.0",
-    "firebase-functions": "^7.3.2"
+    "firebase-admin": "13.10.0",
+    "firebase-functions": "7.4.0"
+  },
+  "devDependencies": {
+    "@types/node": "24.19.2",
+    "typescript": "6.0.3"
   },
   "private": true
 }

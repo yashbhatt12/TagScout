@@ -44,7 +44,7 @@ service cloud.firestore {
             // Collections with their own stricter rules below. The general rule
             // must exclude them, because Firestore allows a request if ANY rule does.
             function isRestricted(collection) {
-                return collection in ['settings', 'movements', 'batches', 'alerts', 'inventory_sku', 'members'];
+                return collection in ['settings', 'movements', 'batches', 'alerts', 'inventory_sku', 'members', 'ops'];
             }
 
             allow read: if isMember();
@@ -89,6 +89,11 @@ service cloud.firestore {
             match /members/{memberId} {
                 allow read: if isMember();
                 allow write: if false;
+            }
+
+            // Duplicate-protection records for callable functions: server only.
+            match /ops/{opId} {
+                allow read, write: if false;
             }
 
             // Batches (batch tracking): batch number and dates are locked once created.

@@ -5,6 +5,7 @@
  *   updateSkuAggregate  movements ledger → inventory_sku totals
  *   setUpNewCompany     new users/{uid} → company settings from the standard preset
  *   alarmNotifier       door reader tag_events → manager alerts
+ *   addMemberV1, setMemberRoleV1, removeMemberV1   team management (callable, owner only)
  *
  * All run in asia-south1 (Mumbai), next to the Firestore database.
  */
@@ -14,3 +15,4 @@ import "./firebase"; // initializeApp() before anything else
 export {updateSkuAggregate} from "./skuAggregate";
 export {setUpNewCompany} from "./newCompany";
 export {alarmNotifier} from "./alarmNotifier";
+export {addMemberV1, setMemberRoleV1, removeMemberV1} from "./team";

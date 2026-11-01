@@ -17,7 +17,7 @@
  * settings doc records which version it was built from.
  */
 
-const TEMPLATE_VERSION = "2026-10-29";
+const TEMPLATE_VERSION = "2026-10-31";
 const SCHEMA_VERSION = 1;
 
 const P = "product";
@@ -266,9 +266,26 @@ const ALL_FEATURES_ON = {
   catalogExcel: false,
 };
 
+// Each preset belongs to one business type and opens that business's own view
+// (`home`: jewellery | retail | warehouse | assets | general). A preset switches
+// off the modules and buttons that don't belong to its business; the app hides
+// them. Company Set Up, Quick Scan, Locate Tag, Write / Kill Tag and Order
+// Supplies stay on everywhere. The full yes/no table per button is in the
+// TagScout chat of 31 Oct 2026; keep this in step with it.
+//
+// `labels` renames things per business. Besides warehouse / rack / bin:
+//   wmsModule, retailModule  home tile + menu title of each module
+//   unit                     what one tagged item is called (Piece, Item, Asset)
+//   enroll, cycleCount, dashboard   menu button titles
+// Keys the app doesn't know are ignored, so older app versions are unaffected.
+//
+// Business views with their own demo login: jewellery, apparel, warehouse,
+// assets. `standard` stays the default for new signups (general home) and
+// `food` stays parked until a food customer comes on board.
 const PRESETS = {
   standard: {
     label: "Standard (new signup)",
+    home: "general",
     types: ["general"],
     features: { retail: false, managerAlerts: false },
     labels: {},
@@ -276,6 +293,7 @@ const PRESETS = {
   },
   warehouse: {
     label: "Warehouse",
+    home: "warehouse",
     types: ["general"],
     features: { retail: false, managerAlerts: false },
     labels: {},
@@ -283,35 +301,57 @@ const PRESETS = {
   },
   jewellery: {
     label: "Jewellery retail",
+    home: "jewellery",
     types: ["jewellery"],
-    features: { orderPicking: false },
+    // Stores / Counters / Trays live under Company Set Up; Enroll, Stock Count and
+    // Piece details are in the Jewellery menu, so no Warehouse module. Stock Count
+    // replaces Inventory by File.
+    features: { wms: false, orderPicking: false, inventoryScan: false },
     labels: {
       warehouse: { singular: "Store", plural: "Stores" },
       rack: { singular: "Counter", plural: "Counters" },
       bin: { singular: "Tray", plural: "Trays" },
+      retailModule: { singular: "Jewellery Management" },
+      unit: { singular: "Piece", plural: "Pieces" },
+      enroll: { singular: "Enroll pieces" },
+      cycleCount: { singular: "Stock Count" },
     },
     capabilities: {},
   },
   apparel: {
     label: "Apparel retail",
+    home: "retail",
     types: ["apparel"],
-    features: {},
-    labels: {},
+    features: { wms: false },
+    labels: {
+      warehouse: { singular: "Store", plural: "Stores" },
+      unit: { singular: "Item", plural: "Items" },
+      enroll: { singular: "Enroll items" },
+    },
     capabilities: { nesting: { levels: ["carton"] } },
   },
   assets: {
     label: "Asset tracking",
+    home: "assets",
     types: ["it_asset", "non_it_asset"],
+    // No order picking, so the Warehouse menu's Pick List and Dispatch
+    // Verification are hidden too.
     features: { retail: false, managerAlerts: false, orderPicking: false },
     labels: {
       warehouse: { singular: "Site", plural: "Sites" },
       rack: { singular: "Zone", plural: "Zones" },
       bin: { singular: "Spot", plural: "Spots" },
+      wmsModule: { singular: "Asset Management" },
+      unit: { singular: "Asset", plural: "Assets" },
+      enroll: { singular: "Register assets" },
+      cycleCount: { singular: "Asset Audit" },
+      dashboard: { singular: "Asset Dashboard" },
     },
     capabilities: {},
   },
   food: {
     label: "Food",
+    home: "warehouse",
     types: ["food", "general"],
     features: { retail: false, managerAlerts: false },
     labels: {},
@@ -349,6 +389,8 @@ function buildSettings(presetKey = DEFAULT_PRESET, extraTypes = []) {
     schemaVersion: SCHEMA_VERSION,
     templateVersion: TEMPLATE_VERSION,
     template: presetKey,
+    // Which business view the app opens: jewellery | retail | warehouse | assets | general.
+    home: preset.home || "general",
     plan: "standard",
     features: { ...ALL_FEATURES_ON, ...preset.features },
     limits: { maxDevices: 10 },

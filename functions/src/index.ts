@@ -8,6 +8,7 @@
  *   addMemberV1, setMemberRoleV1, removeMemberV1   team management (callable, owner only)
  *   enrollUnitsV1       enroll a batch of tags (callable, any team member)
  *   changeUnitStatusV1, markSoldV1, updateUnitDetailsV1   unit writes (callable; role limits inside)
+ *   locationsV1         warehouses / racks / bins set-up (callable, owner + manager)
  *
  * All run in asia-south1 (Mumbai), next to the Firestore database.
  */
@@ -20,3 +21,4 @@ export {alarmNotifier} from "./alarmNotifier";
 export {addMemberV1, setMemberRoleV1, removeMemberV1} from "./team";
 export {enrollUnitsV1} from "./enroll";
 export {changeUnitStatusV1, markSoldV1, updateUnitDetailsV1} from "./units";
+export {locationsV1} from "./locations";

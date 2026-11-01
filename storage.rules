@@ -3,12 +3,11 @@ rules_version = '2';
 service firebase.storage {
   match /b/{bucket}/o {
 
-    // Same membership test as firestore.rules: the company's own login, or a
-    // login whose custom claims name this company.
+    // Same membership test as firestore.rules: the login's custom claims
+    // must name this company.
     function isMember(companyId) {
       return request.auth != null
-        && (request.auth.uid == companyId
-            || request.auth.token.get('companyId', '') == companyId);
+        && request.auth.token.get('companyId', '') == companyId;
     }
 
     // One folder per company: companies/{companyId}/...

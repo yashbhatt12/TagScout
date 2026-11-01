@@ -26,19 +26,15 @@ service cloud.firestore {
         }
 
         // ── Company data: /companies/{companyId}/... ─────────────────
-        // A login belongs to a company if either:
-        //   - it is the company's own login (companyId == uid, how every login
-        //     worked before multi-user), or
-        //   - its custom claims say so: { companyId, role }, set only by the
-        //     server (signup trigger, labelOwners.js, the team functions).
-        // The first check goes once every app version reads the company from
-        // the claims (multi-user step 3f).
+        // A login belongs to a company when its custom claims say so:
+        // { companyId, role }, set only by the server (snaAdmin.js, the team
+        // functions, the signup trigger). Owners carry their own company in
+        // their claims like everyone else.
         match /companies/{companyId} {
 
             function isMember() {
                 return request.auth != null
-                    && (request.auth.uid == companyId
-                        || request.auth.token.get('companyId', '') == companyId);
+                    && request.auth.token.get('companyId', '') == companyId;
             }
 
             // Collections with their own stricter rules below. The general rule

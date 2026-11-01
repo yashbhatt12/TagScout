@@ -3,18 +3,24 @@ rules_version = '2';
 service firebase.storage {
   match /b/{bucket}/o {
 
+    // Same membership test as firestore.rules: the company's own login, or a
+    // login whose custom claims name this company.
+    function isMember(companyId) {
+      return request.auth != null
+        && (request.auth.uid == companyId
+            || request.auth.token.get('companyId', '') == companyId);
+    }
+
     // One folder per company: companies/{companyId}/...
-    // companyId == uid for now (single login per company), same as firestore.rules.
     match /companies/{companyId}/{allPaths=**} {
-      allow read: if request.auth != null && request.auth.uid == companyId;
+      allow read: if isMember(companyId);
 
       // Images only, under 2 MB (the app compresses to ~200–400 KB).
-      allow create, update: if request.auth != null
-        && request.auth.uid == companyId
+      allow create, update: if isMember(companyId)
         && request.resource.size < 2 * 1024 * 1024
         && request.resource.contentType.matches('image/.*');
 
-      allow delete: if request.auth != null && request.auth.uid == companyId;
+      allow delete: if isMember(companyId);
     }
 
     // Everything else is closed.

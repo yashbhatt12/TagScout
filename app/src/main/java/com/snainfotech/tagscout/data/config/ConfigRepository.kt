@@ -1,11 +1,17 @@
 package com.snainfotech.tagscout.data.config
 
 import android.util.Log
-import com.google.firebase.auth.FirebaseAuth
 import com.google.firebase.firestore.DocumentReference
 import com.google.firebase.firestore.FirebaseFirestore
 import com.google.firebase.firestore.ListenerRegistration
+import com.snainfotech.tagscout.data.auth.MembershipRepository
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.distinctUntilChanged
+import kotlinx.coroutines.flow.map
+import kotlinx.coroutines.launch
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 
@@ -38,7 +44,6 @@ object ConfigRepository {
 
     private const val TAG = "ConfigRepository"
 
-    private val auth = FirebaseAuth.getInstance()
     private val firestore = FirebaseFirestore.getInstance()
 
     private val _config = MutableStateFlow(CompanyConfig.DEFAULT)
@@ -52,11 +57,16 @@ object ConfigRepository {
     private var registration: ListenerRegistration? = null
     private var listeningFor: String? = null
 
+    private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main)
+
     init {
-        // Fires once immediately with the current auth state, then on every
-        // sign-in / sign-out. companyId == uid until multi-user lands.
-        auth.addAuthStateListener { firebaseAuth ->
-            onCompanyChanged(firebaseAuth.currentUser?.uid)
+        // Follows the signed-in login's company (from its claims; see
+        // MembershipRepository): null when signed out.
+        scope.launch {
+            MembershipRepository.membership
+                .map { it?.companyId }
+                .distinctUntilChanged()
+                .collect { onCompanyChanged(it) }
         }
     }
 

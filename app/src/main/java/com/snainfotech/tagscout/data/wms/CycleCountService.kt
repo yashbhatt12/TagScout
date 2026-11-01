@@ -30,7 +30,7 @@ class CycleCountService(
     private val firestore = FirebaseFirestore.getInstance()
     private val auth = FirebaseAuth.getInstance()
 
-    private suspend fun companyId(): String? = AuthReady.awaitUid()
+    private suspend fun companyId(): String? = AuthReady.awaitCompanyId()
 
     private suspend fun companyDoc() = companyId()?.let {
         firestore.collection("companies").document(it)

@@ -35,7 +35,7 @@ class ManagerRepository {
     private val auth = FirebaseAuth.getInstance()
 
     /** Blocks until Firebase Auth has settled; see AuthReady for details. */
-    private suspend fun companyId(): String? = AuthReady.awaitUid()
+    private suspend fun companyId(): String? = AuthReady.awaitCompanyId()
 
     /** Current user id for stamping into audit fields; see JewelleryCheckoutViewModel. */
     private fun currentUserId(): String = auth.currentUser?.uid ?: ""

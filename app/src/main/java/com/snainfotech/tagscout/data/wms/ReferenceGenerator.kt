@@ -54,7 +54,7 @@ object ReferenceGenerator {
 
     private val firestore get() = FirebaseFirestore.getInstance()
 
-    private suspend fun counterDoc(counterName: String) = AuthReady.awaitUid()?.let { uid ->
+    private suspend fun counterDoc(counterName: String) = AuthReady.awaitCompanyId()?.let { uid ->
         firestore.collection("companies").document(uid)
             .collection("counters").document(counterName)
     }

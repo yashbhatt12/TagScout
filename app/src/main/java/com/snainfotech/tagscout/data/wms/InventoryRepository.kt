@@ -29,7 +29,7 @@ class InventoryRepository {
     private val auth = FirebaseAuth.getInstance()
 
     /** Uses AuthReady to avoid the startup race where currentUser is briefly null. */
-    private suspend fun companyId(): String? = AuthReady.awaitUid()
+    private suspend fun companyId(): String? = AuthReady.awaitCompanyId()
 
     /**
      * Non-suspend userId for stamping into movement records. Only ever called

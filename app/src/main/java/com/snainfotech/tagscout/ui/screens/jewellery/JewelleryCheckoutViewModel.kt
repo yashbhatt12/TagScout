@@ -6,6 +6,7 @@ import androidx.lifecycle.viewModelScope
 import com.google.firebase.Timestamp
 import com.google.firebase.auth.FirebaseAuth
 import com.google.firebase.firestore.FirebaseFirestore
+import com.snainfotech.tagscout.data.auth.AuthReady
 import com.snainfotech.tagscout.data.config.Capability
 import com.snainfotech.tagscout.data.config.CompanyConfig
 import com.snainfotech.tagscout.data.config.ConfigRepository
@@ -130,7 +131,8 @@ class JewelleryCheckoutViewModel(
 
         viewModelScope.launch {
             try {
-                val doc = db.collection("companies").document(userId)
+                val companyId = AuthReady.awaitCompanyId() ?: error("Not signed in — please log in again.")
+                val doc = db.collection("companies").document(companyId)
                     .collection("inventory_units").document(epc)
                     .get().await()
 
@@ -283,7 +285,8 @@ class JewelleryCheckoutViewModel(
 
         viewModelScope.launch {
             try {
-                val companyRef = db.collection("companies").document(userId)
+                val companyId = AuthReady.awaitCompanyId() ?: error("Not signed in — please log in again.")
+                val companyRef = db.collection("companies").document(companyId)
                 val unitRef = companyRef.collection("inventory_units").document(piece.epc)
                 val movementRef = companyRef.collection("movements").document()
                 val now = Timestamp.now()

@@ -41,7 +41,7 @@ fun LoginScreen(
     onEmailChange: (String) -> Unit,
     onPasswordChange: (String) -> Unit,
     onLoginClick: () -> Unit,
-    onRegisterClick: () -> Unit,
+    onForgotPasswordClick: () -> Unit,
     modifier: Modifier = Modifier
 ) {
     Column(
@@ -72,6 +72,19 @@ fun LoginScreen(
         )
 
         Spacer(modifier = Modifier.height(36.dp))
+
+        // Notice (e.g. reset email sent)
+        if (state.info != null && state.error == null) {
+            Text(
+                text = state.info,
+                color = Primary,
+                fontSize = 13.sp,
+                textAlign = TextAlign.Center,
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(bottom = 12.dp)
+            )
+        }
 
         // Error message
         if (state.error != null) {
@@ -150,13 +163,21 @@ fun LoginScreen(
 
         Spacer(modifier = Modifier.height(16.dp))
 
-        // Register link
-        TextButton(onClick = onRegisterClick) {
+        // No self sign-up: logins are created by SNA or by the company owner.
+        TextButton(onClick = onForgotPasswordClick, enabled = !state.isLoading) {
             Text(
-                text = "Don't have an account? Register",
+                text = "Forgot password?",
                 color = Primary,
                 fontSize = 14.sp
             )
         }
+
+        Text(
+            text = "Need a login? Ask your company's TagScout owner or SNA Infotech.",
+            fontSize = 12.sp,
+            color = MediumGray,
+            textAlign = TextAlign.Center,
+            modifier = Modifier.fillMaxWidth().padding(top = 4.dp)
+        )
     }
 }

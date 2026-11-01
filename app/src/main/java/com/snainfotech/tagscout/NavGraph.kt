@@ -48,7 +48,6 @@ import com.snainfotech.tagscout.ui.screens.auth.EmailVerificationScreen
 import com.snainfotech.tagscout.ui.screens.auth.LoginScreen
 import com.snainfotech.tagscout.ui.screens.auth.MfaEnrollScreen
 import com.snainfotech.tagscout.ui.screens.auth.MfaVerifyScreen
-import com.snainfotech.tagscout.ui.screens.auth.RegistrationScreen
 import com.snainfotech.tagscout.ui.screens.config.DeviceConfigScreen
 import com.snainfotech.tagscout.ui.screens.config.DeviceConfigViewModel
 import com.snainfotech.tagscout.ui.screens.config.OperationState
@@ -160,7 +159,6 @@ private const val CRITICAL_BATTERY_THRESHOLD = 5
 object Routes {
     const val AUTH_CHECK = "auth_check"
     const val LOGIN = "login"
-    const val REGISTER = "register"
     const val EMAIL_VERIFICATION = "email_verification"
     const val MFA_ENROLL = "mfa_enroll"
     const val MFA_VERIFY = "mfa_verify"
@@ -290,9 +288,7 @@ fun TagScoutNavGraph(
                 onEmailChange = authViewModel::updateEmail,
                 onPasswordChange = authViewModel::updatePassword,
                 onLoginClick = { authViewModel.login(activity) },
-                onRegisterClick = {
-                    navController.navigate(Routes.REGISTER) { popUpTo(Routes.LOGIN) { inclusive = true } }
-                }
+                onForgotPasswordClick = authViewModel::sendPasswordReset
             )
         }
 
@@ -352,41 +348,6 @@ fun TagScoutNavGraph(
                     scope.launch { app.deviceRepository.clearAll() }
                     authViewModel.logout()
                     navController.navigate(Routes.LOGIN) { popUpTo(Routes.MFA_VERIFY) { inclusive = true } }
-                }
-            )
-        }
-
-        // Registration screen
-        composable(Routes.REGISTER) {
-            SecureScreen()
-            val authRepo = remember { AuthRepository() }
-            val authViewModel: AuthViewModel = viewModel(
-                factory = AuthViewModelFactory(authRepo)
-            )
-            val authState by authViewModel.state.collectAsState()
-
-            // Navigate after successful registration
-            LaunchedEffect(authState.registrationComplete) {
-                if (authState.registrationComplete) {
-                    navController.navigate(Routes.EMAIL_VERIFICATION) {
-                        popUpTo(Routes.REGISTER) { inclusive = true }
-                    }
-                }
-            }
-
-            RegistrationScreen(
-                state = authState,
-                onNameChange = authViewModel::updateName,
-                onEmailChange = authViewModel::updateEmail,
-                onMobileChange = authViewModel::updateMobile,
-                onCompanyNameChange = authViewModel::updateCompanyName,
-                onPasswordChange = authViewModel::updatePassword,
-                onConfirmPasswordChange = authViewModel::updateConfirmPassword,
-                onRegisterClick = authViewModel::register,
-                onLoginClick = {
-                    navController.navigate(Routes.LOGIN) {
-                        popUpTo(Routes.REGISTER) { inclusive = true }
-                    }
                 }
             )
         }

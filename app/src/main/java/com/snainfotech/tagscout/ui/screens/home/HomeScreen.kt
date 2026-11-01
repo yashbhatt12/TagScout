@@ -27,6 +27,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.snainfotech.tagscout.data.config.CompanyConfig
 import com.snainfotech.tagscout.data.config.ConfigRepository
+import com.snainfotech.tagscout.data.auth.MembershipRepository
 import com.snainfotech.tagscout.data.config.Feature
 import com.snainfotech.tagscout.ui.components.AppHeader
 import com.snainfotech.tagscout.ui.components.DeviceStatusComponent
@@ -67,6 +68,13 @@ fun HomeScreen(
         CompanyConfig.DEFAULT
     } else {
         ConfigRepository.config.collectAsState().value
+    }
+    // Staff don't set up the company. Previews (and the moment before the
+    // role loads) show everything.
+    val canSetUp: Boolean = if (LocalInspectionMode.current) {
+        true
+    } else {
+        MembershipRepository.membership.collectAsState().value?.role?.canSetUp ?: true
     }
 
     // Title of the feature whose "upgrade" tile was tapped; null = no dialog.
@@ -131,14 +139,16 @@ fun HomeScreen(
             )
 
             // Every business type sets up its locations and products here,
-            // so this tile is never feature-gated either.
-            FeatureButton(
-                icon = R.drawable.ic_config,
-                title = "Company Set Up",
-                description = "Locations, products, categories and brands",
-                enabled = true,
-                onClick = onCompanySetupClick
-            )
+            // so this tile is never feature-gated; it's hidden only for staff.
+            if (canSetUp) {
+                FeatureButton(
+                    icon = R.drawable.ic_config,
+                    title = "Company Set Up",
+                    description = "Locations, products, categories and brands",
+                    enabled = true,
+                    onClick = onCompanySetupClick
+                )
+            }
 
             GatedFeatureButton(
                 available = config.anyTagOperationEnabled(),

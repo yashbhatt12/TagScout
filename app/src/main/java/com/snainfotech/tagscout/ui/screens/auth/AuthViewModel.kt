@@ -15,6 +15,8 @@ import kotlinx.coroutines.launch
 data class AuthState(
     val isLoading: Boolean = false,
     val error: String? = null,
+    /** A non-error notice, e.g. "password reset email sent". */
+    val info: String? = null,
     val name: String = "",
     val email: String = "",
     val mobile: String = "",
@@ -52,6 +54,33 @@ class AuthViewModel(
     fun updateMfaSmsCode(value: String) { _state.value = _state.value.copy(mfaSmsCode = value) }
     fun updateMfaPhoneNumber(value: String) { _state.value = _state.value.copy(mfaPhoneNumber = value) }
     fun clearError() { _state.value = _state.value.copy(error = null) }
+
+    // ── Forgot password ────────────────────────────────────────
+
+    /** Emails a link to set a new password (also re-sends an expired invite). */
+    fun sendPasswordReset() {
+        val email = _state.value.email.trim()
+        if (email.isBlank()) {
+            _state.value = _state.value.copy(error = "Enter your email first, then tap Forgot password.", info = null)
+            return
+        }
+        _state.value = _state.value.copy(isLoading = true, error = null, info = null)
+        viewModelScope.launch {
+            authRepository.sendPasswordReset(email)
+                .onSuccess {
+                    _state.value = _state.value.copy(
+                        isLoading = false,
+                        info = "If $email has a TagScout login, a link to set a new password is on its way.",
+                    )
+                }
+                .onFailure {
+                    _state.value = _state.value.copy(
+                        isLoading = false,
+                        error = "Couldn't send the email. Check the address and your connection, then try again.",
+                    )
+                }
+        }
+    }
 
     // ── Registration ───────────────────────────────────────────
 

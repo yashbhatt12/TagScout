@@ -86,7 +86,7 @@ class ProductImageRepository(context: Context) {
     }
 
     suspend fun upload(productId: String, bytes: ByteArray): Result<String> = runCatching {
-        val cid = AuthReady.awaitUid() ?: error("Not signed in")
+        val cid = AuthReady.awaitCompanyId() ?: error("Not signed in")
         val ref = storage.reference.child("companies/$cid/products/$productId/${System.currentTimeMillis()}.jpg")
         val metadata = StorageMetadata.Builder().setContentType("image/jpeg").build()
         ref.putBytes(bytes, metadata).await()
@@ -94,7 +94,7 @@ class ProductImageRepository(context: Context) {
     }
 
     private suspend fun setImageUrl(productId: String, url: String): Result<Unit> = runCatching {
-        val cid = AuthReady.awaitUid() ?: error("Not signed in")
+        val cid = AuthReady.awaitCompanyId() ?: error("Not signed in")
         firestore.collection("companies").document(cid)
             .collection("products").document(productId)
             .update(

@@ -49,7 +49,7 @@ class ProductRepository(
     private val auth = FirebaseAuth.getInstance()
 
     /** Uses AuthReady to avoid the startup race where currentUser is briefly null. */
-    private suspend fun companyId(): String? = AuthReady.awaitUid()
+    private suspend fun companyId(): String? = AuthReady.awaitCompanyId()
 
     private fun currentUserId(): String = auth.currentUser?.uid ?: ""
 
@@ -457,7 +457,7 @@ class ProductRepository(
      */
     private suspend fun deleteProductPhotos(productId: String) {
         runCatching {
-            val cid = AuthReady.awaitUid() ?: return
+            val cid = AuthReady.awaitCompanyId() ?: return
             val folder = FirebaseStorage.getInstance().reference
                 .child("companies/$cid/products/$productId")
             folder.listAll().await().items.forEach { file ->

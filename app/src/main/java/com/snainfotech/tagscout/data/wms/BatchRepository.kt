@@ -114,7 +114,7 @@ class BatchRepository {
     private val firestore = FirebaseFirestore.getInstance()
     private val auth = FirebaseAuth.getInstance()
 
-    private suspend fun companyId(): String? = AuthReady.awaitUid()
+    private suspend fun companyId(): String? = AuthReady.awaitCompanyId()
 
     private fun currentUserId(): String = auth.currentUser?.uid ?: ""
 

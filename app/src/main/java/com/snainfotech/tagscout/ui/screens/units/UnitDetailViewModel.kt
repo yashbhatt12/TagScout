@@ -3,6 +3,7 @@ package com.snainfotech.tagscout.ui.screens.units
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.ViewModelProvider
 import androidx.lifecycle.viewModelScope
+import com.snainfotech.tagscout.data.auth.MembershipRepository
 import com.snainfotech.tagscout.data.config.Capability
 import com.snainfotech.tagscout.data.config.CompanyConfig
 import com.snainfotech.tagscout.data.config.ConfigRepository
@@ -107,7 +108,10 @@ data class UnitDetailState(
         get() {
             val current = status ?: return emptyList()
             if (current == UnitStatus.RETAGGED) return emptyList()
-            return config.selectableStatuses(type).filter { it != current && it !in FLOW_ONLY_STATUSES }
+            val canWriteOff = MembershipRepository.current?.role?.canWriteOff ?: true
+            return config.selectableStatuses(type).filter {
+                it != current && it !in FLOW_ONLY_STATUSES && (canWriteOff || it !in WRITE_OFF_STATUSES)
+            }
         }
 
     val canEdit: Boolean get() = unit != null && status != UnitStatus.RETAGGED
@@ -121,6 +125,9 @@ data class UnitDetailState(
 
         /** Set by their own workflows (assignment, picking, dispatch), not by hand here. */
         val FLOW_ONLY_STATUSES = setOf(UnitStatus.ASSIGNED, UnitStatus.PICKED, UnitStatus.DISPATCHED)
+
+        /** Only owners and managers may write stock off. */
+        val WRITE_OFF_STATUSES = setOf(UnitStatus.LOST, UnitStatus.DISPOSED)
     }
 }
 

@@ -57,6 +57,11 @@ class AuthRepository {
 
     // ── Registration ───────────────────────────────────────────
 
+    /**
+     * Not used: self sign-up is switched off (Firebase Authentication setting
+     * and no Register screen). Logins are created by snaAdmin.js or by a
+     * company owner on the dashboard's Team page. Kept until the next cleanup.
+     */
     suspend fun register(
         email: String, password: String,
         name: String, mobile: String, companyName: String
@@ -225,6 +230,15 @@ class AuthRepository {
         } catch (e: Exception) { Result.failure(e) }
     }
 
+    // ── Password reset (also how invited people get a fresh link) ──
+
+    suspend fun sendPasswordReset(email: String): Result<Unit> {
+        return try {
+            auth.sendPasswordResetEmail(email.trim()).await()
+            Result.success(Unit)
+        } catch (e: Exception) { Result.failure(e) }
+    }
+
     // ── Email verification ─────────────────────────────────────
 
     suspend fun resendVerificationEmail(): Result<Unit> {
@@ -248,11 +262,18 @@ class AuthRepository {
         return try {
             val user = auth.currentUser ?: return Result.failure(Exception("Not logged in"))
             val doc = firestore.collection("users").document(user.uid).get().await()
+            // Team members' profiles don't carry the company name; it's on the company record.
+            val companyName = doc.getString("companyName").orEmpty().ifBlank {
+                val companyId = AuthReady.awaitCompanyId()
+                if (companyId == null) "" else try {
+                    firestore.collection("companies").document(companyId).get().await().getString("name").orEmpty()
+                } catch (_: Exception) { "" }
+            }
             Result.success(UserProfile(
                 name = doc.getString("name") ?: "",
                 email = doc.getString("email") ?: user.email ?: "",
                 mobile = doc.getString("mobile") ?: "",
-                companyName = doc.getString("companyName") ?: ""
+                companyName = companyName
             ))
         } catch (e: Exception) { Result.failure(e) }
     }

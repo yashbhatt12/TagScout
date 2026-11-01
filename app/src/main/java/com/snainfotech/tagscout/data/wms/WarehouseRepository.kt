@@ -42,14 +42,14 @@ class WarehouseRepository(
     /**
      * For now, one user = one company. Later: read from user profile.
      *
-     * Uses AuthReady.awaitUid() rather than auth.currentUser?.uid directly
+     * Uses AuthReady.awaitCompanyId() rather than auth.currentUser?.uid directly
      * to avoid a startup race: FirebaseAuth restores its session lazily on
      * app start, and code that runs immediately after screen entry (like
      * ViewModel init blocks) can see a null currentUser even when a valid
      * session is on disk. AuthReady waits for the first IdTokenListener
      * fire (usually <1 second) before returning.
      */
-    private suspend fun companyId(): String? = AuthReady.awaitUid()
+    private suspend fun companyId(): String? = AuthReady.awaitCompanyId()
 
     private suspend fun companyDoc() = companyId()?.let {
         firestore.collection("companies").document(it)

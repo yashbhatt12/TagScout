@@ -90,6 +90,13 @@ object AuthReady {
     }
 
     /**
+     * The company the signed-in login works in: from its claims, or its own
+     * uid for logins from before multi-user. Every company path uses this;
+     * awaitUid() is only for "who did it" fields.
+     */
+    suspend fun awaitCompanyId(): String? = MembershipRepository.await()?.companyId
+
+    /**
      * Stamp this UID onto Crashlytics so future crashes show who hit them.
      * Deduped against lastSetUid to avoid repeated no-op writes. Wrapped in
      * try/catch because Crashlytics initialization can fail in edge cases

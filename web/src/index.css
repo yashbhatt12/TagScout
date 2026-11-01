@@ -1326,3 +1326,77 @@ input {
     transition: none !important;
   }
 }
+
+/* ── Team ─────────────────────────────────────────────────── */
+
+.sidebar__person {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  color: #fff;
+  font-weight: 600;
+  font-size: 14px;
+}
+
+.sidebar__role {
+  padding: 1px 8px;
+  border-radius: 999px;
+  background: rgba(242, 165, 49, 0.2);
+  color: var(--amber);
+  font-size: 12px;
+  font-weight: 700;
+}
+
+.add-person {
+  display: grid;
+  grid-template-columns: minmax(200px, 2fr) minmax(160px, 1.5fr) minmax(130px, 1fr) auto;
+  align-items: end;
+  gap: 14px;
+}
+
+.add-person .btn {
+  min-height: 46px;
+}
+
+.add-person__hint {
+  margin-top: 10px;
+  color: var(--muted);
+  font-size: 14px;
+}
+
+.field select,
+.role-select {
+  min-height: 46px;
+  padding: 8px 12px;
+  border-radius: 12px;
+  border: 1px solid var(--border);
+  background: var(--surface-2);
+  color: var(--text);
+  font: inherit;
+  font-weight: 500;
+}
+
+.role-select {
+  min-height: 36px;
+  padding: 4px 10px;
+  border-radius: 10px;
+}
+
+.row-actions {
+  display: inline-flex;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  gap: 8px;
+}
+
+.row-actions .btn {
+  min-height: 34px;
+  padding: 4px 12px;
+  font-size: 13.5px;
+}
+
+@media (max-width: 900px) {
+  .add-person {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}

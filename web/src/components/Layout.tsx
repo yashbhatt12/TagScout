@@ -10,7 +10,7 @@ type NavItem = { to: string; label: string; icon: IconName; badge?: number };
 
 export function Layout({ children }: { children: ReactNode }) {
   const { signOut, user } = useAuth();
-  const { profile, config, feature, label, alerts } = useCompany();
+  const { profile, config, feature, label, alerts, companyName, role } = useCompany();
 
   const items: NavItem[] = [
     { to: "/", label: "Overview", icon: "overview" },
@@ -21,8 +21,10 @@ export function Layout({ children }: { children: ReactNode }) {
   if (feature("managerAlerts")) {
     items.push({ to: "/alerts", label: label("managerAlerts", true), icon: "alerts", badge: alerts.unread });
   }
+  items.push({ to: "/team", label: "Team", icon: "team" });
 
-  const company = profile.companyName || profile.name || "Your company";
+  const company = companyName;
+  const roleLabel = role.charAt(0).toUpperCase() + role.slice(1);
 
   return (
     <div className="shell">
@@ -51,6 +53,10 @@ export function Layout({ children }: { children: ReactNode }) {
         </nav>
 
         <div className="sidebar__foot">
+          <p className="sidebar__person">
+            {profile.name || user?.email}
+            <span className="sidebar__role">{roleLabel}</span>
+          </p>
           <p className="sidebar__user" title={user?.email ?? ""}>
             {user?.email}
           </p>

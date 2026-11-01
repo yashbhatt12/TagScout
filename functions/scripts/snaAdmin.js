@@ -12,8 +12,12 @@
  *   node scripts/snaAdmin.js resend-invite --email someone@shop.in [--link]
  *   node scripts/snaAdmin.js team --company owner@shop.in
  *   node scripts/snaAdmin.js companies
+ *   node scripts/snaAdmin.js sync-company-names
  *
  * --company takes the owner's email or the company id.
+ * sync-company-names copies each company's name from its owner's profile
+ * onto the company record (companies/{id}.name), where everyone in the
+ * company can read it. Needed once for companies created before team logins.
  * create-company and add-member email the person Firebase's "set your
  * password" link. Add --no-email to skip that (send it later with
  * resend-invite). resend-invite --link prints the link instead of emailing
@@ -133,6 +137,8 @@ async function companyIdOf(auth, db, value) {
 }
 
 async function companyName(db, companyId) {
+  const company = await db.collection("companies").doc(companyId).get();
+  if (company.exists && company.get("name")) return company.get("name");
   const owner = await db.collection("users").doc(companyId).get();
   return (owner.exists && owner.get("companyName")) || "(no name)";
 }
@@ -200,11 +206,31 @@ async function companiesCmd(args, { db }) {
       db.collection("users").doc(ref.id).get(),
       ref.collection("members").where("status", "==", "active").count().get(),
     ]);
-    const name = (owner.exists && owner.get("companyName")) || "(no name)";
+    const name = await companyName(db, ref.id);
     const email = (owner.exists && owner.get("email")) || "";
     const preset = settings.exists ? settings.get("template") : "no settings";
     console.log(`  ${name.padEnd(28)} ${String(preset).padEnd(11)} ${String(members.data().count).padStart(3)} people  ${email}  ${ref.id}`);
   }
+}
+
+async function syncCompanyNamesCmd(args, { db }) {
+  const refs = await db.collection("companies").listDocuments();
+  let copied = 0;
+  for (const ref of refs) {
+    const [company, owner] = await Promise.all([ref.get(), db.collection("users").doc(ref.id).get()]);
+    const current = company.exists ? company.get("name") : "";
+    const fromOwner = owner.exists ? owner.get("companyName") : "";
+    if (current) {
+      console.log(`  ${ref.id}  has name "${current}"`);
+    } else if (fromOwner) {
+      await ref.set({ name: fromOwner }, { merge: true });
+      copied++;
+      console.log(`  ${ref.id}  set to "${fromOwner}"`);
+    } else {
+      console.log(`  ${ref.id}  no name on the owner's profile either; left blank`);
+    }
+  }
+  console.log(`\n${copied} company name(s) copied.`);
 }
 
 const COMMANDS = {
@@ -213,6 +239,7 @@ const COMMANDS = {
   "resend-invite": resendInviteCmd,
   team: teamCmd,
   companies: companiesCmd,
+  "sync-company-names": syncCompanyNamesCmd,
 };
 
 async function main() {

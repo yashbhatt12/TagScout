@@ -23,7 +23,7 @@ import { queries, RECENT_DAYS as DAYS, recentWindow, useQuery } from "../lib/que
 
 export function OverviewPage() {
   const company = useCompany();
-  const { companyId, label, profile, locations, products, productById, locationText } = company;
+  const { companyId, label, companyName, locations, products, productById, locationText } = company;
   const theme = useChartTheme();
   const tip = tooltipStyle(theme);
 
@@ -116,7 +116,7 @@ export function OverviewPage() {
     };
   }, [counts.data, stock.data, movements.data, counts.updatedAt, window30, locations.warehouses.length, company.warehouseById, productById, locationText]);
 
-  const company_name = profile.companyName || profile.name;
+  const company_name = companyName === "Your company" ? "" : companyName;
 
   return (
     <div className="page">

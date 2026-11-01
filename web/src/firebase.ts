@@ -1,6 +1,7 @@
 import { initializeApp } from "firebase/app";
 import { getAuth } from "firebase/auth";
 import { collection, doc, getFirestore } from "firebase/firestore";
+import { getFunctions } from "firebase/functions";
 
 const firebaseConfig = {
   apiKey: import.meta.env.VITE_FIREBASE_API_KEY as string | undefined,
@@ -22,10 +23,12 @@ if (missing.length > 0) {
 export const app = initializeApp(firebaseConfig);
 export const auth = getAuth(app);
 export const db = getFirestore(app);
+/** Callable functions run in Mumbai, next to the database. */
+export const functions = getFunctions(app, "asia-south1");
 
 /**
- * Company data lives under companies/{companyId}.
- * companyId == uid until multi-user lands (same as firestore.rules).
+ * Company data lives under companies/{companyId}. The company comes from the
+ * login's claims (see AuthProvider); older logins without claims use their uid.
  */
 export function companyCol(companyId: string, ...segments: string[]) {
   return collection(db, "companies", companyId, ...segments);

@@ -10,8 +10,26 @@ import {
 import { auth } from "../firebase";
 import { clearCache } from "../lib/cache";
 
+export type Role = "owner" | "manager" | "staff";
+const ROLES: Role[] = ["owner", "manager", "staff"];
+
+/** Which company this login belongs to, and its role there (from its claims). */
+export type Member = { companyId: string; role: Role };
+
+/** Claims set by the server; a login without them owns its own company (pre multi-user). */
+function readMember(claims: Record<string, unknown>, uid: string): Member {
+  const companyId = claims.companyId;
+  const role = claims.role;
+  if (typeof companyId === "string" && companyId && ROLES.includes(role as Role)) {
+    return { companyId, role: role as Role };
+  }
+  return { companyId: uid, role: "owner" };
+}
+
 type AuthValue = {
   user: User | null;
+  /** Company and role; set whenever user is. */
+  member: Member | null;
   loading: boolean;
   signIn: (email: string, password: string) => Promise<void>;
   signOut: () => Promise<void>;
@@ -25,13 +43,26 @@ const AuthContext = createContext<AuthValue | null>(null);
 
 export function AuthProvider({ children }: { children: ReactNode }) {
   const [user, setUser] = useState<User | null>(null);
+  const [member, setMember] = useState<Member | null>(null);
   const [loading, setLoading] = useState(true);
   // reload() updates the same User object in place, so bump a counter to re-render.
   const [, setVersion] = useState(0);
 
   useEffect(
     () =>
-      onAuthStateChanged(auth, (u) => {
+      onAuthStateChanged(auth, async (u) => {
+        if (u) {
+          try {
+            // Fresh token, so a just-changed company or role applies straight away.
+            const token = await u.getIdTokenResult(true);
+            setMember(readMember(token.claims, u.uid));
+          } catch {
+            const token = await u.getIdTokenResult().catch(() => null);
+            setMember(readMember(token?.claims ?? {}, u.uid));
+          }
+        } else {
+          setMember(null);
+        }
         setUser(u);
         setLoading(false);
       }),
@@ -40,6 +71,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
   const value: AuthValue = {
     user,
+    member,
     loading,
     signIn: async (email, password) => {
       await signInWithEmailAndPassword(auth, email.trim(), password);

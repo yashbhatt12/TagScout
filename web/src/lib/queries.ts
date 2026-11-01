@@ -6,6 +6,7 @@
 import { prefetch, useCached } from "./cache";
 import {
   loadCategories,
+  loadCompanyName,
   loadConfig,
   loadCycleCountMovements,
   loadLocations,
@@ -28,17 +29,19 @@ export function recentWindow(now = new Date()): { from: Date; to: Date } {
 }
 
 export const queries = {
-  basics: (companyId: string) => ({
-    key: `${companyId}/basics`,
+  /** Company set-up plus who is signed in ([uid]'s own profile; staff can't read the owner's). */
+  basics: (companyId: string, uid: string) => ({
+    key: `${companyId}/basics/${uid}`,
     load: async () => {
-      const [config, profile, locations, products, categories] = await Promise.all([
+      const [config, profile, companyName, locations, products, categories] = await Promise.all([
         loadConfig(companyId),
-        loadProfile(companyId),
+        loadProfile(uid),
+        loadCompanyName(companyId, uid),
         loadLocations(companyId),
         loadProducts(companyId),
         loadCategories(companyId),
       ]);
-      return { config, profile, locations, products, categories };
+      return { config, profile, companyName, locations, products, categories };
     },
   }),
   statusCounts: (companyId: string) => ({

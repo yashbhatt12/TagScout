@@ -109,6 +109,11 @@ export async function createCompany(
 
   const user = await auth.createUser({email, emailVerified: true, displayName: ownerName || undefined});
   const uid = user.uid; // companyId == owner's uid
+  // The company record: its name, readable by everyone in the company.
+  await db.collection("companies").doc(uid).set(
+    {name: companyName, createdAt: FieldValue.serverTimestamp(), createdBy: actor},
+    {merge: true},
+  );
   const setUp = await setUpCompany(db, uid, {preset: input.preset, extraTypes: input.extraTypes ?? []});
   await makeOwnerOfOwnCompany(auth, db, uid, {name: ownerName, email});
   // Profile doc the app reads. Written last: the signup trigger then finds

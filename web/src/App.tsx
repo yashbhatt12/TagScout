@@ -15,12 +15,14 @@ const pageCode = {
   movements: () => import("./pages/MovementsPage"),
   cycleCounts: () => import("./pages/CycleCountsPage"),
   alerts: () => import("./pages/AlertsPage"),
+  team: () => import("./pages/TeamPage"),
 };
 const OverviewPage = lazy(() => pageCode.overview().then((m) => ({ default: m.OverviewPage })));
 const StockPage = lazy(() => pageCode.stock().then((m) => ({ default: m.StockPage })));
 const MovementsPage = lazy(() => pageCode.movements().then((m) => ({ default: m.MovementsPage })));
 const CycleCountsPage = lazy(() => pageCode.cycleCounts().then((m) => ({ default: m.CycleCountsPage })));
 const AlertsPage = lazy(() => pageCode.alerts().then((m) => ({ default: m.AlertsPage })));
+const TeamPage = lazy(() => pageCode.team().then((m) => ({ default: m.TeamPage })));
 
 function Splash({ text }: { text: string }) {
   return (
@@ -42,6 +44,7 @@ function CompanyRoutes() {
           <Route path="/movements" element={<MovementsPage />} />
           {feature("wms") ? <Route path="/cycle-counts" element={<CycleCountsPage />} /> : null}
           {feature("managerAlerts") ? <Route path="/alerts" element={<AlertsPage />} /> : null}
+          <Route path="/team" element={<TeamPage />} />
           <Route path="*" element={<Navigate to="/" replace />} />
         </Routes>
       </Suspense>
@@ -50,21 +53,22 @@ function CompanyRoutes() {
 }
 
 export default function App() {
-  const { user, loading, signOut } = useAuth();
+  const { user, member, loading, signOut } = useAuth();
   const signedIn = !!user?.emailVerified;
 
   useEffect(() => {
     if (signedIn) Object.values(pageCode).forEach((load) => void load());
   }, [signedIn]);
 
-  if (loading) return <Splash text="Starting TagScout" />;
+  if (loading || (user && !member)) return <Splash text="Starting TagScout" />;
   if (!user) return <LoginPage />;
   if (!user.emailVerified) return <VerifyEmailPage />;
 
   return (
     <CompanyProvider
-      // companyId == uid until multi-user lands
-      companyId={user.uid}
+      companyId={member!.companyId}
+      uid={user.uid}
+      role={member!.role}
       loadingView={<Splash text="Loading your company" />}
       errorView={(error, retry) => (
         <div className="splash">

@@ -87,6 +87,15 @@ export type Alert = {
 
 export type Profile = { name: string; email: string; companyName: string };
 
+export type TeamMember = {
+  uid: string;
+  email: string;
+  name: string;
+  role: "owner" | "manager" | "staff";
+  status: "active" | "removed";
+  addedAt: Date | null;
+};
+
 // ── Helpers ───────────────────────────────────────────────────────
 
 const str = (v: unknown) => (typeof v === "string" ? v : "");
@@ -171,6 +180,45 @@ export async function loadCategories(companyId: string): Promise<Category[]> {
     productType: str(d.get("productType")),
     parentId: str(d.get("parentId")),
   }));
+}
+
+/**
+ * The company's name: from the company record (readable by everyone in the
+ * company), else from the owner's own profile when the owner is signed in.
+ */
+export async function loadCompanyName(companyId: string, uid: string): Promise<string> {
+  const company = await getDoc(doc(db, "companies", companyId));
+  const name = str(company.get("name"));
+  if (name || companyId !== uid) return name;
+  const owner = await getDoc(doc(db, "users", uid));
+  return str(owner.get("companyName"));
+}
+
+/** Everyone in the company, live (companies/{id}/members, written only by the server). */
+export function subscribeTeam(
+  companyId: string,
+  onData: (members: TeamMember[]) => void,
+  onError: (e: Error) => void,
+): () => void {
+  return onSnapshot(
+    companyCol(companyId, "members"),
+    (snap) =>
+      onData(
+        snap.docs.map((d) => {
+          const x = d.data();
+          const role = x.role === "owner" || x.role === "manager" ? x.role : "staff";
+          return {
+            uid: d.id,
+            email: str(x.email),
+            name: str(x.name),
+            role,
+            status: x.status === "removed" ? "removed" : "active",
+            addedAt: toDate(x.addedAt),
+          };
+        }),
+      ),
+    onError,
+  );
 }
 
 // ── Stock ─────────────────────────────────────────────────────────

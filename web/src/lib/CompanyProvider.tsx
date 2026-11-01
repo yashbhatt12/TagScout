@@ -1,5 +1,6 @@
 import { createContext, useContext, useEffect, useMemo, useState, type ReactNode } from "react";
 import type { CompanyConfig } from "./config";
+import type { Role } from "../auth/AuthProvider";
 import {
   subscribeAlerts,
   type Alert,
@@ -25,7 +26,13 @@ type Lookups = {
 
 export type CompanyValue = Lookups & {
   companyId: string;
+  /** The signed-in login. */
+  uid: string;
+  role: Role;
+  isOwner: boolean;
+  companyName: string;
   config: CompanyConfig;
+  /** The signed-in person's own profile. */
   profile: Profile;
   locations: Locations;
   products: Product[];
@@ -42,16 +49,20 @@ const CompanyContext = createContext<CompanyValue | null>(null);
 
 export function CompanyProvider({
   companyId,
+  uid,
+  role,
   children,
   loadingView,
   errorView,
 }: {
   companyId: string;
+  uid: string;
+  role: Role;
   children: ReactNode;
   loadingView: ReactNode;
   errorView: (error: Error, retry: () => void) => ReactNode;
 }) {
-  const basics = useQuery(queries.basics(companyId));
+  const basics = useQuery(queries.basics(companyId, uid));
 
   // Start the screens' main reads now, alongside the company set-up, not after it.
   useEffect(() => prefetchDashboard(companyId), [companyId]);
@@ -90,6 +101,10 @@ export function CompanyProvider({
 
     return {
       companyId,
+      uid,
+      role,
+      isOwner: role === "owner",
+      companyName: b.companyName || (role === "owner" ? b.profile.companyName : "") || "Your company",
       config: b.config,
       profile: b.profile,
       locations: b.locations,
@@ -119,7 +134,7 @@ export function CompanyProvider({
       },
       reload: basics.reload,
     };
-  }, [basics.data, basics.reload, companyId, alertsOn, alertList, alertError, alertsLoading]);
+  }, [basics.data, basics.reload, companyId, uid, role, alertsOn, alertList, alertError, alertsLoading]);
 
   if (basics.error && !basics.data) return <>{errorView(basics.error, basics.reload)}</>;
   if (!value) return <>{loadingView}</>;

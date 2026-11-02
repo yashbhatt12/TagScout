@@ -18,9 +18,7 @@ export function Layout({ children }: { children: ReactNode }) {
     { to: "/movements", label: "Movements", icon: "movements" },
   ];
   if (feature("wms")) items.push({ to: "/cycle-counts", label: label("cycleCount", true), icon: "cycle" });
-  if (feature("managerAlerts")) {
-    items.push({ to: "/alerts", label: label("managerAlerts", true), icon: "alerts", badge: alerts.unread });
-  }
+  items.push({ to: "/door", label: "Door", icon: "door", badge: alerts.unread });
   items.push({ to: "/team", label: "Team", icon: "team" });
 
   const company = companyName;

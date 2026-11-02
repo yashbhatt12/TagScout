@@ -6,10 +6,15 @@
  * antenna to /companies/{companyId}/tag_events after de-duplicating raw reads:
  *   { epc, antennaPort, rssi, firstSeenAt, lastSeenAt (ms), readerId, ... }
  *
- * Reader settings: /companies/{companyId}/readers/{readerId}
- *   { name, location, insideAntennas: [1], outsideAntennas: [2], windowMs, enabled }
- * managed with readersV1 (owners and managers). A reader without settings,
- * or with antennas on only one side, gives direction "passed" (no in/out).
+ * Readers: /companies/{companyId}/readers/{readerId}. The edge PC creates
+ * them when it finds a reader on its network (host, model, MAC, antenna ports
+ * and which are connected); owners and managers then configure them with
+ * readersV1: name, store, each antenna as In (shop side), Out (street side)
+ * or not used, and on/off. With both an In and an Out antenna, passes get a
+ * direction; otherwise "passed". Reads from antennas not in use are ignored.
+ *
+ * Edge PCs: /companies/{companyId}/edges/{edgeId}, written by the edge PC
+ * (heartbeat, scan results); readersV1 "scan" asks one to search its network.
  *
  * Output: /companies/{companyId}/door_passes/{passId}, one per crossing:
  *   direction  out    seen inside first, then outside
@@ -48,10 +53,20 @@ export type Verdict = "alarm" | "ok" | "unknown_tag" | "pending";
 export interface ReaderSettings {
   name: string;
   location: string;
+  storeId: string;
+  storeName: string;
   insideAntennas: number[];
   outsideAntennas: number[];
+  /** Antennas in use; reads from others are ignored. Empty = all (readers set up before antenna roles). */
+  activeAntennas: number[];
   windowMs: number;
   enabled: boolean;
+}
+
+/** One labelled detail of the product or the piece, for alerts and passes. */
+export interface Detail {
+  label: string;
+  value: string;
 }
 
 export interface UnitSnapshot {
@@ -60,7 +75,15 @@ export interface UnitSnapshot {
   productId: string;
   productTitle: string;
   category: string;
+  brand: string;
+  imageUrl: string;
   price: number | null;
+  serialNumber: string;
+  /** Where the piece is stocked: store and bin code. */
+  stockedAt: string;
+  /** Product details (catalog fields), then the piece's own (weights, purity, batch...), labelled from the company's settings. */
+  productDetails: Detail[];
+  unitDetails: Detail[];
 }
 
 const asPorts = (raw: unknown): number[] =>
@@ -68,11 +91,16 @@ const asPorts = (raw: unknown): number[] =>
 
 export function readReaderSettings(data: Record<string, unknown> | undefined, readerId: string): ReaderSettings {
   const windowMs = typeof data?.windowMs === "number" && data.windowMs >= 1000 && data.windowMs <= 120_000 ? data.windowMs : DEFAULT_WINDOW_MS;
+  const inside = asPorts(data?.insideAntennas);
+  const outside = asPorts(data?.outsideAntennas);
   return {
     name: typeof data?.name === "string" && data.name.trim() ? data.name.trim() : readerId,
     location: typeof data?.location === "string" ? data.location.trim() : "",
-    insideAntennas: asPorts(data?.insideAntennas),
-    outsideAntennas: asPorts(data?.outsideAntennas),
+    storeId: typeof data?.storeId === "string" ? data.storeId : "",
+    storeName: typeof data?.storeName === "string" ? data.storeName : "",
+    insideAntennas: inside,
+    outsideAntennas: outside,
+    activeAntennas: [...new Set([...inside, ...outside])],
     windowMs,
     enabled: data?.enabled !== false,
   };
@@ -103,25 +131,83 @@ export function verdictOf(direction: Direction, unit: UnitSnapshot | null): Verd
   return STOCK_STATUSES.has(unit.status) ? "alarm" : "ok"; // out or passed
 }
 
-async function unitSnapshot(company: DocumentReference, epc: string): Promise<UnitSnapshot | null> {
+const text = (v: unknown): string => {
+  if (v === null || v === undefined || v === "") return "";
+  if (typeof v === "boolean") return v ? "Yes" : "No";
+  if (typeof v === "number") return Number.isInteger(v) ? v.toLocaleString("en-IN") : v.toLocaleString("en-IN", {maximumFractionDigits: 3});
+  return String(v);
+};
+
+/** Field key → {label, unit} from the company's settings (every type's and group's fields). */
+async function fieldLabels(company: DocumentReference): Promise<Map<string, { label: string; unit: string }>> {
+  const settings = (await company.collection("settings").doc("config").get()).data() ?? {};
+  const labels = new Map<string, { label: string; unit: string }>();
+  const add = (fields: unknown) => {
+    for (const f of Array.isArray(fields) ? fields : []) {
+      if (f && typeof f.key === "string" && !labels.has(f.key)) {
+        labels.set(f.key, {label: typeof f.label === "string" ? f.label : f.key, unit: typeof f.unit === "string" ? f.unit : ""});
+      }
+    }
+  };
+  for (const t of Object.values((settings.productTypes ?? {}) as Record<string, { fields?: unknown }>)) add(t?.fields);
+  for (const g of Array.isArray(settings.attributeGroups) ? settings.attributeGroups : []) add(g?.fields);
+  return labels;
+}
+
+function detailsOf(fields: unknown, labels: Map<string, { label: string; unit: string }>): Detail[] {
+  if (!fields || typeof fields !== "object") return [];
+  return Object.entries(fields as Record<string, unknown>)
+    .map(([key, v]) => {
+      const def = labels.get(key);
+      const value = text(v);
+      return value ? {label: def?.label ?? key, value: def?.unit && typeof v === "number" ? `${value} ${def.unit}` : value} : null;
+    })
+    .filter((d): d is Detail => d !== null);
+}
+
+async function nameOf(company: DocumentReference, collection: string, id: string): Promise<string> {
+  if (!id) return "";
+  return String((await company.collection(collection).doc(id).get()).get("name") ?? "");
+}
+
+export async function unitSnapshot(company: DocumentReference, epc: string): Promise<UnitSnapshot | null> {
   const unit = await company.collection("inventory_units").doc(epc).get();
   if (!unit.exists) return null;
   const productId = String(unit.get("productId") ?? "");
-  let productTitle = "";
-  let category = String(unit.get("category") ?? "");
-  if (productId) {
-    const product = await company.collection("products").doc(productId).get();
-    productTitle = String(product.get("title") ?? "");
-    const categoryId = String(product.get("categoryId") ?? "");
-    if (categoryId) category = String((await company.collection("categories").doc(categoryId).get()).get("name") ?? category);
-  }
+  const product = productId ? await company.collection("products").doc(productId).get() : null;
+  const p = product?.exists ? product : null;
+  const [labels, category, brand, storeName] = await Promise.all([
+    fieldLabels(company),
+    nameOf(company, "categories", String(p?.get("categoryId") ?? "")),
+    nameOf(company, "brands", String(p?.get("brandId") ?? "")),
+    nameOf(company, "warehouses", String(unit.get("currentWarehouseId") ?? "")),
+  ]);
+  const binCode = String(unit.get("currentBinCode") ?? "");
+
+  const productDetails: Detail[] = [];
+  if (p?.get("shortName")) productDetails.push({label: "Short name", value: String(p.get("shortName"))});
+  if (p?.get("hsnCode")) productDetails.push({label: "HSN code", value: String(p.get("hsnCode"))});
+  productDetails.push(...detailsOf(p?.get("customFields"), labels));
+
+  const unitDetails: Detail[] = [];
+  if (unit.get("serialNumber")) unitDetails.push({label: "Serial number", value: String(unit.get("serialNumber"))});
+  if (unit.get("batchNo")) unitDetails.push({label: "Batch", value: String(unit.get("batchNo"))});
+  if (unit.get("expiryDate")) unitDetails.push({label: "Expiry date", value: String(unit.get("expiryDate"))});
+  unitDetails.push(...detailsOf(unit.get("customFields"), labels));
+
   return {
     status: String(unit.get("status") ?? "in_stock"),
     sku: String(unit.get("sku") ?? unit.get("itemCode") ?? ""),
     productId,
-    productTitle,
-    category,
+    productTitle: String(p?.get("title") ?? ""),
+    category: category || String(unit.get("category") ?? ""),
+    brand,
+    imageUrl: String(p?.get("imageUrl") ?? ""),
     price: typeof unit.get("price") === "number" ? unit.get("price") : null,
+    serialNumber: String(unit.get("serialNumber") ?? ""),
+    stockedAt: [storeName, binCode].filter(Boolean).join(" · "),
+    productDetails,
+    unitDetails,
   };
 }
 
@@ -141,6 +227,7 @@ export async function processTagEvent(firestore: Firestore, companyId: string, e
   const readerSnap = await company.collection("readers").doc(ev.readerId).get();
   const settings = readReaderSettings(readerSnap.exists ? readerSnap.data() : undefined, ev.readerId);
   if (!settings.enabled) return null;
+  if (settings.activeAntennas.length && !settings.activeAntennas.includes(ev.antennaPort)) return null;
   const side = sideOf(settings, ev.antennaPort);
   // Read the piece outside the transaction: it doesn't change here, and a retry re-reads it anyway.
   const unit = await unitSnapshot(company, ev.epc);
@@ -165,6 +252,8 @@ export async function processTagEvent(firestore: Firestore, companyId: string, e
       readerId: ev.readerId,
       readerName: settings.name,
       location: settings.location,
+      storeId: settings.storeId,
+      storeName: settings.storeName,
       direction,
       verdict,
       firstSeenBySide: firstSeen,
@@ -193,6 +282,9 @@ export async function processTagEvent(firestore: Firestore, companyId: string, e
       unitStatus: unit.status,
       readerId: ev.readerId,
       readerName: settings.name,
+      storeId: settings.storeId || null,
+      storeName: settings.storeName || null,
+      unit,
       antennaPort: ev.antennaPort,
       rssi: ev.rssi,
       firstSeenAt: ev.firstSeenAt,
@@ -233,46 +325,93 @@ export const doorEventProcessor = onDocumentCreated(
   },
 );
 
-// ── Reader settings ───────────────────────────────────────────────
+// ── Readers: scan, configure, remove ──────────────────────────────
 
-const READER_ID = /^[A-Za-z0-9_-]{1,64}$/;
+const ID = /^[A-Za-z0-9_-]{1,128}$/;
+const IPV4 = /^(25[0-5]|2[0-4]\d|1?\d?\d)(\.(25[0-5]|2[0-4]\d|1?\d?\d)){3}$/;
+type Role = "in" | "out" | "off";
 
+/**
+ * readersV1 (owners and managers):
+ *   { action: "scan", edgeId, hosts?: ["192.168.1.111"] }   ask an edge PC to search its network (or check these IPs)
+ *   { action: "configure", readerId, name, storeId, antennaRoles: { "1": "in", "2": "out", "3": "off" }, enabled, windowMs? }
+ *   { action: "remove", readerId }
+ */
 export const readersV1 = onCall({region: REGION}, async (request) => {
   const data = body(request);
   const caller = await requireMember(request, ["owner", "manager"]);
   const opId = requireOpId(data.opId);
-  const readerId = typeof data.readerId === "string" ? data.readerId.trim() : "";
-  if (!READER_ID.test(readerId)) {
-    throw new HttpsError("invalid-argument", "Reader ID: letters, digits, - or _ (it must match the edge PC's reader.id).");
-  }
-  const ref = db.collection("companies").doc(caller.companyId).collection("readers").doc(readerId);
+  const company = db.collection("companies").doc(caller.companyId);
 
   return runOnce(caller.companyId, opId, `readers.${data.action}`, caller.uid, async () => {
-    if (data.action === "delete") {
+    if (data.action === "scan") {
+      const edgeId = typeof data.edgeId === "string" && ID.test(data.edgeId) ? data.edgeId : "";
+      if (!edgeId) throw new HttpsError("invalid-argument", "Pick an edge PC.");
+      const hosts = Array.isArray(data.hosts) ? data.hosts.map((h) => String(h).trim()).filter(Boolean) : [];
+      if (hosts.length > 20 || hosts.some((h) => !IPV4.test(h))) throw new HttpsError("invalid-argument", "Enter IP addresses like 192.168.1.111.");
+      const edge = company.collection("edges").doc(edgeId);
+      if (!(await edge.get()).exists) throw new HttpsError("not-found", "That edge PC hasn't connected yet.");
+      const requestId = opId;
+      await edge.set({
+        scanRequest: {id: requestId, hosts, requestedAt: FieldValue.serverTimestamp(), requestedBy: caller.uid},
+        scanStatus: "requested",
+        scanError: "",
+      }, {merge: true});
+      return {edgeId, requestId};
+    }
+
+    const readerId = typeof data.readerId === "string" && ID.test(data.readerId) ? data.readerId : "";
+    if (!readerId) throw new HttpsError("invalid-argument", "Missing reader.");
+    const ref = company.collection("readers").doc(readerId);
+    const reader = await ref.get();
+
+    if (data.action === "remove") {
       await ref.delete();
       return {readerId};
     }
-    if (data.action !== "save") throw new HttpsError("invalid-argument", "Unknown reader action.");
-    const inside = asPorts(data.insideAntennas);
-    const outside = asPorts(data.outsideAntennas);
-    if (inside.some((p) => outside.includes(p))) {
-      throw new HttpsError("invalid-argument", "An antenna can't face both inside and outside.");
-    }
-    if ((inside.length === 0) !== (outside.length === 0)) {
-      throw new HttpsError("invalid-argument", "For in/out, give at least one inside and one outside antenna; or leave both empty.");
-    }
+    if (data.action !== "configure") throw new HttpsError("invalid-argument", "Unknown reader action.");
+    if (!reader.exists) throw new HttpsError("not-found", "Reader not found. Scan the network again.");
+
     const name = typeof data.name === "string" ? data.name.trim() : "";
     if (!name || name.length > 60) throw new HttpsError("invalid-argument", "Give the reader a name (up to 60 characters).");
+
+    const storeId = typeof data.storeId === "string" ? data.storeId : "";
+    let storeName = "";
+    if (storeId) {
+      if (!ID.test(storeId)) throw new HttpsError("invalid-argument", "Pick a store.");
+      const store = await company.collection("warehouses").doc(storeId).get();
+      if (!store.exists) throw new HttpsError("not-found", "That store doesn't exist any more.");
+      storeName = String(store.get("name") ?? "");
+    }
+
+    const ports = new Set(asPorts((reader.get("antennas") ?? []).map((a: { port?: unknown }) => a?.port)));
+    const raw = data.antennaRoles && typeof data.antennaRoles === "object" ? data.antennaRoles as Record<string, unknown> : {};
+    const roles: Record<string, Role> = {};
+    for (const [k, v] of Object.entries(raw)) {
+      const port = Number(k);
+      if (!ports.has(port)) throw new HttpsError("invalid-argument", `This reader has no antenna port ${k}.`);
+      if (v !== "in" && v !== "out" && v !== "off") throw new HttpsError("invalid-argument", "Each antenna is In, Out or Not used.");
+      roles[String(port)] = v;
+    }
+    const inside = Object.entries(roles).filter(([, r]) => r === "in").map(([p]) => Number(p)).sort();
+    const outside = Object.entries(roles).filter(([, r]) => r === "out").map(([p]) => Number(p)).sort();
+
+    const enabled = data.enabled === true;
+    if (enabled && !storeId) throw new HttpsError("failed-precondition", "Assign the reader to a store before switching it on.");
+    if (enabled && inside.length + outside.length === 0) {
+      throw new HttpsError("failed-precondition", "Set at least one antenna to In or Out before switching the reader on.");
+    }
     const windowMs = data.windowMs === undefined ? DEFAULT_WINDOW_MS : Number(data.windowMs);
     if (!Number.isInteger(windowMs) || windowMs < 1000 || windowMs > 120_000) {
       throw new HttpsError("invalid-argument", "Window must be 1–120 seconds.");
     }
-    const location = typeof data.location === "string" ? data.location.trim().slice(0, 100) : "";
+
     await ref.set({
-      name, location, insideAntennas: inside, outsideAntennas: outside, windowMs, enabled: data.enabled !== false,
+      name, storeId, storeName, location: storeName, antennaRoles: roles,
+      insideAntennas: inside, outsideAntennas: outside, windowMs, enabled, configured: true,
       updatedAt: FieldValue.serverTimestamp(), updatedBy: caller.uid,
     }, {merge: true});
-    logger.info("Reader saved", {companyId: caller.companyId, readerId, inside, outside});
+    logger.info("Reader configured", {companyId: caller.companyId, readerId, storeId, inside, outside, enabled});
     return {readerId};
   });
 });

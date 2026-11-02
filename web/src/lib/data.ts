@@ -18,6 +18,8 @@ import {
   where,
   doc,
   type DocumentData,
+  writeBatch,
+  serverTimestamp,
 } from "firebase/firestore";
 import { companyCol, companyDoc, db } from "../firebase";
 import { parseConfig, type CompanyConfig, UNIT_STATUSES } from "./config";
@@ -71,6 +73,21 @@ export type Movement = {
   timestamp: Date | null;
 };
 
+export type Detail = { label: string; value: string };
+
+/** What the door processing recorded about the piece (see functions/src/door.ts). */
+export type AlertUnit = {
+  status: string;
+  productTitle: string;
+  category: string;
+  brand: string;
+  imageUrl: string;
+  stockedAt: string;
+  serialNumber: string;
+  productDetails: Detail[];
+  unitDetails: Detail[];
+};
+
 export type Alert = {
   id: string;
   epc: string;
@@ -78,11 +95,15 @@ export type Alert = {
   category: string;
   price: number | null;
   readerId: string;
+  readerName: string;
+  storeName: string;
+  direction: string;
   antennaPort: number | null;
   rssi: number | null;
   severity: string;
   read: boolean;
   createdAt: Date | null;
+  unit: AlertUnit | null;
 };
 
 export type Profile = { name: string; email: string; companyName: string };
@@ -314,6 +335,38 @@ export async function loadCycleCountMovements(companyId: string): Promise<Moveme
 
 // ── Alerts (realtime) ─────────────────────────────────────────────
 
+const mapDetails = (v: unknown): Detail[] =>
+  Array.isArray(v)
+    ? v.filter((d) => d && typeof d.label === "string" && typeof d.value === "string").map((d) => ({ label: d.label, value: d.value }))
+    : [];
+
+function mapAlertUnit(v: unknown): AlertUnit | null {
+  if (!v || typeof v !== "object") return null;
+  const u = v as Record<string, unknown>;
+  return {
+    status: str(u.status),
+    productTitle: str(u.productTitle),
+    category: str(u.category),
+    brand: str(u.brand),
+    imageUrl: str(u.imageUrl),
+    stockedAt: str(u.stockedAt),
+    serialNumber: str(u.serialNumber),
+    productDetails: mapDetails(u.productDetails),
+    unitDetails: mapDetails(u.unitDetails),
+  };
+}
+
+/** Marks alerts as read (the rules allow only read / readAt / readBy to change). */
+export async function markAlertsRead(companyId: string, ids: string[], uid: string) {
+  for (let i = 0; i < ids.length; i += 400) {
+    const batch = writeBatch(db);
+    for (const id of ids.slice(i, i + 400)) {
+      batch.update(doc(companyCol(companyId, "alerts"), id), { read: true, readAt: serverTimestamp(), readBy: uid });
+    }
+    await batch.commit();
+  }
+}
+
 export function subscribeAlerts(
   companyId: string,
   onData: (alerts: Alert[]) => void,
@@ -333,6 +386,10 @@ export function subscribeAlerts(
             category: str(x.category),
             price: numOrNull(x.price),
             readerId: str(x.readerId),
+            readerName: str(x.readerName) || str(x.readerId),
+            storeName: str(x.storeName),
+            direction: str(x.direction),
+            unit: mapAlertUnit(x.unit),
             antennaPort: numOrNull(x.antennaPort),
             rssi: numOrNull(x.rssi),
             severity: str(x.severity) || "high",

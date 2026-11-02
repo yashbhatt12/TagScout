@@ -67,7 +67,8 @@ export function CompanyProvider({
   // Start the screens' main reads now, alongside the company set-up, not after it.
   useEffect(() => prefetchDashboard(companyId), [companyId]);
 
-  const alertsOn = basics.data?.config.features.managerAlerts ?? false;
+  // Door alerts matter for every business type (the Door page shows them), so always listen.
+  const alertsOn = true;
   const [alertList, setAlertList] = useState<Alert[]>([]);
   const [alertError, setAlertError] = useState<Error>();
   const [alertsLoading, setAlertsLoading] = useState(true);

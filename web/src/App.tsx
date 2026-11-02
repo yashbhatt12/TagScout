@@ -14,14 +14,16 @@ const pageCode = {
   stock: () => import("./pages/StockPage"),
   movements: () => import("./pages/MovementsPage"),
   cycleCounts: () => import("./pages/CycleCountsPage"),
-  alerts: () => import("./pages/AlertsPage"),
+  door: () => import("./pages/DoorPage"),
+  readers: () => import("./pages/ReadersPage"),
   team: () => import("./pages/TeamPage"),
 };
 const OverviewPage = lazy(() => pageCode.overview().then((m) => ({ default: m.OverviewPage })));
 const StockPage = lazy(() => pageCode.stock().then((m) => ({ default: m.StockPage })));
 const MovementsPage = lazy(() => pageCode.movements().then((m) => ({ default: m.MovementsPage })));
 const CycleCountsPage = lazy(() => pageCode.cycleCounts().then((m) => ({ default: m.CycleCountsPage })));
-const AlertsPage = lazy(() => pageCode.alerts().then((m) => ({ default: m.AlertsPage })));
+const DoorPage = lazy(() => pageCode.door().then((m) => ({ default: m.DoorPage })));
+const ReadersPage = lazy(() => pageCode.readers().then((m) => ({ default: m.ReadersPage })));
 const TeamPage = lazy(() => pageCode.team().then((m) => ({ default: m.TeamPage })));
 
 function Splash({ text }: { text: string }) {
@@ -43,7 +45,9 @@ function CompanyRoutes() {
           <Route path="/stock" element={<StockPage />} />
           <Route path="/movements" element={<MovementsPage />} />
           {feature("wms") ? <Route path="/cycle-counts" element={<CycleCountsPage />} /> : null}
-          {feature("managerAlerts") ? <Route path="/alerts" element={<AlertsPage />} /> : null}
+          <Route path="/door" element={<DoorPage />} />
+          <Route path="/door/readers" element={<ReadersPage />} />
+          <Route path="/alerts" element={<Navigate to="/door" replace />} />
           <Route path="/team" element={<TeamPage />} />
           <Route path="*" element={<Navigate to="/" replace />} />
         </Routes>

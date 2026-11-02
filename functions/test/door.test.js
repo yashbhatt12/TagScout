@@ -10,11 +10,16 @@ const T0 = 1_800_000_000_000;
 
 function setUp(readers = {}) {
   fake.reset({
-    [`companies/${C}/inventory_units/${E(1)}`]: {status: "in_stock", sku: "JW-1", productId: "p1", price: 52000},
+    [`companies/${C}/settings/config`]: {attributeGroups: [{id: "jw", fields: [{key: "grossWeight", label: "Gross weight", unit: "g"}, {key: "purity", label: "Purity"}]}]},
+    [`companies/${C}/warehouses/w1`]: {name: "Andheri Store"},
+    [`companies/${C}/brands/b1`]: {name: "Kalasha"},
+    [`companies/${C}/inventory_units/${E(1)}`]: {status: "in_stock", sku: "JW-1", productId: "p1", price: 52000, currentWarehouseId: "w1",
+      currentBinCode: "AND-A1", serialNumber: "", customFields: {grossWeight: 24.6, huid: "AB12CD"}},
     [`companies/${C}/inventory_units/${E(2)}`]: {status: "sold", sku: "JW-2", productId: "p1"},
-    [`companies/${C}/products/p1`]: {title: "Temple Necklace", categoryId: "cat1"},
+    [`companies/${C}/products/p1`]: {title: "Temple Necklace", categoryId: "cat1", brandId: "b1", imageUrl: "https://img/x.jpg", hsnCode: "711319",
+      customFields: {purity: "22K", mrp: 55000}},
     [`companies/${C}/categories/cat1`]: {name: "Necklace"},
-    [`companies/${C}/readers/door1`]: {name: "Main entrance", location: "Andheri Store", insideAntennas: [1], outsideAntennas: [2], windowMs: 10000},
+    [`companies/${C}/readers/door1`]: {name: "Main entrance", storeId: "w1", storeName: "Andheri Store", insideAntennas: [1], outsideAntennas: [2], windowMs: 10000, enabled: true},
     ...Object.fromEntries(Object.entries(readers).map(([id, r]) => [`companies/${C}/readers/${id}`, r])),
   });
 }
@@ -47,6 +52,13 @@ test("unsold piece seen inside then outside: out, alarm, one alert the app can s
   assert.equal(alert.itemCode, "JW-1");
   assert.equal(alert.category, "Necklace");
   assert.equal(alert.direction, "out");
+  assert.equal(alert.storeName, "Andheri Store");
+  assert.equal(pass.storeName, "Andheri Store");
+  assert.equal(alert.unit.brand, "Kalasha");
+  assert.equal(alert.unit.imageUrl, "https://img/x.jpg");
+  assert.equal(alert.unit.stockedAt, "Andheri Store · AND-A1");
+  assert.deepEqual(alert.unit.productDetails, [{label: "HSN code", value: "711319"}, {label: "Purity", value: "22K"}, {label: "mrp", value: "55,000"}]);
+  assert.deepEqual(alert.unit.unitDetails, [{label: "Gross weight", value: "24.6 g"}, {label: "huid", value: "AB12CD"}]);
   await read(E(1), 2, T0 + 2000); // lingering at the outside antenna
   assert.equal(alerts().length, 1, "still one alert for the pass");
 });
@@ -90,17 +102,37 @@ test("a disabled reader is ignored", async () => {
   assert.equal(passes().length, 0);
 });
 
-test("reader settings: owners and managers, sensible antennas", async () => {
-  setUp();
+test("reads from antennas not in use are ignored", async () => {
+  setUp({door4: {name: "Side door", storeId: "w1", storeName: "Andheri Store", insideAntennas: [1], outsideAntennas: [2], enabled: true}});
+  await read(E(1), 3, T0, "door4");
+  assert.equal(passes().length, 0);
+});
+
+test("readers: scan request, configure with store and antenna roles, remove", async () => {
+  setUp({
+    "rdr-00162512ABCD": {edgeId: "edge1", host: "192.168.1.111", antennas: [{port: 1, connected: true}, {port: 2, connected: true}, {port: 3, connected: false}, {port: 4, connected: false}]},
+  });
+  fake.state.docs[`companies/${C}/edges/edge1`] = {name: "Counter PC"};
   const staff = fake.member(C, "st", "staff");
   const manager = fake.member(C, "mg", "manager");
   const call = (who, data) => fns.readersV1.run(fake.request(who.uid, who.claims, data));
-  await fake.rejects(call(staff, {action: "save", readerId: "door9", name: "X"}), "permission-denied");
-  await fake.rejects(call(manager, {action: "save", readerId: "bad id!", name: "X"}), "invalid-argument");
-  await fake.rejects(call(manager, {action: "save", readerId: "door9", name: "X", insideAntennas: [1], outsideAntennas: [1]}), "invalid-argument");
-  await fake.rejects(call(manager, {action: "save", readerId: "door9", name: "X", insideAntennas: [1]}), "invalid-argument");
-  await call(manager, {action: "save", readerId: "fr901-main-exit", name: "Main exit", location: "Andheri", insideAntennas: [1, 3], outsideAntennas: [2, 4]});
-  assert.deepEqual(fake.doc(`companies/${C}/readers/fr901-main-exit`).outsideAntennas, [2, 4]);
-  await call(manager, {action: "delete", readerId: "fr901-main-exit"});
-  assert.equal(fake.doc(`companies/${C}/readers/fr901-main-exit`), undefined);
+  const R = `companies/${C}/readers/rdr-00162512ABCD`;
+
+  await fake.rejects(call(staff, {action: "scan", edgeId: "edge1"}), "permission-denied");
+  await fake.rejects(call(manager, {action: "scan", edgeId: "nope"}), "not-found");
+  await fake.rejects(call(manager, {action: "scan", edgeId: "edge1", hosts: ["not-an-ip"]}), "invalid-argument");
+  await call(manager, {action: "scan", edgeId: "edge1", hosts: ["192.168.1.111"]});
+  assert.equal(fake.doc(`companies/${C}/edges/edge1`).scanStatus, "requested");
+  assert.deepEqual(fake.doc(`companies/${C}/edges/edge1`).scanRequest.hosts, ["192.168.1.111"]);
+
+  const base = {action: "configure", readerId: "rdr-00162512ABCD", name: "Main entrance", storeId: "w1"};
+  await fake.rejects(call(manager, {...base, antennaRoles: {"7": "in"}}), "invalid-argument");
+  await fake.rejects(call(manager, {...base, antennaRoles: {"1": "sideways"}}), "invalid-argument");
+  await fake.rejects(call(manager, {...base, storeId: "", antennaRoles: {"1": "in"}, enabled: true}), "failed-precondition");
+  await fake.rejects(call(manager, {...base, antennaRoles: {"1": "off", "2": "off"}, enabled: true}), "failed-precondition");
+  await call(manager, {...base, antennaRoles: {"1": "in", "2": "out", "3": "off"}, enabled: true});
+  const r = fake.doc(R);
+  assert.deepEqual([r.insideAntennas, r.outsideAntennas, r.storeName, r.enabled, r.host], [[1], [2], "Andheri Store", true, "192.168.1.111"]);
+  await call(manager, {action: "remove", readerId: "rdr-00162512ABCD"});
+  assert.equal(fake.doc(R), undefined);
 });

@@ -21,21 +21,3 @@ test("stock totals follow the movements ledger", async () => {
   assert.deepEqual(agg.byLocation, {"w1/A1": 1});
   assert.equal(agg.totalQuantity, 1);
 });
-
-test("door alert only for stock, with readable item details", async () => {
-  const E = (n) => "E2000000000000000000" + String(n).padStart(4, "0");
-  fake.reset({
-    [`companies/${C}/inventory_units/${E(1)}`]: {status: "in_stock", sku: "JW-1", productId: "p1", price: 500},
-    [`companies/${C}/inventory_units/${E(2)}`]: {status: "sold", sku: "JW-2"},
-    [`companies/${C}/products/p1`]: {title: "Temple Necklace", categoryId: "cat1"},
-    [`companies/${C}/categories/cat1`]: {name: "Necklace"},
-  });
-  for (const epc of [E(1).toLowerCase(), E(2), E(99)]) {
-    await fns.alarmNotifier.run({data: {data: () => ({epc, readerId: "DOOR-1"})}, params: {companyId: C, eventId: "ev-" + epc}});
-  }
-  const alerts = fake.paths(`companies/${C}/alerts/`).map(fake.doc);
-  assert.equal(alerts.length, 1);
-  assert.equal(alerts[0].itemCode, "JW-1");
-  assert.equal(alerts[0].category, "Necklace");
-  assert.equal(alerts[0].productTitle, "Temple Necklace");
-});

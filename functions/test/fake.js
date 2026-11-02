@@ -35,7 +35,10 @@ const store = (v) => JSON.parse(JSON.stringify(v ?? null, (k, x) => {
 const merge = (path, data) => {
   const current = {...(state.docs[path] || {})};
   for (const [k, v] of Object.entries(data)) {
+    const kind = v && v.constructor ? v.constructor.name : "";
     if (isDelete(v)) delete current[k];
+    else if (kind === "NumericIncrementTransform") current[k] = (Number(current[k]) || 0) + v.operand;
+    else if (kind === "ArrayUnionTransform") current[k] = [...new Set([...(current[k] || []), ...v.elements])];
     else current[k] = store(v);
   }
   state.docs[path] = current;

@@ -4,7 +4,8 @@
  *
  *   updateSkuAggregate  movements ledger → inventory_sku totals
  *   setUpNewCompany     new users/{uid} → company settings from the standard preset
- *   alarmNotifier       door reader tag_events → manager alerts
+ *   doorEventProcessor  fixed reader tag_events → door passes (in/out, verdict) → alerts for unpaid items leaving
+ *   readersV1           fixed reader settings: name, inside/outside antennas (callable, owner + manager)
  *   addMemberV1, setMemberRoleV1, removeMemberV1   team management (callable, owner only)
  *   enrollUnitsV1       enroll a batch of tags (callable, any team member)
  *   changeUnitStatusV1, markSoldV1, updateUnitDetailsV1   unit writes (callable; role limits inside)
@@ -20,7 +21,7 @@ import "./firebase"; // initializeApp() before anything else
 
 export {updateSkuAggregate} from "./skuAggregate";
 export {setUpNewCompany} from "./newCompany";
-export {alarmNotifier} from "./alarmNotifier";
+export {doorEventProcessor, readersV1} from "./door";
 export {addMemberV1, setMemberRoleV1, removeMemberV1} from "./team";
 export {enrollUnitsV1} from "./enroll";
 export {changeUnitStatusV1, markSoldV1, updateUnitDetailsV1} from "./units";

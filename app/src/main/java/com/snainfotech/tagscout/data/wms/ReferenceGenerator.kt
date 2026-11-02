@@ -2,6 +2,7 @@ package com.snainfotech.tagscout.data.wms
 
 import com.google.firebase.firestore.FirebaseFirestore
 import com.snainfotech.tagscout.data.auth.AuthReady
+import com.snainfotech.tagscout.data.server.ServerCalls
 import kotlinx.coroutines.tasks.await
 import java.util.Calendar
 
@@ -111,43 +112,11 @@ object ReferenceGenerator {
      */
     suspend fun bumpGrnCounter(reference: String): Result<Unit> {
         return try {
-            val match = GRN_PATTERN.matchEntire(reference.trim())
-                ?: return Result.success(Unit)  // exotic reference: silent no-op
-
-            val refYear = match.groupValues[1].toIntOrNull()
-                ?: return Result.success(Unit)
-            val refSeq = match.groupValues[2].toLongOrNull()
-                ?: return Result.success(Unit)
-
-            val currentYear = Calendar.getInstance().get(Calendar.YEAR)
-            if (refYear != currentYear) {
-                // Cross-year commit — leave the current year's counter alone.
-                return Result.success(Unit)
-            }
-
-            val ref = counterDoc("grn")
-                ?: return Result.failure(Exception("Not logged in"))
-
-            firestore.runTransaction { txn ->
-                val snap = txn.get(ref)
-                val storedYear = snap.getLong("year") ?: 0L
-                val storedSeq = snap.getLong("sequence") ?: 0L
-                val newSeq = if (storedYear.toInt() == currentYear) {
-                    maxOf(storedSeq, refSeq)
-                } else {
-                    // First bump this year — take the reference's sequence directly.
-                    refSeq
-                }
-                txn.set(
-                    ref,
-                    hashMapOf<String, Any>(
-                        "year" to currentYear.toLong(),
-                        "sequence" to newSeq
-                    )
-                )
-                null
-            }.await()
-
+            // Cheap local pre-check: only GRN-YYYY-NNNN can move the counter.
+            if (GRN_PATTERN.matchEntire(reference.trim()) == null) return Result.success(Unit)
+            if (AuthReady.awaitCompanyId() == null) return Result.failure(Exception("Not logged in"))
+            // On the server (bumpGrnCounterV1), using India's year rather than the phone's clock.
+            ServerCalls.call("bumpGrnCounterV1", mapOf("reference" to reference.trim()))
             Result.success(Unit)
         } catch (e: Exception) { Result.failure(e) }
     }

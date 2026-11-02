@@ -42,12 +42,16 @@ const BATCH = 400;
 /** Same as Product.skuKeyOf in the app. */
 export const skuKeyOf = (sku: string) => sku.trim().toLowerCase();
 
-/** Same as ProductRepository.indexDocId: "k_" + URL-encoded key (Java's URLEncoder). */
-export function indexDocId(skuKey: string): string {
-  const encoded = encodeURIComponent(skuKey)
+/** Java's URLEncoder.encode(value, "UTF-8"), which the app uses for document ids. */
+export function javaUrlEncode(value: string): string {
+  return encodeURIComponent(value)
     .replace(/%20/g, "+")
     .replace(/[!'()~]/g, (c) => "%" + c.charCodeAt(0).toString(16).toUpperCase());
-  return "k_" + encoded;
+}
+
+/** Same as ProductRepository.indexDocId: "k_" + URL-encoded key. */
+export function indexDocId(skuKey: string): string {
+  return "k_" + javaUrlEncode(skuKey);
 }
 
 const normaliseHsn = (raw: string) => raw.replace(/[\s.-]/g, "");

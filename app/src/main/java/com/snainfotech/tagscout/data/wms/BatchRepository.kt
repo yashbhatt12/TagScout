@@ -5,9 +5,9 @@ import com.google.firebase.Timestamp
 import com.google.firebase.auth.FirebaseAuth
 import com.google.firebase.firestore.CollectionReference
 import com.google.firebase.firestore.DocumentSnapshot
-import com.google.firebase.firestore.FieldValue
 import com.google.firebase.firestore.FirebaseFirestore
 import com.snainfotech.tagscout.data.auth.AuthReady
+import com.snainfotech.tagscout.data.server.ServerCalls
 import kotlinx.coroutines.tasks.await
 import java.net.URLEncoder
 import java.time.LocalDate
@@ -116,8 +116,6 @@ class BatchRepository {
 
     private suspend fun companyId(): String? = AuthReady.awaitCompanyId()
 
-    private fun currentUserId(): String = auth.currentUser?.uid ?: ""
-
     private suspend fun batchesRef(): CollectionReference? =
         companyId()?.let { firestore.collection("companies").document(it).collection(COLLECTION) }
 
@@ -165,8 +163,10 @@ class BatchRepository {
      * entered that differs from the stored one → [BatchDateMismatchException].
      * New batch: dates are validated and stored as entered.
      *
-     * Runs in a transaction, so concurrent first enrolments of the same new
-     * batch resolve to one doc.
+     * Runs on the server (batchesV1) in a transaction, so concurrent first
+     * enrolments of the same new batch resolve to one doc. A date mismatch
+     * comes back as the server's message (the same wording as
+     * [BatchDateMismatchException]).
      */
     suspend fun findOrCreate(
         productId: String,
@@ -181,56 +181,35 @@ class BatchRepository {
         require(no.length <= BATCH_NO_MAX) { "Batch number can be at most $BATCH_NO_MAX characters" }
         BatchDates.validate(mfgDate, expiryDate)?.let { throw IllegalArgumentException(it) }
 
-        val ref = batchesRef() ?: error("Not signed in")
-        val docRef = ref.document(batchIdOf(productId, no))
-        val mfg = mfgDate.trim()
-        val exp = expiryDate.trim()
-        val uid = currentUserId()
+        if (companyId() == null) error("Not signed in")
 
-        firestore.runTransaction { tx ->
-            val snap = tx.get(docRef)
-            val existing = if (snap.exists()) fromSnapshot(snap) else null
-
-            if (existing != null) {
-                if (mfg.isNotEmpty() && mfg != existing.mfgDate) {
-                    throw BatchDateMismatchException(existing.batchNo, "manufacturing date", existing.mfgDate, mfg)
-                }
-                if (exp.isNotEmpty() && exp != existing.expiryDate) {
-                    throw BatchDateMismatchException(existing.batchNo, "expiry date", existing.expiryDate, exp)
-                }
-                existing
-            } else {
-                val data = mapOf(
+        // On the server (batchesV1): same checks, one transaction, India date for "future".
+        val r = try {
+            ServerCalls.call(
+                "batchesV1",
+                mapOf(
+                    "action" to "findOrCreate",
                     "productId" to productId,
-                    "sku" to sku,
                     "batchNo" to no,
-                    "batchKey" to batchKeyOf(no),
-                    "mfgDate" to mfg,
-                    "expiryDate" to exp,
-                    "status" to BatchStatus.ACTIVE.key,
-                    "qtyInStock" to 0,
-                    "createdAt" to FieldValue.serverTimestamp(),
-                    "createdBy" to uid,
-                    "updatedAt" to FieldValue.serverTimestamp(),
-                    "updatedBy" to uid
+                    "mfgDate" to mfgDate.trim(),
+                    "expiryDate" to expiryDate.trim()
                 )
-                tx.set(docRef, data)
-                Batch(
-                    id = docRef.id,
-                    productId = productId,
-                    sku = sku,
-                    batchNo = no,
-                    batchKey = batchKeyOf(no),
-                    mfgDate = mfg,
-                    expiryDate = exp,
-                    createdBy = uid,
-                    updatedBy = uid
-                )
-            }
-        }.await()
-    }.recoverCatching { e ->
-        // Firestore wraps exceptions thrown inside the transaction; surface ours unchanged.
-        throw (e.cause as? BatchDateMismatchException) ?: e
+            )
+        } catch (e: Exception) {
+            throw Exception(ServerCalls.message(e), e)
+        }
+        Batch(
+            id = r["id"]?.toString().orEmpty(),
+            productId = r["productId"]?.toString() ?: productId,
+            sku = r["sku"]?.toString() ?: sku,
+            batchNo = r["batchNo"]?.toString() ?: no,
+            batchKey = r["batchKey"]?.toString() ?: batchKeyOf(no),
+            mfgDate = r["mfgDate"]?.toString().orEmpty(),
+            expiryDate = r["expiryDate"]?.toString().orEmpty(),
+            status = r["status"]?.toString() ?: BatchStatus.ACTIVE.key,
+            createdBy = r["createdBy"]?.toString().orEmpty(),
+            updatedBy = r["updatedBy"]?.toString().orEmpty()
+        )
     }.onFailure { Log.w(TAG, "findOrCreate($productId, $batchNo) failed", it) }
 
     // ── Status ───────────────────────────────────────────────────────────
@@ -238,14 +217,13 @@ class BatchRepository {
     /** Quarantine, recall or re-activate. Expired is set only by the nightly function. */
     suspend fun setStatus(batchId: String, status: BatchStatus): Result<Unit> = runCatching {
         require(!status.systemOnly) { "${status.displayName} is set automatically" }
-        val ref = batchesRef() ?: error("Not signed in")
-        ref.document(batchId).update(
-            mapOf(
-                "status" to status.key,
-                "updatedAt" to FieldValue.serverTimestamp(),
-                "updatedBy" to currentUserId()
-            )
-        ).await()
+        if (companyId() == null) error("Not signed in")
+        try {
+            // Owners and managers only (batchesV1 setStatus).
+            ServerCalls.call("batchesV1", mapOf("action" to "setStatus", "batchId" to batchId, "status" to status.key))
+        } catch (e: Exception) {
+            throw Exception(ServerCalls.message(e), e)
+        }
         Unit
     }.onFailure { Log.e(TAG, "setStatus($batchId, ${status.key}) failed", it) }
 }

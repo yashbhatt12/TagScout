@@ -1,9 +1,9 @@
 package com.snainfotech.tagscout.data.wms
 
-import com.google.firebase.Timestamp
 import com.google.firebase.auth.FirebaseAuth
 import com.google.firebase.firestore.FirebaseFirestore
 import com.snainfotech.tagscout.data.auth.AuthReady
+import com.snainfotech.tagscout.data.server.ServerCalls
 import kotlinx.coroutines.tasks.await
 
 /**
@@ -178,8 +178,7 @@ class CycleCountService(
         report: ReconciliationReport,
         reference: String
     ): CommitResult {
-        val company = companyDoc() ?: return CommitResult.Failure("Not logged in")
-        val cid = companyId() ?: return CommitResult.Failure("Not logged in")
+        if (companyId() == null) return CommitResult.Failure("Not logged in")
 
         val discrepancies = report.rows.filter {
             it.classification == Classification.MISSING ||
@@ -189,58 +188,31 @@ class CycleCountService(
             return CommitResult.NothingToCommit(reference)
         }
 
-        val now = Timestamp.now()
-        var written = 0
-
-        try {
-            for (row in discrepancies) {
-                val movementRef = company.collection("movements").document()
-
-                // Quantity semantics for a cycle count adjust:
-                //   MISSING at bin X    → quantity -1 (row was expected, wasn't there)
-                //   UNEXPECTED at bin X → quantity +1 (row was found, wasn't recorded here)
-                //
-                // fromLocation / toLocation both reference the audited bin.
-                // The "adjust" type + reference make it clear this is an audit
-                // record, not an actual physical movement of goods.
-                val quantity = if (row.classification == Classification.MISSING) -1 else 1
-
-                val movementData = hashMapOf(
-                    "type" to "cyclecount_adjust",
-                    "productId" to "",       // resolved from EPC later if needed
-                    "sku" to row.sku,
-                    "epc" to row.epc,
-                    "quantity" to quantity,
-                    "fromWarehouseId" to report.warehouseId,
-                    "fromRackId" to report.rackId,
-                    "fromBinId" to report.binId,
-                    "fromBinCode" to report.binCode,
-                    "toWarehouseId" to report.warehouseId,
-                    "toRackId" to report.rackId,
-                    "toBinId" to report.binId,
-                    "toBinCode" to report.binCode,
-                    "referenceType" to "cyclecount",
-                    "referenceId" to reference.trim(),
-                    "userId" to cid,
-                    "timestamp" to now,
-                    "notes" to when (row.classification) {
-                        Classification.MISSING -> "Expected at ${report.binCode}, not physically found"
-                        Classification.UNEXPECTED ->
-                            if (row.expectedBinCode.isNotBlank())
-                                "Physically found at ${report.binCode}, database has it at ${row.expectedBinCode}"
-                            else
-                                "Physically found at ${report.binCode}, not in database"
-                        else -> ""
+        // On the server (commitCycleCountV1): one cyclecount_adjust movement per
+        // discrepancy, written all-or-nothing per call, recording who counted.
+        return try {
+            val reply = ServerCalls.call(
+                "commitCycleCountV1",
+                mapOf(
+                    "warehouseId" to report.warehouseId,
+                    "rackId" to report.rackId,
+                    "binId" to report.binId,
+                    "reference" to reference.trim(),
+                    "rows" to discrepancies.map { row ->
+                        mapOf(
+                            "epc" to row.epc,
+                            "sku" to row.sku,
+                            "classification" to row.classification.name,
+                            "expectedBinCode" to row.expectedBinCode
+                        )
                     }
-                )
-                movementRef.set(movementData).await()
-                written++
-            }
-            return CommitResult.Success(movementsWritten = written, reference = reference)
-        } catch (e: Exception) {
-            return CommitResult.Failure(
-                "Wrote $written of ${discrepancies.size} movements before failure: ${e.message}"
+                ),
+                timeoutMinutes = 2
             )
+            val written = (reply["movementsWritten"] as? Number)?.toInt() ?: discrepancies.size
+            CommitResult.Success(movementsWritten = written, reference = reference)
+        } catch (e: Exception) {
+            CommitResult.Failure("Not saved: ${ServerCalls.message(e)}")
         }
     }
 }

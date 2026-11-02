@@ -6,7 +6,9 @@
     "build:watch": "tsc --watch",
     "serve": "npm run build && firebase emulators:start --only functions",
     "deploy": "firebase deploy --only functions --project tagscout-in",
-    "logs": "firebase functions:log --project tagscout-in"
+    "logs": "firebase functions:log --project tagscout-in",
+    "test": "npm run build && node --test \"test/*.test.js\"",
+    "test:rules": "firebase emulators:exec --only firestore,storage --project demo-tagscout \"node --test test-rules/*.test.js\""
   },
   "engines": {
     "node": "24"
@@ -18,7 +20,9 @@
   },
   "devDependencies": {
     "@types/node": "24.19.2",
-    "typescript": "6.0.3"
+    "typescript": "6.0.3",
+    "@firebase/rules-unit-testing": "6.0.0",
+    "firebase": "13.0.0"
   },
   "private": true
 }

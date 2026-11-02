@@ -7,9 +7,6 @@ import android.graphics.ImageDecoder
 import android.net.Uri
 import android.os.Build
 import android.util.Log
-import com.google.firebase.Timestamp
-import com.google.firebase.auth.FirebaseAuth
-import com.google.firebase.firestore.FirebaseFirestore
 import com.google.firebase.storage.FirebaseStorage
 import com.google.firebase.storage.StorageMetadata
 import com.snainfotech.tagscout.data.auth.AuthReady
@@ -31,8 +28,6 @@ class ProductImageRepository(context: Context) {
 
     private val appContext = context.applicationContext
     private val storage = FirebaseStorage.getInstance()
-    private val firestore = FirebaseFirestore.getInstance()
-    private val auth = FirebaseAuth.getInstance()
 
     companion object {
         private const val TAG = "ProductImageRepository"
@@ -93,18 +88,9 @@ class ProductImageRepository(context: Context) {
         ref.downloadUrl.await().toString()
     }
 
-    private suspend fun setImageUrl(productId: String, url: String): Result<Unit> = runCatching {
-        val cid = AuthReady.awaitCompanyId() ?: error("Not signed in")
-        firestore.collection("companies").document(cid)
-            .collection("products").document(productId)
-            .update(
-                mapOf(
-                    "imageUrl" to url,
-                    "updatedAt" to Timestamp.now(),
-                    "updatedBy" to (auth.currentUser?.uid ?: "")
-                )
-            ).await()
-    }
+    /** The link is saved on the server (productsV1 setImage), which accepts only this product's own photos. */
+    private suspend fun setImageUrl(productId: String, url: String): Result<Unit> =
+        ProductRepository().setImageUrl(productId, url)
 
     /** Best effort: a leftover file costs a little storage, never a failed save. */
     private suspend fun deleteQuietly(url: String) {

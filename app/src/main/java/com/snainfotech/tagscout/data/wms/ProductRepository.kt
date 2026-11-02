@@ -8,10 +8,12 @@ import com.google.firebase.firestore.DocumentReference
 import com.google.firebase.firestore.DocumentSnapshot
 import com.google.firebase.firestore.FirebaseFirestore
 import com.snainfotech.tagscout.data.auth.AuthReady
+import com.snainfotech.tagscout.data.auth.MembershipRepository
+import com.snainfotech.tagscout.data.server.ServerCalls
+import com.google.firebase.functions.FirebaseFunctionsException
 import com.snainfotech.tagscout.data.config.ProductTypeKey
 import kotlinx.coroutines.tasks.await
 import java.net.URLEncoder
-import com.google.firebase.storage.FirebaseStorage
 
 /**
  * Reads/writes the company's product catalog.
@@ -58,12 +60,9 @@ class ProductRepository(
 
     private suspend fun productsRef(): CollectionReference? = companyRef()?.collection("products")
 
-    private suspend fun skuIndexRef(): CollectionReference? = companyRef()?.collection(SKU_INDEX)
-
     companion object {
         private const val TAG = "ProductRepository"
         private const val SKU_INDEX = "sku_index"
-        private const val MAX_BATCH_OPS = 400   // Firestore limit is 500 per batch
 
         /**
          * Firestore doc ids can't contain "/" or be "." / "..", so the key is
@@ -147,65 +146,19 @@ class ProductRepository(
         else -> null
     }
 
-    /** Finds the DuplicateSkuException inside a failed transaction's cause chain. */
-    private fun unwrap(e: Throwable): Throwable =
-        generateSequence(e) { it.cause }.firstOrNull { it is DuplicateSkuException } ?: e
-
     // ── Uniqueness helpers ────────────────────────────────────
 
     /**
-     * Guards against products not yet in sku_index (created before it existed
-     * and not yet backfilled): matches on skuKey, then on the exact SKU text.
-     */
-    private suspend fun unindexedSkuMatch(
-        products: CollectionReference,
-        key: String,
-        sku: String,
-        excludeId: String?
-    ): Boolean {
-        val byKey = products.whereEqualTo("skuKey", key).limit(2).get().await()
-        if (byKey.documents.any { it.id != excludeId }) return true
-        val byText = products.whereEqualTo("sku", sku).limit(2).get().await()
-        return byText.documents.any { it.id != excludeId }
-    }
-
-    /**
-     * One-off migration, run on catalog load: give every product without a
-     * skuKey its key and an index doc. If two old products already share a
-     * SKU (possible before case-insensitive checks), only the oldest is
-     * indexed and the clash is logged; the catalog still loads.
+     * One-off migration for products created before sku_index existed: when
+     * the catalog loads with any of them, ask the server (productsV1
+     * backfillSkuKeys) to key and index them. Owners and managers only;
+     * best effort, retried on the next load.
      */
     private suspend fun backfillSkuKeys(docs: List<DocumentSnapshot>) {
-        val missing = docs.filter {
-            it.getString("skuKey").isNullOrBlank() && !it.getString("sku").isNullOrBlank()
-        }
-        if (missing.isEmpty()) return
-        val index = skuIndexRef() ?: return
-
-        val indexedKeys = docs.mapNotNull { it.getString("skuKey")?.takeIf { k -> k.isNotBlank() } }
-            .toMutableSet()
-
-        var batch = firestore.batch()
-        var ops = 0
-        for (doc in missing.sortedBy { it.getTimestamp("createdAt") }) {
-            val sku = doc.getString("sku")!!.trim()
-            val key = Product.skuKeyOf(sku)
-            batch.update(doc.reference, "skuKey", key)
-            ops++
-            if (indexedKeys.add(key)) {
-                batch.set(index.document(indexDocId(key)), mapOf("productId" to doc.id, "sku" to sku))
-                ops++
-            } else {
-                Log.w(TAG, "Duplicate legacy SKU '$sku' on product ${doc.id}; not indexed")
-            }
-            if (ops >= MAX_BATCH_OPS) {
-                batch.commit().await()
-                batch = firestore.batch()
-                ops = 0
-            }
-        }
-        if (ops > 0) batch.commit().await()
-        Log.i(TAG, "Backfilled skuKey on ${missing.size} product(s)")
+        val needed = docs.any { it.getString("skuKey").isNullOrBlank() && !it.getString("sku").isNullOrBlank() }
+        if (!needed || MembershipRepository.current?.role?.canSetUp != true) return
+        val reply = ServerCalls.call("productsV1", mapOf("action" to "backfillSkuKeys"))
+        Log.i(TAG, "Backfilled skuKey on ${reply["backfilled"]} product(s)")
     }
 
     // ── Read ───────────────────────────────────────────────────
@@ -246,47 +199,22 @@ class ProductRepository(
         } catch (e: Exception) { Result.failure(e) }
     }
 
-    // ── Write ──────────────────────────────────────────────────
+    // ── Write (on the server: productsV1) ──────────────────────
+    //
+    // productsV1 (functions/src/products.ts) repeats the checks below, keeps
+    // the SKU unique through sku_index in a transaction, copies a changed SKU
+    // onto the product's units, refuses deletes while units exist and removes
+    // the product's photos. Owners and managers only.
 
     /** Creates a product with every catalog field. Returns the new product id. */
     suspend fun createProduct(product: Product): Result<String> {
-        return try {
-            val sku = product.sku.trim()
-            val key = Product.skuKeyOf(sku)
-            validateCore(product.copy(sku = sku), requireSku = true)
-                ?.let { return Result.failure(IllegalArgumentException(it)) }
-
-            val products = productsRef() ?: return Result.failure(Exception("Not logged in"))
-            val index = skuIndexRef() ?: return Result.failure(Exception("Not logged in"))
-
-            if (unindexedSkuMatch(products, key, sku, excludeId = null)) {
-                return Result.failure(DuplicateSkuException(sku))
-            }
-
-            val productRef = products.document()
-            val indexRef = index.document(indexDocId(key))
-            val now = Timestamp.now()
-            val uid = currentUserId()
-            val data = editableData(product) + mapOf(
-                "sku" to sku,
-                "skuKey" to key,
-                "trackingMode" to "unit",
-                "isActive" to true,
-                "createdAt" to now,
-                "createdBy" to uid,
-                "updatedAt" to now,
-                "updatedBy" to uid
-            )
-
-            firestore.runTransaction { txn ->
-                if (txn.get(indexRef).exists()) throw DuplicateSkuException(sku)
-                txn.set(productRef, data)
-                txn.set(indexRef, mapOf("productId" to productRef.id, "sku" to sku))
-                null
-            }.await()
-
-            Result.success(productRef.id)
-        } catch (e: Exception) { Result.failure(unwrap(e)) }
+        val sku = product.sku.trim()
+        validateCore(product.copy(sku = sku), requireSku = true)
+            ?.let { return Result.failure(IllegalArgumentException(it)) }
+        return server(sku) {
+            val reply = call("create", "product" to serverFields(product) + ("sku" to sku))
+            reply["id"]?.toString().orEmpty()
+        }
     }
 
     /** Legacy signature used by the current catalog screen. */
@@ -309,18 +237,9 @@ class ProductRepository(
      * SKU is not touched here — use [changeSku].
      */
     suspend fun updateProduct(product: Product): Result<Unit> {
-        return try {
-            validateCore(product, requireSku = false)
-                ?.let { return Result.failure(IllegalArgumentException(it)) }
-            val ref = productsRef()?.document(product.id)
-                ?: return Result.failure(Exception("Not logged in"))
-            val data = editableData(product) + mapOf(
-                "updatedAt" to Timestamp.now(),
-                "updatedBy" to currentUserId()
-            )
-            ref.update(data).await()
-            Result.success(Unit)
-        } catch (e: Exception) { Result.failure(e) }
+        validateCore(product, requireSku = false)
+            ?.let { return Result.failure(IllegalArgumentException(it)) }
+        return server(null) { call("update", "productId" to product.id, "product" to serverFields(product)); Unit }
     }
 
     /**
@@ -333,136 +252,76 @@ class ProductRepository(
         description: String,
         unitOfMeasure: String
     ): Result<Unit> {
-        return try {
-            if (title.isBlank()) return Result.failure(IllegalArgumentException("Full name is required"))
-            val uom = UnitOfMeasure.parse(unitOfMeasure.ifBlank { UnitOfMeasure.DEFAULT.key })
-                ?: return Result.failure(IllegalArgumentException("Unknown unit of measure '$unitOfMeasure'"))
-            val ref = productsRef()?.document(productId)
-                ?: return Result.failure(Exception("Not logged in"))
-            val data = hashMapOf<String, Any>(
+        if (title.isBlank()) return Result.failure(IllegalArgumentException("Full name is required"))
+        val uom = UnitOfMeasure.parse(unitOfMeasure.ifBlank { UnitOfMeasure.DEFAULT.key })
+            ?: return Result.failure(IllegalArgumentException("Unknown unit of measure '$unitOfMeasure'"))
+        return server(null) {
+            call(
+                "updateBasic",
+                "productId" to productId,
                 "title" to title.trim(),
                 "description" to description.trim(),
-                "unitOfMeasure" to uom.key,
-                "updatedAt" to Timestamp.now(),
-                "updatedBy" to currentUserId()
+                "unitOfMeasure" to uom.key
             )
-            ref.update(data).await()
-            Result.success(Unit)
-        } catch (e: Exception) { Result.failure(e) }
+            Unit
+        }
     }
 
     /**
-     * Changes a product's SKU. Moves its sku_index entry atomically with the
-     * product, then copies the new SKU onto every unit of the product.
+     * Changes a product's SKU. The server moves its sku_index entry atomically
+     * with the product, then copies the new SKU onto every unit of the product.
      * Returns the number of units updated. Movements keep their original SKU.
      */
     suspend fun changeSku(productId: String, newSku: String): Result<Int> {
-        return try {
-            val sku = newSku.trim()
-            if (sku.isEmpty()) return Result.failure(IllegalArgumentException("SKU is required"))
-            val newKey = Product.skuKeyOf(sku)
-
-            val products = productsRef() ?: return Result.failure(Exception("Not logged in"))
-            val index = skuIndexRef() ?: return Result.failure(Exception("Not logged in"))
-            val current = getProduct(productId).getOrElse { return Result.failure(it) }
-                ?: return Result.failure(Exception("Product not found"))
-            if (current.sku == sku) return Result.success(0)
-
-            val oldKey = Product.skuKeyOf(current.sku)
-            if (newKey != oldKey && unindexedSkuMatch(products, newKey, sku, excludeId = productId)) {
-                return Result.failure(DuplicateSkuException(sku))
-            }
-
-            val productRef = products.document(productId)
-            val oldIndexRef = index.document(indexDocId(oldKey))
-            val newIndexRef = index.document(indexDocId(newKey))
-
-            firestore.runTransaction { txn ->
-                val existing = txn.get(newIndexRef)
-                if (existing.exists() && existing.getString("productId") != productId) {
-                    throw DuplicateSkuException(sku)
-                }
-                if (newKey != oldKey) txn.delete(oldIndexRef)
-                txn.set(newIndexRef, mapOf("productId" to productId, "sku" to sku))
-                txn.update(
-                    productRef, mapOf(
-                        "sku" to sku,
-                        "skuKey" to newKey,
-                        "updatedAt" to Timestamp.now(),
-                        "updatedBy" to currentUserId()
-                    )
-                )
-                null
-            }.await()
-
-            Result.success(copySkuToUnits(productId, sku))
-        } catch (e: Exception) { Result.failure(unwrap(e)) }
-    }
-
-    /** Rewrites the denormalised sku on every unit of a product, in batches. */
-    private suspend fun copySkuToUnits(productId: String, sku: String): Int {
-        val units = companyRef()?.collection("inventory_units") ?: return 0
-        val snap = units.whereEqualTo("productId", productId).get().await()
-        snap.documents.chunked(MAX_BATCH_OPS).forEach { chunk ->
-            val batch = firestore.batch()
-            chunk.forEach { batch.update(it.reference, "sku", sku) }
-            batch.commit().await()
+        val sku = newSku.trim()
+        if (sku.isEmpty()) return Result.failure(IllegalArgumentException("SKU is required"))
+        return server(sku) {
+            val reply = call("changeSku", "productId" to productId, "sku" to sku)
+            (reply["unitsUpdated"] as? Number)?.toInt() ?: 0
         }
-        return snap.size()
     }
 
     /**
-     * Delete a product from the catalog, together with its sku_index entry.
-     *
-     * BLOCKED if any InventoryUnit currently references this product's ID.
-     * Movement history is left in place as audit trail — old records may
-     * point to a product ID that no longer exists.
+     * Delete a product from the catalog, together with its sku_index entry and
+     * its photos. BLOCKED (on the server) if any unit still references it.
+     * Movement history is left in place as audit trail.
      */
-    suspend fun deleteProduct(productId: String): Result<Unit> {
-        return try {
-            val units = inventoryRepository.countUnitsForProduct(productId)
-                .getOrElse { return Result.failure(it) }
-            if (units > 0L) {
-                return Result.failure(Exception(
-                    "Cannot delete product — $units unit(s) in inventory still reference this SKU. Dispatch them first."
-                ))
+    suspend fun deleteProduct(productId: String): Result<Unit> =
+        server(null) { call("delete", "productId" to productId); Unit }
+
+    /** Saves (or, with "", removes) the product's photo link. Used by ProductImageRepository. */
+    suspend fun setImageUrl(productId: String, url: String): Result<Unit> =
+        server(null) { call("setImage", "productId" to productId, "imageUrl" to url); Unit }
+
+    // ── Server plumbing ────────────────────────────────────────
+
+    /** The fields productsV1 takes, normalised like [editableData]; values the server can carry. */
+    private fun serverFields(p: Product): Map<String, Any> =
+        editableData(p).mapValues { (key, value) ->
+            if (key == "customFields") {
+                (value as Map<*, *>).entries.associate { (k, v) ->
+                    k.toString() to when (v) {
+                        is String, is Number, is Boolean -> v
+                        is Timestamp -> java.text.SimpleDateFormat("yyyy-MM-dd", java.util.Locale.US).format(v.toDate())
+                        else -> v.toString()
+                    }
+                }
+            } else {
+                value
             }
+        }
 
-            val products = productsRef() ?: return Result.failure(Exception("Not logged in"))
-            val index = skuIndexRef() ?: return Result.failure(Exception("Not logged in"))
-            val productRef = products.document(productId)
-            val snap = productRef.get().await()
-            if (!snap.exists()) return Result.success(Unit)
+    private suspend fun call(action: String, vararg fields: Pair<String, Any?>): Map<*, *> =
+        ServerCalls.call("productsV1", mapOf<String, Any?>("action" to action) + fields)
 
-            val key = snap.getString("skuKey")?.takeIf { it.isNotBlank() }
-                ?: Product.skuKeyOf(snap.getString("sku") ?: "")
-            val indexRef = index.document(indexDocId(key))
-            val indexSnap = indexRef.get().await()
-
-            val batch = firestore.batch()
-            batch.delete(productRef)
-            // Only remove the index entry if it really points at this product.
-            if (indexSnap.exists() && indexSnap.getString("productId") == productId) {
-                batch.delete(indexRef)
-            }
-            batch.commit().await()
-            deleteProductPhotos(productId)
-            Result.success(Unit)
-        } catch (e: Exception) { Result.failure(e) }
-    }
-
-    /**
-     * Removes every file under companies/{cid}/products/{productId}/ in Storage.
-     * Best effort: a failure is logged, never surfaced; the product is already gone.
-     */
-    private suspend fun deleteProductPhotos(productId: String) {
-        runCatching {
-            val cid = AuthReady.awaitCompanyId() ?: return
-            val folder = FirebaseStorage.getInstance().reference
-                .child("companies/$cid/products/$productId")
-            folder.listAll().await().items.forEach { file ->
-                runCatching { file.delete().await() }
-            }
-        }.onFailure { Log.w("ProductRepository", "Could not delete photos for product $productId", it) }
+    /** Runs a server write; an "already exists" reply for [sku] becomes [DuplicateSkuException]. */
+    private suspend fun <T> server(sku: String?, block: suspend () -> T): Result<T> = try {
+        if (companyId() == null) Result.failure(Exception("Not logged in")) else Result.success(block())
+    } catch (e: Exception) {
+        if (sku != null && e is FirebaseFunctionsException && e.code == FirebaseFunctionsException.Code.ALREADY_EXISTS) {
+            Result.failure(DuplicateSkuException(sku))
+        } else {
+            Result.failure(Exception(ServerCalls.message(e), e))
+        }
     }
 }

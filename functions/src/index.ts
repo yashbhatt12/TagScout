@@ -10,6 +10,7 @@
  *   changeUnitStatusV1, markSoldV1, updateUnitDetailsV1   unit writes (callable; role limits inside)
  *   locationsV1         warehouses / racks / bins set-up (callable, owner + manager)
  *   catalogV1           categories and brands (callable, owner + manager)
+ *   productsV1          product catalog incl. SKU index (callable, owner + manager)
  *
  * All run in asia-south1 (Mumbai), next to the Firestore database.
  */
@@ -24,3 +25,4 @@ export {enrollUnitsV1} from "./enroll";
 export {changeUnitStatusV1, markSoldV1, updateUnitDetailsV1} from "./units";
 export {locationsV1} from "./locations";
 export {catalogV1} from "./catalog";
+export {productsV1} from "./products";

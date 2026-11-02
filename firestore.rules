@@ -2,9 +2,10 @@ rules_version = '2';
 service cloud.firestore {
     match /databases/{database}/documents {
 
-        // ── User profile ─────────────────────────────────────────────
+        // ── User profile: written by the server (snaAdmin.js, team functions) ──
         match /users/{userId} {
-            allow read, write: if request.auth != null && request.auth.uid == userId;
+            allow read: if request.auth != null && request.auth.uid == userId;
+            allow write: if false;
         }
 
         // ── Shop catalog (top-level, managed by SNA) ─────────────────
@@ -15,7 +16,7 @@ service cloud.firestore {
 
         // ── Shop orders ──────────────────────────────────────────────
         match /purchase_requisitions/{orderId} {
-            allow create: if request.auth != null;
+            allow create: if request.auth != null && request.resource.data.userId == request.auth.uid;
             allow read: if request.auth != null && resource.data.userId == request.auth.uid;
             allow update, delete: if false;
         }
@@ -28,8 +29,14 @@ service cloud.firestore {
         // ── Company data: /companies/{companyId}/... ─────────────────
         // A login belongs to a company when its custom claims say so:
         // { companyId, role }, set only by the server (snaAdmin.js, the team
-        // functions, the signup trigger). Owners carry their own company in
-        // their claims like everyone else.
+        // functions, the signup trigger).
+        //
+        // Everyone in the company can read its data. Writes go through the
+        // server's functions (functions/src: enrollUnitsV1, changeUnitStatusV1,
+        // markSoldV1, updateUnitDetailsV1, locationsV1, catalogV1, productsV1,
+        // batchesV1, bumpGrnCounterV1, commitCycleCountV1, team functions), which
+        // check roles and business rules and use the Admin SDK. The only direct
+        // writes left are the two below.
         match /companies/{companyId} {
 
             function isMember() {
@@ -37,69 +44,26 @@ service cloud.firestore {
                     && request.auth.token.get('companyId', '') == companyId;
             }
 
-            // Collections with their own stricter rules below. The general rule
-            // must exclude them, because Firestore allows a request if ANY rule does.
-            function isRestricted(collection) {
-                return collection in ['settings', 'movements', 'batches', 'alerts', 'inventory_sku', 'members', 'ops'];
-            }
-
             allow read: if isMember();
+            allow write: if false;
 
-            // Everything else under the company: warehouses/racks/bins, products,
-            // inventory_units, counters, brands, categories, ...
+            // Firestore allows a request if ANY matching rule does, so the
+            // server-only duplicate-protection records (ops) are excluded here.
             match /{collection}/{document=**} {
-                allow read: if isMember();
-                allow write: if isMember() && !isRestricted(collection);
-            }
-
-            // Company settings: read-only to the app. Edited in the console or
-            // by Cloud Functions (Admin SDK bypasses rules).
-            match /settings/{docId} {
-                allow read: if isMember();
+                allow read: if isMember() && collection != 'ops';
                 allow write: if false;
             }
 
-            // Movement ledger: append-only.
-            match /movements/{movementId} {
-                allow read, create: if isMember();
-                allow update, delete: if false;
-            }
-
-            // SKU aggregate: maintained only by the updateSkuAggregate function.
-            match /inventory_sku/{productId} {
-                allow read: if isMember();
-                allow write: if false;
-            }
-
-            // Alerts: created by the alarmNotifier function; the app may only mark them read.
+            // Alerts: created by alarmNotifier; the app may only mark them read.
             match /alerts/{alertId} {
-                allow read: if isMember();
                 allow update: if isMember()
                     && request.resource.data.diff(resource.data).affectedKeys()
                 .hasOnly(['read', 'readAt', 'readBy']);
-                allow create, delete: if false;
             }
 
-            // Team list: a copy of each login's company and role, for the Team page.
-            // Written only by the server, together with the login's claims.
-            match /members/{memberId} {
-                allow read: if isMember();
-                allow write: if false;
-            }
-
-            // Duplicate-protection records for callable functions: server only.
-            match /ops/{opId} {
-                allow read, write: if false;
-            }
-
-            // Batches (batch tracking): batch number and dates are locked once created.
-            match /batches/{batchId} {
-                allow read, create: if isMember();
-                allow update: if isMember()
-                    && request.resource.data.batchNo == resource.data.batchNo
-                    && request.resource.data.mfgDate == resource.data.mfgDate
-                    && request.resource.data.expiryDate == resource.data.expiryDate;
-                allow delete: if false;
+            // Door-reader events from the edge service: added, never changed.
+            match /tag_events/{eventId} {
+                allow create: if isMember();
             }
         }
 

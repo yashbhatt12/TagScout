@@ -84,32 +84,6 @@ class AuthViewModel(
 
     // ── Registration ───────────────────────────────────────────
 
-    fun register() {
-        val s = _state.value
-        if (s.name.isBlank()) { _state.value = s.copy(error = "Name is required"); return }
-        if (s.email.isBlank() || !android.util.Patterns.EMAIL_ADDRESS.matcher(s.email).matches()) {
-            _state.value = s.copy(error = "Enter a valid email address"); return
-        }
-        if (s.mobile.isBlank() || s.mobile.length < 10) {
-            _state.value = s.copy(error = "Enter a valid mobile number"); return
-        }
-        if (s.companyName.isBlank()) { _state.value = s.copy(error = "Company name is required"); return }
-        if (s.password.length < 6) { _state.value = s.copy(error = "Password must be at least 6 characters"); return }
-        if (s.password != s.confirmPassword) { _state.value = s.copy(error = "Passwords do not match"); return }
-
-        _state.value = s.copy(isLoading = true, error = null)
-        viewModelScope.launch {
-            authRepository.register(s.email.trim(), s.password, s.name.trim(), s.mobile.trim(), s.companyName.trim())
-                .fold(
-                    onSuccess = {
-                        _state.value = _state.value.copy(isLoading = false, registrationComplete = true, verificationEmailSent = true)
-                    },
-                    onFailure = { e ->
-                        _state.value = _state.value.copy(isLoading = false, error = e.message ?: "Registration failed")
-                    }
-                )
-        }
-    }
 
     // ── Login (with MFA) ───────────────────────────────────────
 

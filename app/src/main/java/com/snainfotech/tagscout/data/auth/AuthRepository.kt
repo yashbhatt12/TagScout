@@ -55,30 +55,8 @@ class AuthRepository {
             return user.multiFactor.enrolledFactors.isNotEmpty()
         }
 
-    // ── Registration ───────────────────────────────────────────
-
-    /**
-     * Not used: self sign-up is switched off (Firebase Authentication setting
-     * and no Register screen). Logins are created by snaAdmin.js or by a
-     * company owner on the dashboard's Team page. Kept until the next cleanup.
-     */
-    suspend fun register(
-        email: String, password: String,
-        name: String, mobile: String, companyName: String
-    ): Result<FirebaseUser> {
-        return try {
-            val result = auth.createUserWithEmailAndPassword(email, password).await()
-            val user = result.user ?: return Result.failure(Exception("Registration failed"))
-            val profile = hashMapOf(
-                "name" to name, "email" to email,
-                "mobile" to mobile, "companyName" to companyName,
-                "createdAt" to com.google.firebase.Timestamp.now()
-            )
-            firestore.collection("users").document(user.uid).set(profile).await()
-            user.sendEmailVerification().await()
-            Result.success(user)
-        } catch (e: Exception) { Result.failure(e) }
-    }
+    // No registration: self sign-up is off. Logins are created by snaAdmin.js
+    // or by a company owner on the dashboard's Team page.
 
     // ── Login (with MFA support) ───────────────────────────────
 

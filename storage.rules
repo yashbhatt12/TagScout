@@ -10,16 +10,22 @@ service firebase.storage {
         && request.auth.token.get('companyId', '') == companyId;
     }
 
+    // Product photos are part of set-up: owners and managers only.
+    function canSetUp(companyId) {
+      return isMember(companyId)
+        && request.auth.token.get('role', '') in ['owner', 'manager'];
+    }
+
     // One folder per company: companies/{companyId}/...
     match /companies/{companyId}/{allPaths=**} {
       allow read: if isMember(companyId);
 
       // Images only, under 2 MB (the app compresses to ~200–400 KB).
-      allow create, update: if isMember(companyId)
+      allow create, update: if canSetUp(companyId)
         && request.resource.size < 2 * 1024 * 1024
         && request.resource.contentType.matches('image/.*');
 
-      allow delete: if isMember(companyId);
+      allow delete: if canSetUp(companyId);
     }
 
     // Everything else is closed.

@@ -42,6 +42,8 @@ export type Edge = {
 
 export type ReaderDoc = {
   id: string;
+  /** "bfrms" = posts straight to TagScout; otherwise read through an edge PC. */
+  connectionType: "" | "bfrms";
   edgeId: string;
   host: string;
   mac: string;
@@ -49,13 +51,19 @@ export type ReaderDoc = {
   modelId: string;
   firmware: string;
   maxAntennas: number;
-  antennas: { port: number; connected: boolean }[];
+  /** connected: null = not known (direct readers don't report it; the reader's Auto antenna mode handles it). */
+  antennas: { port: number; connected: boolean | null }[];
   probeError: string;
   lastProbedAt: Date | null;
   webConsolePort: number | null;
   connection: "" | "connecting" | "connected" | "error" | "stopped";
   connectionError: string;
   lastReadAt: Date | null;
+  lastContactAt: Date | null;
+  lastHeartbeatAt: Date | null;
+  heartbeatEpc: string;
+  monitoring: "" | "ok" | "stopped";
+  monitoringSince: Date | null;
   // Set up on the web
   configured: boolean;
   name: string;
@@ -148,6 +156,12 @@ export function subscribeReaders(companyId: string, onData: (r: ReaderDoc[]) => 
             }
             return {
               id: d.id,
+              connectionType: (x.connectionType === "bfrms" ? "bfrms" : "") as ReaderDoc["connectionType"],
+              lastContactAt: toDate(x.lastContactAt),
+              lastHeartbeatAt: toDate(x.lastHeartbeatAt),
+              heartbeatEpc: str(x.heartbeatEpc),
+              monitoring: (x.monitoring === "ok" || x.monitoring === "stopped" ? x.monitoring : "") as ReaderDoc["monitoring"],
+              monitoringSince: typeof x.monitoringSince === "number" ? new Date(x.monitoringSince) : toDate(x.monitoringSince),
               edgeId: str(x.edgeId),
               host: str(x.host),
               mac: str(x.mac),
@@ -158,7 +172,7 @@ export function subscribeReaders(companyId: string, onData: (r: ReaderDoc[]) => 
               antennas: Array.isArray(x.antennas)
                 ? x.antennas
                     .filter((a: { port?: unknown }) => typeof a?.port === "number")
-                    .map((a: { port: number; connected?: unknown }) => ({ port: a.port, connected: a.connected === true }))
+                    .map((a: { port: number; connected?: unknown }) => ({ port: a.port, connected: a.connected === null ? null : a.connected === true }))
                     .sort((a: { port: number }, b: { port: number }) => a.port - b.port)
                 : [],
               probeError: str(x.probeError),
@@ -187,7 +201,16 @@ const call = (data: Record<string, unknown>) => httpsCallable(functions, "reader
 export const requestScan = (edgeId: string, hosts: string[] = []) => call({ action: "scan", edgeId, hosts });
 
 export const configureReader = (r: {
-  readerId: string; name: string; storeId: string; antennaRoles: Record<string, AntennaRole>; enabled: boolean;
+  readerId: string; name: string; storeId: string; antennaRoles: Record<string, AntennaRole>; enabled: boolean; heartbeatEpc?: string;
 }) => call({ action: "configure", ...r });
+
+export type DirectLogin = { readerId: string; url: string; username: string; password: string };
+
+/** A reader that posts straight to TagScout (Bluebird BFRMS HTTP POST). The password is returned only now. */
+export const createDirectReader = async (r: { name: string; storeId: string; ports: 4 | 8 }) =>
+  (await call({ action: "createDirect", ...r })).data as DirectLogin;
+
+/** Replaces a direct reader's password; the old one stops working at once. */
+export const newReaderKey = async (readerId: string) => (await call({ action: "newKey", readerId })).data as DirectLogin;
 
 export const removeReader = (readerId: string) => call({ action: "remove", readerId });

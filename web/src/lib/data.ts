@@ -90,6 +90,8 @@ export type AlertUnit = {
 
 export type Alert = {
   id: string;
+  /** "monitoring" = door monitoring stopped (no item); otherwise an item alert. */
+  kind: string;
   epc: string;
   itemCode: string;
   category: string;
@@ -387,6 +389,7 @@ export function subscribeAlerts(
             price: numOrNull(x.price),
             readerId: str(x.readerId),
             readerName: str(x.readerName) || str(x.readerId),
+            kind: str(x.kind),
             storeName: str(x.storeName),
             direction: str(x.direction),
             unit: mapAlertUnit(x.unit),

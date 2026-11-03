@@ -5,7 +5,7 @@ import { Icon } from "../components/Icon";
 import { useCompany } from "../lib/CompanyProvider";
 import type { Tone } from "../lib/config";
 import { markAlertsRead, type Alert, type Detail } from "../lib/data";
-import { subscribePasses, type Direction, type DoorPass, type Verdict } from "../lib/door";
+import { subscribePasses, subscribeReaders, type Direction, type DoorPass, type ReaderDoc, type Verdict } from "../lib/door";
 import { fmtDateTime, fmtMoney, fmtNum, startOfDay } from "../lib/format";
 
 const DIRECTION: Record<string, { label: string; tone: Tone }> = {
@@ -52,6 +52,9 @@ export function DoorPage() {
   const seen = useRef<Set<string> | null>(null);
 
   useEffect(() => subscribePasses(companyId, 200, setPasses, setPassError), [companyId]);
+  const [readers, setReaders] = useState<ReaderDoc[]>([]);
+  useEffect(() => subscribeReaders(companyId, setReaders, () => undefined), [companyId]);
+  const silent = readers.filter((r) => r.enabled && r.monitoring === "stopped");
 
   // Beep for alerts that arrive while the page is open (not for ones already there).
   useEffect(() => {
@@ -115,6 +118,21 @@ export function DoorPage() {
           </>
         }
       />
+
+      {silent.length ? (
+        <div className="door-banner" role="alert">
+          <Icon name="alerts" size={22} />
+          <div>
+            <p className="cell-title"><strong>Door monitoring is off</strong> at {[...new Set(silent.map((r) => r.storeName || r.name))].join(", ")}</p>
+            <p className="cell-sub">
+              TagScout hasn't heard from {silent.map((r) => r.name).join(", ")} since {silent
+                .map((r) => r.monitoringSince).filter((d): d is Date => !!d).sort((a, b) => a.getTime() - b.getTime())[0]
+                ?.toLocaleTimeString("en-IN", { hour: "numeric", minute: "2-digit" }) ?? "a while"}. Pieces leaving now won't raise alerts.
+              Check the reader's power and the store's internet{canSetUp ? <> · <Link to="/door/readers">Readers</Link></> : null}.
+            </p>
+          </div>
+        </div>
+      ) : null}
 
       <Panel
         title="Alerts"
@@ -183,6 +201,28 @@ function DetailList({ title, items }: { title: string; items: Detail[] }) {
 }
 
 function AlertCard({ alert: a, onRead, busy, unitLabel }: { alert: Alert; onRead: () => void; busy: boolean; unitLabel: string }) {
+  if (a.kind === "monitoring") {
+    return (
+      <li className={`alert-card${a.read ? "" : " is-unread"}`}>
+        <div className="alert-card__photo"><Icon name="door" size={28} /></div>
+        <div className="alert-card__body">
+          <div className="alert-card__head">
+            <div>
+              <p className="alert-card__title">Door monitoring stopped</p>
+              <p className="cell-sub">Pieces leaving through this door weren't being checked from this time.</p>
+            </div>
+            {!a.read ? <Button onClick={onRead} disabled={busy}>Mark read</Button> : <Badge tone="slate">Read</Badge>}
+          </div>
+          <p className="alert-card__where">
+            <Badge tone="red">Reader silent</Badge>
+            <strong>{a.storeName || "Store not set"}</strong>
+            <span>· {a.readerName}</span>
+            <span>· {whenText(a.createdAt)}</span>
+          </p>
+        </div>
+      </li>
+    );
+  }
   const u = a.unit;
   const title = u?.productTitle || a.itemCode || "Unknown item";
   const main: Detail[] = [

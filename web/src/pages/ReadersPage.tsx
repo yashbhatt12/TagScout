@@ -4,8 +4,8 @@ import { Badge, Button, Empty, ErrorNote, Loading, PageHeader, Panel } from "../
 import { Icon } from "../components/Icon";
 import { useCompany } from "../lib/CompanyProvider";
 import {
-  configureReader, isOnline, removeReader, requestScan, subscribeEdges, subscribeReaders,
-  type AntennaRole, type Edge, type ReaderDoc,
+  configureReader, createDirectReader, isOnline, newReaderKey, removeReader, requestScan, subscribeEdges, subscribeReaders,
+  type AntennaRole, type DirectLogin, type Edge, type ReaderDoc,
 } from "../lib/door";
 import { fmtDateTime } from "../lib/format";
 import { teamErrorMessage } from "../lib/team";
@@ -38,31 +38,17 @@ export function ReadersPage() {
     <div className="page">
       <PageHeader
         title="Readers"
-        subtitle="Fixed readers found by your edge PCs. Assign each to a store and set its antennas."
+        subtitle="Your door readers: assign each to a store and say which antenna faces the shop and which faces the street."
         actions={<Link className="btn btn--ghost" to="/door"><Icon name="door" size={18} /> Back to Door</Link>}
       />
       {error ? <ErrorNote error={error} /> : null}
 
-      <Panel title="Edge PCs">
-        {!edges ? (
-          <Loading text="Looking for edge PCs" />
-        ) : edges.length === 0 ? (
-          <Empty title="No edge PC has connected yet.">
-            Install TagScoutEdge on a PC in the store's network and start it in cloud mode. It appears here within a minute.
-          </Empty>
-        ) : (
-          <ul className="edge-list">
-            {edges.map((e) => <EdgeRow key={e.id} edge={e} now={now} canScan={canSetUp} />)}
-          </ul>
-        )}
-      </Panel>
-
-      <Panel title="Readers found">
+      <Panel title="Readers">
         {!readers ? (
           <Loading text="Loading readers" />
         ) : readers.length === 0 ? (
-          <Empty title="No readers found yet.">
-            {canSetUp ? "Use Scan network on an edge PC above. Readers on its network appear here with their antennas." : "Ask your owner or manager to scan for readers."}
+          <Empty title="No readers yet.">
+            {canSetUp ? "Add a direct reader below, or scan with a store connector." : "Ask your owner or manager to add the door readers."}
           </Empty>
         ) : (
           <ul className="reader-cards">
@@ -73,6 +59,26 @@ export function ReadersPage() {
           </ul>
         )}
       </Panel>
+      {canSetUp ? <AddDirectReader stores={locations.warehouses} storeLabel={storeLabel} /> : null}
+
+      <Panel title="Store connectors">
+        <p className="add-person__hint">
+          Only for readers without a direct cloud connection: a small PC or box at the store that relays the reader to TagScout.
+          Bluebird readers with BFRMS don't need one; add them above as direct readers.
+        </p>
+        {!edges ? (
+          <Loading text="Looking for edge PCs" />
+        ) : edges.length === 0 ? (
+          <Empty title="No store connector.">
+            Not needed for direct readers. For other readers, install TagScoutEdge on a PC in the store's network; it appears here within a minute.
+          </Empty>
+        ) : (
+          <ul className="edge-list">
+            {edges.map((e) => <EdgeRow key={e.id} edge={e} now={now} canScan={canSetUp} />)}
+          </ul>
+        )}
+      </Panel>
+
     </div>
   );
 }
@@ -146,8 +152,23 @@ function ReaderCard({ reader: r, edge, now, canEdit, stores, storeLabel }: {
 }) {
   const [editing, setEditing] = useState(!r.configured && canEdit);
   const inUse = Object.entries(r.antennaRoles).filter(([, role]) => role !== "off").map(([p]) => Number(p));
-  const lost = inUse.filter((p) => r.antennas.some((a) => a.port === p && !a.connected));
-  const conn = r.enabled ? CONNECTION[r.connection] : CONNECTION.stopped;
+  const lost = inUse.filter((p) => r.antennas.some((a) => a.port === p && a.connected === false));
+  const direct = r.connectionType === "bfrms";
+  const heardRecently = !!r.lastContactAt && now - r.lastContactAt.getTime() < 120_000;
+  const conn = !r.enabled ? CONNECTION.stopped
+    : direct ? (heardRecently ? CONNECTION.connected : { label: "Waiting for reader", tone: "amber" as const })
+      : CONNECTION[r.connection];
+  const [login, setLogin] = useState<DirectLogin | null>(null);
+  const [keyBusy, setKeyBusy] = useState(false);
+  const rotate = async () => {
+    if (!window.confirm("Make a new password? The reader stops sending until you paste the new one into its BFRMS page.")) return;
+    setKeyBusy(true);
+    try {
+      setLogin(await newReaderKey(r.id));
+    } finally {
+      setKeyBusy(false);
+    }
+  };
 
   return (
     <li className={`reader-card${r.configured ? "" : " is-new"}`}>
@@ -157,13 +178,24 @@ function ReaderCard({ reader: r, edge, now, canEdit, stores, storeLabel }: {
             {r.name || "New reader"} {!r.configured ? <Badge tone="blue">New</Badge> : null}
             {r.configured ? <Badge tone={conn.tone}>{conn.label}</Badge> : null}
           </p>
-          <p className="cell-sub">
-            {[r.manufacturer, r.modelId && `model ${r.modelId}`, r.firmware && `firmware ${r.firmware}`].filter(Boolean).join(" · ") || "Reader"}
-          </p>
-          <p className="cell-sub mono">{r.host}{r.mac ? ` · ${r.mac}` : ""}{edge ? ` · via ${edge.name}` : ""}</p>
+          {direct ? (
+            <p className="cell-sub">Direct to cloud (Bluebird BFRMS) · last heard {ago(r.lastContactAt, now)}</p>
+          ) : (
+            <>
+              <p className="cell-sub">
+                {[r.manufacturer, r.modelId && `model ${r.modelId}`, r.firmware && `firmware ${r.firmware}`].filter(Boolean).join(" · ") || "Reader"}
+              </p>
+              <p className="cell-sub mono">{r.host}{r.mac ? ` · ${r.mac}` : ""}{edge ? ` · via ${edge.name}` : ""}</p>
+            </>
+          )}
           {r.configured ? <p className="cell-sub">{storeLabel}: <strong>{r.storeName || "not assigned"}</strong></p> : null}
         </div>
-        {canEdit && !editing ? <Button onClick={() => setEditing(true)}>Set up</Button> : null}
+        {canEdit && !editing ? (
+          <div className="row-actions">
+            {direct ? <Button onClick={() => void rotate()} busy={keyBusy}>New password</Button> : null}
+            <Button onClick={() => setEditing(true)}>Set up</Button>
+          </div>
+        ) : null}
       </div>
 
       <div className="antenna-row" aria-label="Antenna ports">
@@ -171,14 +203,26 @@ function ReaderCard({ reader: r, edge, now, canEdit, stores, storeLabel }: {
         {r.antennas.map((a) => {
           const role = r.antennaRoles[String(a.port)];
           return (
-            <span key={a.port} className={`antenna-chip${a.connected ? " is-connected" : ""}`}>
-              Port {a.port} · {a.connected ? "connected" : "not connected"}
+            <span key={a.port} className={`antenna-chip${a.connected === true || (a.connected === null && role && role !== "off") ? " is-connected" : ""}`}>
+              Port {a.port}{a.connected === null ? "" : a.connected ? " · connected" : " · not connected"}
               {role && role !== "off" ? <strong> · {role === "in" ? "In" : "Out"}</strong> : null}
             </span>
           );
         })}
       </div>
-      <p className="cell-sub">Antennas checked {ago(r.lastProbedAt, now)}{r.probeError ? ` · last check failed: ${r.probeError}` : ""}</p>
+      {direct ? (
+        <p className="cell-sub">
+          {r.heartbeatEpc ? `Heartbeat tag last seen ${ago(r.lastHeartbeatAt, now)}` : "No heartbeat tag: add one in Set up so TagScout notices if this reader goes silent."}
+        </p>
+      ) : (
+        <p className="cell-sub">Antennas checked {ago(r.lastProbedAt, now)}{r.probeError ? ` · last check failed: ${r.probeError}` : ""}</p>
+      )}
+      {r.enabled && r.monitoring === "stopped" ? (
+        <p className="form-message form-message--error">
+          Door monitoring stopped {ago(r.monitoringSince, now)}: TagScout hasn't heard from this reader. Check its power and network.
+        </p>
+      ) : null}
+      {login ? <LoginCard login={login} onDone={() => setLogin(null)} /> : null}
       {lost.length ? (
         <p className="form-message form-message--error">
           Antenna port {lost.join(", ")} is set up but no longer connected. Check the cable.
@@ -196,7 +240,8 @@ function ReaderCard({ reader: r, edge, now, canEdit, stores, storeLabel }: {
 function ReaderForm({ reader: r, stores, storeLabel, onDone }: {
   reader: ReaderDoc; stores: { id: string; name: string }[]; storeLabel: string; onDone: () => void;
 }) {
-  const connected = r.antennas.filter((a) => a.connected).map((a) => a.port);
+  const connected = r.antennas.filter((a) => a.connected !== false).map((a) => a.port);
+  const [heartbeat, setHeartbeat] = useState(r.heartbeatEpc);
   const initialRoles = (): Record<string, AntennaRole> => {
     if (Object.keys(r.antennaRoles).length) return { ...r.antennaRoles };
     // Sensible start: first connected antenna In, second Out, the rest unused.
@@ -225,7 +270,8 @@ function ReaderForm({ reader: r, stores, storeLabel, onDone }: {
     setBusy(true);
     setMessage("");
     try {
-      await configureReader({ readerId: r.id, name, storeId, antennaRoles: roles, enabled });
+      await configureReader({ readerId: r.id, name, storeId, antennaRoles: roles, enabled,
+        ...(r.connectionType === "bfrms" ? { heartbeatEpc: heartbeat.trim() } : {}) });
       onDone();
     } catch (err) {
       setMessage(teamErrorMessage(err));
@@ -258,7 +304,7 @@ function ReaderForm({ reader: r, stores, storeLabel, onDone }: {
         <legend>Antennas</legend>
         {r.antennas.map((a) => (
           <label key={a.port} className="antenna-roles__row">
-            <span>Port {a.port} <small className={a.connected ? "ok" : "off"}>{a.connected ? "connected" : "not connected"}</small></span>
+            <span>Port {a.port} {a.connected === null ? null : <small className={a.connected ? "ok" : "off"}>{a.connected ? "connected" : "not connected"}</small>}</span>
             <select value={roles[String(a.port)] ?? "off"}
               onChange={(e) => setRoles({ ...roles, [String(a.port)]: e.target.value as AntennaRole })}>
               <option value="in">In antenna (shop side)</option>
@@ -269,7 +315,14 @@ function ReaderForm({ reader: r, stores, storeLabel, onDone }: {
         ))}
         <p className="add-person__hint">{mode} A piece read by the In antenna and then the Out antenna went out; the reverse came in.</p>
       </fieldset>
-      <label className="check"><input type="checkbox" checked={enabled} onChange={(e) => setEnabled(e.target.checked)} /> Reader on (the edge PC reads from it)</label>
+      {r.connectionType === "bfrms" ? (
+        <label className="field">
+          <span>Heartbeat tag EPC (a tag fixed permanently near one antenna)</span>
+          <input className="mono" value={heartbeat} onChange={(e) => setHeartbeat(e.target.value)} placeholder="E280…" />
+          <small className="add-person__hint">The reader reports it every few seconds. If it stops, TagScout raises a "Door monitoring stopped" alert. Its reads never count as passes.</small>
+        </label>
+      ) : null}
+      <label className="check"><input type="checkbox" checked={enabled} onChange={(e) => setEnabled(e.target.checked)} /> Reader on</label>
       {message ? <p className="form-message form-message--error">{message}</p> : null}
       <div className="row-actions">
         {r.configured || r.id ? <Button onClick={() => void remove()} disabled={busy}>Remove</Button> : null}
@@ -277,5 +330,103 @@ function ReaderForm({ reader: r, stores, storeLabel, onDone }: {
         <Button type="submit" variant="primary" busy={busy}>Save</Button>
       </div>
     </form>
+  );
+}
+
+// ── Direct readers (Bluebird BFRMS) ──────────────────────────────
+
+function CopyField({ label, value, secret }: { label: string; value: string; secret?: boolean }) {
+  const [copied, setCopied] = useState(false);
+  return (
+    <div className="copy-field">
+      <span className="copy-field__label">{label}</span>
+      <code className={secret ? "copy-field__value is-secret" : "copy-field__value"}>{value}</code>
+      <Button onClick={() => void navigator.clipboard.writeText(value).then(() => { setCopied(true); window.setTimeout(() => setCopied(false), 1500); })}>
+        {copied ? "Copied" : "Copy"}
+      </Button>
+    </div>
+  );
+}
+
+function LoginCard({ login, onDone }: { login: DirectLogin; onDone: () => void }) {
+  return (
+    <div className="login-card">
+      <p className="login-card__title">Paste these into the reader's web page</p>
+      <p className="add-person__hint">
+        Open the reader in a browser (its IP address; login root / bluebird unless changed) → <strong>Communication → BFRMS → Configuration</strong> →
+        Add Endpoint → <strong>HTTP POST</strong>. This password is shown only now; use New password if it's lost.
+      </p>
+      <CopyField label="URL" value={login.url} />
+      <CopyField label="User ID" value={login.username} />
+      <CopyField label="Password" value={login.password} secret />
+      <p className="add-person__hint">
+        If the reader's Authentication Type has no Basic option, choose None and use this URL instead:
+      </p>
+      <CopyField label="URL with password" value={`${login.url}&k=${encodeURIComponent(login.password)}`} secret />
+      <ol className="login-card__steps">
+        <li><strong>Mode:</strong> Simple. <strong>Start trigger:</strong> Immediately. <strong>Stop trigger:</strong> None.</li>
+        <li><strong>Report filter:</strong> duration 2, type PER_ANTENNA. <strong>Tag metadata:</strong> Antenna and RSSI on.</li>
+        <li><strong>Antennas:</strong> Auto, or tick the ports you set as In and Out here.</li>
+        <li><strong>Interface configuration:</strong> Tag Data Interface 1 = this endpoint. Then Update.</li>
+        <li><strong>Connection:</strong> tick Auto Connect, click Connect. This reader shows "Reading" here within a minute of the first tag.</li>
+      </ol>
+      <div className="row-actions"><Button variant="primary" onClick={onDone}>Done, I've pasted them</Button></div>
+    </div>
+  );
+}
+
+function AddDirectReader({ stores, storeLabel }: { stores: { id: string; name: string }[]; storeLabel: string }) {
+  const [open, setOpen] = useState(false);
+  const [name, setName] = useState("Main entrance");
+  const [storeId, setStoreId] = useState(stores[0]?.id ?? "");
+  const [ports, setPorts] = useState<4 | 8>(4);
+  const [busy, setBusy] = useState(false);
+  const [message, setMessage] = useState("");
+  const [login, setLogin] = useState<DirectLogin | null>(null);
+
+  const add = async (e: FormEvent) => {
+    e.preventDefault();
+    setBusy(true);
+    setMessage("");
+    try {
+      setLogin(await createDirectReader({ name, storeId, ports }));
+    } catch (err) {
+      setMessage(teamErrorMessage(err));
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  return (
+    <Panel title="Add a direct reader" aside={!open && !login ? <Button variant="primary" onClick={() => setOpen(true)}>Add reader</Button> : null}>
+      {login ? (
+        <LoginCard login={login} onDone={() => { setLogin(null); setOpen(false); }} />
+      ) : open ? (
+        <form className="reader-form" onSubmit={add}>
+          <p className="add-person__hint">For Bluebird FR900 / FR901 readers: they send tags straight to TagScout over the internet, with no PC at the store.</p>
+          <div className="reader-form__row">
+            <label className="field"><span>Name</span><input value={name} onChange={(e) => setName(e.target.value)} required maxLength={60} /></label>
+            <label className="field"><span>{storeLabel}</span>
+              <select value={storeId} onChange={(e) => setStoreId(e.target.value)} required>
+                {stores.map((st) => <option key={st.id} value={st.id}>{st.name}</option>)}
+              </select>
+            </label>
+          </div>
+          <label className="field"><span>Antenna ports on the reader</span>
+            <select value={ports} onChange={(e) => setPorts(Number(e.target.value) === 8 ? 8 : 4)}>
+              <option value={4}>4</option>
+              <option value={8}>8 (FR901)</option>
+            </select>
+          </label>
+          {message ? <p className="form-message form-message--error">{message}</p> : null}
+          <div className="row-actions">
+            <Button onClick={() => setOpen(false)} disabled={busy}>Cancel</Button>
+            <Button type="submit" variant="primary" busy={busy}>Create and show the login</Button>
+          </div>
+        </form>
+      ) : (
+        <p className="add-person__hint">Bluebird readers with BFRMS connect straight to TagScout: no PC or box needed at the store.</p>
+      )}
+    </Panel>
   );
 }

@@ -39,8 +39,9 @@ import * as logger from "firebase-functions/logger";
 import {FieldValue, type DocumentReference, type Firestore} from "firebase-admin/firestore";
 import {db, REGION} from "./firebase";
 import {body, requireMember} from "./access";
-import {normalizeEpc} from "./epc";
+import {isValidEpc, normalizeEpc} from "./epc";
 import {requireOpId, runOnce} from "./ops";
+import {hashKey, ingestUrl, newIngestKey} from "./bfrms";
 
 export const DEFAULT_WINDOW_MS = 10_000;
 /** Unit statuses that mean "still our stock": leaving without being sold is an alarm. */
@@ -336,6 +337,10 @@ type Role = "in" | "out" | "off";
  *   { action: "scan", edgeId, hosts?: ["192.168.1.111"] }   ask an edge PC to search its network (or check these IPs)
  *   { action: "configure", readerId, name, storeId, antennaRoles: { "1": "in", "2": "out", "3": "off" }, enabled, windowMs? }
  *   { action: "remove", readerId }
+ *   { action: "createDirect", name, storeId, ports: 4 | 8 }   a reader that posts straight to TagScout (Bluebird BFRMS)
+ *       → { readerId, url, username, password }   (the password is shown only now)
+ *   { action: "newKey", readerId }   → { url, username, password }   (the old one stops working)
+ * configure also takes heartbeatEpc: a tag left near one antenna, so a silent reader can be noticed.
  */
 export const readersV1 = onCall({region: REGION}, async (request) => {
   const data = body(request);
@@ -360,6 +365,25 @@ export const readersV1 = onCall({region: REGION}, async (request) => {
       return {edgeId, requestId};
     }
 
+    if (data.action === "createDirect") {
+      const name = typeof data.name === "string" ? data.name.trim() : "";
+      if (!name || name.length > 60) throw new HttpsError("invalid-argument", "Give the reader a name (up to 60 characters).");
+      const storeId = typeof data.storeId === "string" && ID.test(data.storeId) ? data.storeId : "";
+      const store = storeId ? await company.collection("warehouses").doc(storeId).get() : null;
+      if (!store?.exists) throw new HttpsError("invalid-argument", "Pick a store.");
+      const ports = data.ports === 8 ? 8 : 4;
+      const ref = company.collection("readers").doc(`bf-${opId.replace(/[^A-Za-z0-9]/g, "").slice(0, 12).toLowerCase()}`);
+      const key = newIngestKey();
+      await ref.set({
+        connectionType: "bfrms", name, storeId, storeName: String(store.get("name") ?? ""), location: String(store.get("name") ?? ""),
+        maxAntennas: ports, antennas: Array.from({length: ports}, (_, i) => ({port: i + 1, connected: null})),
+        antennaRoles: {}, insideAntennas: [], outsideAntennas: [], windowMs: DEFAULT_WINDOW_MS,
+        enabled: false, configured: true, ingestKeyHash: hashKey(key), heartbeatEpc: "",
+        createdAt: FieldValue.serverTimestamp(), updatedBy: caller.uid,
+      });
+      return {readerId: ref.id, url: ingestUrl(caller.companyId, ref.id), username: ref.id, password: key};
+    }
+
     const readerId = typeof data.readerId === "string" && ID.test(data.readerId) ? data.readerId : "";
     if (!readerId) throw new HttpsError("invalid-argument", "Missing reader.");
     const ref = company.collection("readers").doc(readerId);
@@ -368,6 +392,12 @@ export const readersV1 = onCall({region: REGION}, async (request) => {
     if (data.action === "remove") {
       await ref.delete();
       return {readerId};
+    }
+    if (data.action === "newKey") {
+      if (!reader.exists || reader.get("connectionType") !== "bfrms") throw new HttpsError("not-found", "Not a direct reader.");
+      const key = newIngestKey();
+      await ref.set({ingestKeyHash: hashKey(key), updatedAt: FieldValue.serverTimestamp(), updatedBy: caller.uid}, {merge: true});
+      return {readerId, url: ingestUrl(caller.companyId, readerId), username: readerId, password: key};
     }
     if (data.action !== "configure") throw new HttpsError("invalid-argument", "Unknown reader action.");
     if (!reader.exists) throw new HttpsError("not-found", "Reader not found. Scan the network again.");
@@ -406,7 +436,11 @@ export const readersV1 = onCall({region: REGION}, async (request) => {
       throw new HttpsError("invalid-argument", "Window must be 1–120 seconds.");
     }
 
+    const heartbeatRaw = typeof data.heartbeatEpc === "string" ? normalizeEpc(data.heartbeatEpc) : String(reader.get("heartbeatEpc") ?? "");
+    if (heartbeatRaw && !isValidEpc(heartbeatRaw)) throw new HttpsError("invalid-argument", "Heartbeat tag: enter a valid EPC, or leave it empty.");
+
     await ref.set({
+      heartbeatEpc: heartbeatRaw,
       name, storeId, storeName, location: storeName, antennaRoles: roles,
       insideAntennas: inside, outsideAntennas: outside, windowMs, enabled, configured: true,
       updatedAt: FieldValue.serverTimestamp(), updatedBy: caller.uid,

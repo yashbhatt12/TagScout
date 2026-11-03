@@ -1779,3 +1779,74 @@ a.btn {
     grid-template-columns: repeat(2, minmax(0, 1fr));
   }
 }
+
+/* Direct reader login */
+
+.login-card {
+  display: grid;
+  gap: 10px;
+  padding: 14px;
+  border-radius: 12px;
+  border: 1px solid color-mix(in srgb, var(--blue) 45%, transparent);
+  background: color-mix(in srgb, var(--blue) 6%, var(--surface));
+}
+
+.login-card__title {
+  margin: 0;
+  font-weight: 800;
+}
+
+.login-card__steps {
+  margin: 0;
+  padding-left: 20px;
+  display: grid;
+  gap: 4px;
+  font-size: 14px;
+}
+
+.copy-field {
+  display: grid;
+  grid-template-columns: 130px minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 10px;
+}
+
+.copy-field__label {
+  font-size: 13px;
+  font-weight: 700;
+  color: var(--muted);
+}
+
+.copy-field__value {
+  font-family: var(--font-mono, ui-monospace, monospace);
+  font-size: 13px;
+  padding: 8px 10px;
+  border-radius: 8px;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  overflow-wrap: anywhere;
+}
+
+.door-banner {
+  display: flex;
+  gap: 12px;
+  align-items: flex-start;
+  padding: 14px 16px;
+  border-radius: 14px;
+  border: 1px solid color-mix(in srgb, var(--red) 55%, transparent);
+  background: color-mix(in srgb, var(--red) 10%, var(--surface));
+  color: var(--text);
+}
+
+.door-banner strong {
+  color: var(--red);
+}
+
+@media (max-width: 760px) {
+  .copy-field {
+    grid-template-columns: 1fr auto;
+  }
+  .copy-field__label {
+    grid-column: 1 / -1;
+  }
+}

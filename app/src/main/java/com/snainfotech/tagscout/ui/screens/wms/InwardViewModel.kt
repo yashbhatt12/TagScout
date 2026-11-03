@@ -52,6 +52,9 @@ class InwardViewModel(
 ) : ViewModel() {
 
     private val _state = MutableStateFlow(InwardState())
+
+    /** Storage path of the file the server checked; commit uses the same file. */
+    private var uploadPath: String = ""
     val state: StateFlow<InwardState> = _state.asStateFlow()
 
     init {
@@ -109,8 +112,7 @@ class InwardViewModel(
         }
     }
     /**
-     * User picked a file — parse it, then run validation.
-     * Both parsing and validation run off the main thread.
+     * User picked a file — upload it; the server reads and checks every row.
      */
     fun onFilePicked(context: Context, uri: Uri, fileName: String) {
         if (_state.value.grnReference.isBlank()) {
@@ -125,62 +127,35 @@ class InwardViewModel(
         )
 
         viewModelScope.launch {
-            try {
-                val parseResult = withContext(Dispatchers.IO) {
-                    context.contentResolver.openInputStream(uri).use { stream ->
-                        if (stream == null) {
-                            GrnExcelParser.ParseResult.Error("Could not read the file")
-                        } else {
-                            GrnExcelParser.parse(stream)
-                        }
-                    }
-                }
-
-                when (parseResult) {
-                    is GrnExcelParser.ParseResult.Error -> {
-                        _state.value = _state.value.copy(
-                            step = InwardStep.ENTER_GRN,
-                            message = parseResult.message,
-                            fileName = ""
-                        )
-                    }
-                    is GrnExcelParser.ParseResult.Success -> {
-                        // Parsing succeeded — now validate against the database
-                        val validation = service.validate(parseResult.rows)
-                        when (validation) {
-                            is GrnService.ValidationResult.AllClean -> {
-                                _state.value = _state.value.copy(
-                                    step = InwardStep.REVIEW_VALIDATION,
-                                    validatedRows = validation.rows,
-                                    validationHasErrors = false,
-                                    errorRowCount = 0,
-                                    totalRowCount = validation.rows.size
-                                )
-                            }
-                            is GrnService.ValidationResult.HasErrors -> {
-                                _state.value = _state.value.copy(
-                                    step = InwardStep.REVIEW_VALIDATION,
-                                    validatedRows = validation.rows,
-                                    validationHasErrors = true,
-                                    errorRowCount = validation.errorRowCount,
-                                    totalRowCount = validation.totalRowCount
-                                )
-                            }
-                        }
-                    }
-                }
-            } catch (e: Exception) {
-                _state.value = _state.value.copy(
+            // Upload, then the server reads and checks every row (nothing is saved yet).
+            val checked = service.validateFile(context, uri)
+            uploadPath = checked.path
+            _state.value = when (val validation = checked.result) {
+                is GrnService.ValidationResult.FileError -> _state.value.copy(
                     step = InwardStep.ENTER_GRN,
-                    message = "Failed to process the file: ${e.message}",
+                    message = validation.message,
                     fileName = ""
+                )
+                is GrnService.ValidationResult.AllClean -> _state.value.copy(
+                    step = InwardStep.REVIEW_VALIDATION,
+                    validatedRows = validation.rows,
+                    validationHasErrors = false,
+                    errorRowCount = 0,
+                    totalRowCount = validation.rows.size
+                )
+                is GrnService.ValidationResult.HasErrors -> _state.value.copy(
+                    step = InwardStep.REVIEW_VALIDATION,
+                    validatedRows = validation.rows,
+                    validationHasErrors = true,
+                    errorRowCount = validation.errorRowCount,
+                    totalRowCount = validation.totalRowCount
                 )
             }
         }
     }
 
     /**
-     * User confirmed the validated file — commit all rows to Firestore.
+     * User confirmed the validated file — the server saves it.
      * Only callable when validation reported AllClean.
      */
     fun confirmInward() {
@@ -193,7 +168,8 @@ class InwardViewModel(
         _state.value = s.copy(step = InwardStep.COMMITTING, message = null)
 
         viewModelScope.launch {
-            val result = service.commit(s.validatedRows, s.grnReference)
+            // The server re-checks the uploaded file, saves it, and advances the GRN number when all rows went in.
+            val result = service.commit(uploadPath, s.grnReference)
             _state.value = when (result) {
                 is GrnService.CommitResult.Success -> _state.value.copy(
                     step = InwardStep.DONE,
@@ -213,17 +189,6 @@ class InwardViewModel(
                     commitError = result.error
                 )
             }
-
-            // Advance the reference-number counter on a fully successful commit
-            // only. Partial or failed commits leave the counter alone, so a
-            // retry can reuse the same number without gaps.
-            //
-            // Bump is fire-and-forget: any failure inside ReferenceGenerator
-            // is swallowed there. Worst case, the next suggestion is off by
-            // one and self-corrects on the following bump.
-            if (result is GrnService.CommitResult.Success) {
-                ReferenceGenerator.bumpGrnCounter(s.grnReference)
-            }
         }
     }
 
@@ -233,6 +198,7 @@ class InwardViewModel(
      * reference suggestion so the field is pre-filled for the next GRN.
      */
     fun reset() {
+        uploadPath = ""
         _state.value = InwardState()
         suggestNextGrn()
     }

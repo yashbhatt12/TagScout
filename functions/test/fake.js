@@ -18,12 +18,13 @@
  */
 
 process.env.GCLOUD_PROJECT = process.env.GCLOUD_PROJECT || "demo-tagscout";
-process.env.FIREBASE_CONFIG = process.env.FIREBASE_CONFIG || JSON.stringify({projectId: "demo-tagscout"});
+process.env.FIREBASE_CONFIG = process.env.FIREBASE_CONFIG ||
+  JSON.stringify({projectId: "demo-tagscout", storageBucket: "demo-tagscout.appspot.com"});
 
 const fs = require("firebase-admin/firestore");
 const {Auth} = require("firebase-admin/auth");
 
-const state = {docs: {}, users: {}, autoId: 0, revoked: [], emails: []};
+const state = {docs: {}, users: {}, files: {}, autoId: 0, revoked: [], emails: []};
 const DELETE = fs.FieldValue.delete();
 
 const isDelete = (v) => v && typeof v.isEqual === "function" && v.isEqual(DELETE);
@@ -116,10 +117,21 @@ Auth.prototype.setCustomUserClaims = async (uid, c) => { state.users[uid].custom
 Auth.prototype.updateUser = async (uid, p) => { Object.assign(state.users[uid], p); return copy(state.users[uid]); };
 Auth.prototype.revokeRefreshTokens = async (uid) => { state.revoked.push(uid); };
 
+// ── Storage (files by path) ───────────────────────────────────────
+const {File} = require("@google-cloud/storage");
+File.prototype.exists = async function () { return [this.name in state.files]; };
+File.prototype.download = async function () {
+  if (!(this.name in state.files)) throw Object.assign(new Error("No such object"), {code: 404});
+  return [state.files[this.name]];
+};
+File.prototype.save = async function (data) { state.files[this.name] = Buffer.from(data); };
+File.prototype.delete = async function () { delete state.files[this.name]; return []; };
+
 // ── Helpers for tests ─────────────────────────────────────────────
 
 /** Clears everything and loads [docs] (path → data) and [users] (uid → user). */
 function reset(docs = {}, users = {}) {
+  state.files = {};
   state.docs = JSON.parse(JSON.stringify(docs));
   state.users = JSON.parse(JSON.stringify(users));
   state.autoId = 0;

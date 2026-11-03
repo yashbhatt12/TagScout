@@ -28,6 +28,16 @@ service firebase.storage {
       allow delete: if canSetUp(companyId);
     }
 
+    // GRN Excel files: anyone in the team uploads to their own folder; the server
+    // (grnImportV1) reads, checks and then deletes them.
+    match /companies/{companyId}/imports/{uid}/{fileName} {
+      allow create: if isMember(companyId)
+        && request.auth.uid == uid
+        && fileName.matches('.*[.]xlsx')
+        && request.resource.size < 10 * 1024 * 1024;
+      allow read, delete: if isMember(companyId) && request.auth.uid == uid;
+    }
+
     // Everything else is closed.
     match /{allPaths=**} {
       allow read, write: if false;

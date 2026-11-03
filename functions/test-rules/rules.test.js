@@ -132,3 +132,13 @@ test("photos: owners and managers upload images; staff only view", async () => {
   await assertFails(st.ref(`companies/${C}/products/p1/photo.jpg`).delete());
   await assertFails(storageAs("x1", {companyId: OTHER, role: "owner"}).ref(`companies/${C}/products/p1/photo.jpg`).getMetadata());
 });
+
+test("GRN files: upload Excel to your own imports folder only", async () => {
+  const st = storageAs("staff1", {companyId: C, role: "staff"});
+  const xlsx = new Uint8Array([0x50, 0x4b, 3, 4]);
+  const type = {contentType: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"};
+  await assertSucceeds(st.ref(`companies/${C}/imports/staff1/grn-1.xlsx`).put(xlsx, type));
+  await assertFails(st.ref(`companies/${C}/imports/mgr1/grn-1.xlsx`).put(xlsx, type));
+  await assertFails(st.ref(`companies/${C}/imports/staff1/grn-1.exe`).put(xlsx, type));
+  await assertFails(storageAs("x1", {companyId: OTHER, role: "owner"}).ref(`companies/${C}/imports/x1/grn.xlsx`).put(xlsx, type));
+});

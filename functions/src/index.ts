@@ -8,6 +8,7 @@
  *   readersV1           fixed reader settings: name, inside/outside antennas (callable, owner + manager)
  *   bfrmsIngest         HTTPS endpoint for readers posting reads straight to TagScout (Bluebird BFRMS)
  *   doorMonitor         every 5 minutes: "Door monitoring stopped" alerts for silent readers
+ *   grnImportV1         GRN Excel import: check the uploaded file, then save it (callable, any team member)
  *   addMemberV1, setMemberRoleV1, removeMemberV1   team management (callable, owner only)
  *   enrollUnitsV1       enroll a batch of tags (callable, any team member)
  *   changeUnitStatusV1, markSoldV1, updateUnitDetailsV1   unit writes (callable; role limits inside)
@@ -25,6 +26,7 @@ export {updateSkuAggregate} from "./skuAggregate";
 export {setUpNewCompany} from "./newCompany";
 export {doorEventProcessor, readersV1} from "./door";
 export {bfrmsIngest, doorMonitor} from "./bfrms";
+export {grnImportV1} from "./grn/grnImport";
 export {addMemberV1, setMemberRoleV1, removeMemberV1} from "./team";
 export {enrollUnitsV1} from "./enroll";
 export {changeUnitStatusV1, markSoldV1, updateUnitDetailsV1} from "./units";
